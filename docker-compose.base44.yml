@@ -1,0 +1,28 @@
+# Base44 dev environment for the Neon EQ Android project.
+# Builds the APK + runs the DSP harness and unit tests, then serves a
+# build-status preview page (with APK download) on port 3000.
+services:
+  android-eq:
+    build:
+      context: conversations/6a7a961312b12b330076a6ce/android-eq
+      dockerfile: Dockerfile.base44
+    ports:
+      - "3000:3000"
+    volumes:
+      # Bind-mount the source so edits are picked up on rebuild
+      - ./conversations/6a7a961312b12b330076a6ce/android-eq:/project
+      # Persist Gradle cache across restarts for faster rebuilds
+      - gradle-cache:/root/.gradle
+    environment:
+      - BASE44_PREVIEW_MODE
+    command: ["sh", "/project/base44-start.sh"]
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:3000/')\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 420s
+      retries: 5
+
+volumes:
+  gradle-cache:
