@@ -661,6 +661,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         o.put("width", p.width.toDouble()); o.put("balance", p.balance.toDouble())
         o.put("mono", p.mono); o.put("swap", p.swap)
         o.put("compOn", p.compOn); o.put("compThresh", p.compThresh.toDouble())
+        o.put("compKnee", p.compKnee.toDouble()); o.put("compMakeup", p.compMakeup.toDouble())
+        o.put("crossfeedOn", p.crossfeedOn); o.put("crossfeedAmount", p.crossfeedAmount.toDouble())
         o.put("limiterOn", p.limiterOn); o.put("limThresh", p.limThresh.toDouble())
         val arr = JSONArray()
         for (i in 0 until 31) arr.put(round(bandLevels.getOrElse(i) { 0f }).toInt())
@@ -1283,6 +1285,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 var qcBassOn by remember { mutableStateOf(true) }
                 var qcTrebleOn by remember { mutableStateOf(true) }
                 var qcStereoOn by remember { mutableStateOf(true) }
+                var qcCrossOn by remember { mutableStateOf(true) }
                 var qcLimOn by remember { mutableStateOf(true) }
                 fun qcPush() {
                     val base = qcBase ?: DspParams.load(engine).also { qcBase = it }
@@ -1296,6 +1299,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     p.swap = base.swap
                     p.compOn = base.compOn
                     p.compThresh = base.compThresh
+                    p.compKnee = base.compKnee
+                    p.compMakeup = base.compMakeup
+                    p.crossfeedOn = if (qcCrossOn) base.crossfeedOn else false
+                    p.crossfeedAmount = base.crossfeedAmount
                     p.limiterOn = qcLimOn
                     p.limThresh = base.limThresh
                     p.slots = if (qcEqOn) base.slots else List(8) { PeqSlot() }
@@ -1323,6 +1330,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.10f)).clickable { qcStereoOn = !qcStereoOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle stereo width" })
                     Text(if (qcLimOn) ("LIMITER ✓" + (if (NeonDsp.available) runCatching { if (NeonDsp.limiterActive()) " · GR -" + (NeonDsp.limiterGrMs() / 10.0) + "dB" else "" }.getOrDefault("") else "")) else "LIMITER ✗", fontSize = 10.sp, color = if (qcLimOn) T.primary else T.accent,
                         modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.accent.copy(alpha = 0.10f)).clickable { qcLimOn = !qcLimOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle limiter" })
+                }
+                Row(modifier = Modifier.padding(top = 4.dp)) {
+                    Text(if (qcCrossOn) "CROSSFEED ✓" else "CROSSFEED ✗", fontSize = 10.sp, color = if (qcCrossOn) T.primary else T.accent,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.10f)).clickable { qcCrossOn = !qcCrossOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle headphone crossfeed" })
                 }
             }
         }
@@ -2438,7 +2449,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             val stBase = remember { try { DspParams.load(engine) } catch (_: Throwable) { DspParams() } }
             var stOn by remember { mutableStateOf(mapOf(
                 "preamp" to true, "graphic" to true, "parametric" to true, "bass" to true,
-                "treble" to true, "comp" to stBase.compOn, "stereo" to true, "limiter" to stBase.limiterOn)) }
+                "treble" to true, "comp" to stBase.compOn, "stereo" to true,
+                "crossfeed" to stBase.crossfeedOn, "limiter" to stBase.limiterOn)) }
             fun stPush(key: String, on: Boolean) {
                 try {
                     val p = DspParams()
@@ -2451,6 +2463,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     p.swap = if (key == "stereo" && !on) false else stBase.swap
                     p.compOn = if (key == "comp") on else stBase.compOn
                     p.compThresh = stBase.compThresh
+                    p.compKnee = stBase.compKnee
+                    p.compMakeup = stBase.compMakeup
+                    p.crossfeedOn = if (key == "crossfeed") on else stBase.crossfeedOn
+                    p.crossfeedAmount = stBase.crossfeedAmount
                     p.limiterOn = if (key == "limiter") on else stBase.limiterOn
                     p.limThresh = stBase.limThresh
                     p.slots = if (key == "parametric" && !on) List(8) { PeqSlot() } else stBase.slots
@@ -2472,7 +2488,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 "bass" to "BASS SHELF · " + "%+.1f dB".format(stBase.bass),
                 "treble" to "TREBLE SHELF · " + "%+.1f dB".format(stBase.treble),
                 "stereo" to "STEREO · " + "%.0f%%".format(stBase.width * 100),
-                "comp" to "COMPRESSOR · " + if (stOn["comp"] == true) "ON" else "off",
+                "crossfeed" to "CROSSFEED · " + (if (stOn["crossfeed"] == true) "%.0f%%".format(stBase.crossfeedAmount * 200) else "off"),
+                "comp" to "COMPRESSOR · " + if (stOn["comp"] == true) "ON" else "off" +
+                    (if (stBase.compKnee > 0f) " · knee " + "%.0f".format(stBase.compKnee) + "dB" else "") +
+                    (if (stBase.compMakeup > 0f) " · makeup +" + "%.0f".format(stBase.compMakeup) + "dB" else ""),
                 "convolver" to "CONVOLVER · impulse engine (API-ready, not yet active)",
                 "limiter" to "LIMITER · " + if (stOn["limiter"] == true) "ON" else "off"
             )
@@ -3557,6 +3576,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 "COMP: " + (if (NeonDsp.available) runCatching {
                     val cgr = NeonDsp.compressorGrMs() / 10.0
                     (if (cgr > 0.05) "GR -" + "%.1f".format(cgr) + "dB" else "no reduction")
+                }.getOrDefault("not available") else "not available") + "\n" +
+                "CROSSFEED: " + (if (NeonDsp.available) runCatching {
+                    val cf = DspParams.load(engine)
+                    (if (cf.crossfeedOn) "ON · " + "%.0f%%".format(cf.crossfeedAmount * 200) else "off")
                 }.getOrDefault("not available") else "not available") +
                 " · DSP BLOCK: " + (if (NeonDsp.available) runCatching { NeonDsp.dspProcUs().toString() + "µs" }.getOrDefault("—") else "—") +
                 " · CFG v" + (if (NeonDsp.available) runCatching { NeonDsp.paramVersion().toString() }.getOrDefault("—") else "—") +

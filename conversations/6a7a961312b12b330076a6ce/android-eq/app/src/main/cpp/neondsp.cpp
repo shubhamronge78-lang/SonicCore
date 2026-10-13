@@ -93,6 +93,21 @@ static bool limOn = true;
  * (limiter is ON by default!). Measured, reproduced, fixed. */
 static double limThreshDb = -1.0, limGrDb = 0.0;
 
+/* v147: headphone crossfeed — independently implemented BS2B-inspired blend.
+ * A first-order lowpass on each channel is cross-fed to the opposite ear,
+ * simulating the acoustic bleed that makes speaker listening natural.
+ * Default OFF, amount 0 → exact unity (no change to the signal). */
+static bool crossOn = false;
+static double crossAmount = 0.0;
+static double crossLpL = 0.0, crossLpR = 0.0;
+static const double CROSSFEED_FC = 700.0;
+static double crossCoef = 0.0;
+
+/* v147: compressor soft knee + makeup gain — standard DSP textbook formulas.
+ * Knee=0 → hard knee (identical to v146). Makeup=0 → no gain change. */
+static double compKnee = 0.0, compMakeup = 0.0;
+static double compMakeupGain = 1.0;
+
 static long clipCount = 0, procFrames = 0;
 /* v146 diagnostics (§11/§17/§21): measured, never inferred */
 static long lastProcUs = 0;      /* last process() body duration, microseconds */
@@ -133,9 +148,13 @@ typedef struct {
     double stWidth, stBalance; int stSwap, stMono;
     int limOn; double limThreshDb;
     int convOn;
+    /* v147: crossfeed + compressor knee/makeup */
+    int crossOn; double crossAmount;
+    double compKnee, compMakeup;
 } CfgScalar;
 static CfgScalar cfgTarget = { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005,
-                               1.0, 0.0, 0, 0, 1, -1.0, 0 };
+                               1.0, 0.0, 0, 0, 1, -1.0, 0,
+                               0, 0.0, 0.0, 0.0 };
 static CfgScalar cfgApplied = cfgTarget;
 static volatile int cfgSeq = 0;   /* seqlock: even = stable */
 static PeqParam peqTarget[MAXPEQ];
@@ -365,6 +384,11 @@ static void applyPendingParams() {
         stSwap = snap2.stSwap; stMono = snap2.stMono;
         limOn = snap2.limOn; limThreshDb = snap2.limThreshDb;
         convOn = snap2.convOn;
+        /* v147: crossfeed — reset lowpass state on OFF→ON (clean onset) */
+        if (snap2.crossOn && !cfgApplied.crossOn) { crossLpL = 0.0; crossLpR = 0.0; }
+        crossOn = snap2.crossOn; crossAmount = snap2.crossAmount;
+        compKnee = snap2.compKnee; compMakeup = snap2.compMakeup;
+        compMakeupGain = compMakeup != 0.0 ? pow(10.0, compMakeup / 20.0) : 1.0;
         cfgApplied = snap2;
         cfgVersion++;
         break;
@@ -403,6 +427,15 @@ static inline void processFrame(jshort* p) {
         if (stBalance > 0) l *= (1.0 - stBalance * 0.99);
         else r *= (1.0 + stBalance * 0.99);
     }
+    /* v147: headphone crossfeed — independently implemented BS2B-inspired
+     * blend. Lowpass each channel at ~700 Hz and cross-feed to the opposite
+     * ear. Default OFF/amount=0 → exact unity. */
+    if (crossOn) {
+        crossLpL += crossCoef * (l - crossLpL);
+        crossLpR += crossCoef * (r - crossLpR);
+        l = l + crossAmount * crossLpR;
+        r = r + crossAmount * crossLpL;
+    }
     /* convolver */
     if (convOn && irTaps > 0) {
         histL[histIdx] = (float) l;
@@ -426,10 +459,21 @@ static inline void processFrame(jshort* p) {
         double det = (fabs(l) + fabs(r)) * 0.5 / 32768.0;
         double detDb = 20.0 * log10(det > 1e-9 ? det : 1e-9);
         double over = detDb - compThreshDb;
-        double targetGr = over > 0.0 ? -over * (1.0 - 1.0 / compRatio) : 0.0;
+        double slope = 1.0 - 1.0 / compRatio;
+        /* v147: soft knee — quadratic transition around the threshold.
+         * Knee=0 → hard knee (identical to v146). Standard DSP textbook formula. */
+        double targetGr;
+        if (compKnee <= 0.0) {
+            targetGr = over > 0.0 ? -over * slope : 0.0;
+        } else {
+            double kh = compKnee * 0.5;
+            if (over <= -kh) targetGr = 0.0;
+            else if (over >= kh) targetGr = -over * slope;
+            else targetGr = -((over + kh) * (over + kh)) / (2.0 * compKnee) * slope;
+        }
         double coef = targetGr < compGrDb ? compAtkCoef : compRelCoef;
         compGrDb += coef * (targetGr - compGrDb);
-        double g = pow(10.0, compGrDb / 20.0);
+        double g = pow(10.0, compGrDb / 20.0) * compMakeupGain;
         l *= g; r *= g;
     }
     /* output limiter, stereo-linked — GAIN-REDUCTION domain (v146).
@@ -452,6 +496,7 @@ static inline void processFrame(jshort* p) {
         for (int i = 0; i < MAXPEQ; i++) { clearB(&peq[i][0]); clearB(&peq[i][1]); }
         clearB(&bassSh[0]); clearB(&bassSh[1]); clearB(&trebSh[0]); clearB(&trebSh[1]);
         compGrDb = 0.0; limGrDb = 0.0;
+        crossLpL = 0.0; crossLpR = 0.0;
         p[0] = inL; p[1] = inR;
         procFrames++;
         return;
@@ -480,6 +525,9 @@ Java_com_neon_eq_dsp_NeonDsp_init(JNIEnv* env, jobject thiz, jint rate, jint ban
     setShelf(&trebSh[0], 8000.0, 0.0, true); setShelf(&trebSh[1], 8000.0, 0.0, true);
     clipCount = 0; procFrames = 0; histIdx = 0;
     compGrDb = 0.0; limGrDb = 0.0;
+    crossOn = 0; crossAmount = 0.0; crossLpL = 0.0; crossLpR = 0.0;
+    crossCoef = 1.0 - exp(-TAU * CROSSFEED_FC / sr);
+    compKnee = 0.0; compMakeup = 0.0; compMakeupGain = 1.0;
     memset(histL, 0, sizeof(histL)); memset(histR, 0, sizeof(histR));
     /* Build #120: reset parameter targets + applied snapshot so a mode
        switch starts from a clean, fully-committed configuration. */
@@ -500,7 +548,8 @@ Java_com_neon_eq_dsp_NeonDsp_init(JNIEnv* env, jobject thiz, jint rate, jint ban
         sh[i]->tb0 = sh[i]->b0; sh[i]->tb1 = sh[i]->b1; sh[i]->tb2 = sh[i]->b2;
         sh[i]->ta1 = sh[i]->a1; sh[i]->ta2 = sh[i]->a2; sh[i]->ramp = 0;
     }
-    cfgTarget = CfgScalar { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005, 1.0, 0.0, 0, 0, 1, -1.0, 0 };
+    cfgTarget = CfgScalar { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005, 1.0, 0.0, 0, 0, 1, -1.0, 0,
+                            0, 0.0, 0.0, 0.0 };
     cfgApplied = cfgTarget;
     preampDb = 0.0; bassDb = 0.0; trebleDb = 0.0;
     compOn = 0; compThreshDb = -18.0; compRatio = 4.0; compGrDb = 0.0;
@@ -754,6 +803,41 @@ Java_com_neon_eq_dsp_NeonDsp_process(JNIEnv* env, jobject thiz, jshortArray buf,
     env->ReleasePrimitiveArrayCritical(buf, p, 0);
     lastProcUs = (long) std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - _t0).count();
+}
+
+/* v147: headphone crossfeed — independently implemented, BS2B-inspired.
+ * amount: 0..0.5 (0 = off/unity, 0.5 = strong crossfeed). */
+JNIEXPORT void JNICALL
+Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(JNIEnv* env, jobject thiz, jboolean on, jfloat amount) {
+    double a = (double) amount;
+    if (!isfinite(a)) a = 0.0;
+    if (a < 0.0) a = 0.0; else if (a > 0.5) a = 0.5;
+    int s = cfgSeq; cfgSeq = s + 1; __sync_synchronize();
+    cfgTarget.crossOn = on == JNI_TRUE;
+    cfgTarget.crossAmount = a;
+    __sync_synchronize(); cfgSeq = s + 2;
+}
+
+/* v147: compressor soft knee width in dB (0 = hard knee = v146 behavior). */
+JNIEXPORT void JNICALL
+Java_com_neon_eq_dsp_NeonDsp_setCompressorKnee(JNIEnv* env, jobject thiz, jfloat kneeDb) {
+    double k = (double) kneeDb;
+    if (!isfinite(k)) k = 0.0;
+    if (k < 0.0) k = 0.0; else if (k > 12.0) k = 12.0;
+    int s = cfgSeq; cfgSeq = s + 1; __sync_synchronize();
+    cfgTarget.compKnee = k;
+    __sync_synchronize(); cfgSeq = s + 2;
+}
+
+/* v147: compressor makeup gain in dB (0 = no change = v146 behavior). */
+JNIEXPORT void JNICALL
+Java_com_neon_eq_dsp_NeonDsp_setCompressorMakeup(JNIEnv* env, jobject thiz, jfloat makeupDb) {
+    double m = (double) makeupDb;
+    if (!isfinite(m)) m = 0.0;
+    if (m < 0.0) m = 0.0; else if (m > 24.0) m = 24.0;
+    int s = cfgSeq; cfgSeq = s + 1; __sync_synchronize();
+    cfgTarget.compMakeup = m;
+    __sync_synchronize(); cfgSeq = s + 2;
 }
 
 JNIEXPORT jlong JNICALL

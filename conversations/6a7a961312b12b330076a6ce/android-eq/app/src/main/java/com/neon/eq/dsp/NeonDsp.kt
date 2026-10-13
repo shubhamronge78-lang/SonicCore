@@ -65,4 +65,10 @@ object NeonDsp {
     external fun dspProcUs(): Long
     /** v146: monotonic committed-configuration version (diagnostic). */
     external fun paramVersion(): Long
+    /** v147: headphone crossfeed — independently implemented BS2B-inspired blend. */
+    external fun setCrossfeed(on: Boolean, amount: Float)
+    /** v147: compressor soft knee width in dB (0 = hard knee). */
+    external fun setCompressorKnee(kneeDb: Float)
+    /** v147: compressor makeup gain in dB (0 = no change). */
+    external fun setCompressorMakeup(makeupDb: Float)
 }

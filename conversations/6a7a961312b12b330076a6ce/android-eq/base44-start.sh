@@ -62,7 +62,7 @@ if grep -q "BUILD SUCCESSFUL" "$APK_LOG"; then
 fi
 
 # ---- Determine version ----
-VERSION="3.6.0"
+VERSION="3.7.0"
 APK_SIZE="—"
 if [ -f "$SERVE_DIR/app-debug.apk" ]; then
   APK_SIZE=$(du -h "$SERVE_DIR/app-debug.apk" | cut -f1)
