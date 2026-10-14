@@ -274,7 +274,7 @@ object Themes {
 }
 
 val appThemeState = mutableStateOf(Themes.CLASSIC)
-private val T: NeonTheme get() = appThemeState.value
+internal val T: NeonTheme get() = appThemeState.value
 
 // Build #132: fixed status semantics — independent of the selectable brand
 // palette, so "active/warning/error" always reads the same regardless of
@@ -375,7 +375,7 @@ val appModeState = mutableStateOf(SurfaceModes.DARK)
 val appGlassState = mutableStateOf(1)
 fun glassSurfaceAlpha(): Float = when (appGlassState.value) { 0 -> 0.96f; 2 -> 0.74f; else -> 0.86f }
 fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.08f; 2 -> 0.22f; else -> 0.14f }
-private val S: SurfacePalette get() = appModeState.value
+internal val S: SurfacePalette get() = appModeState.value
 
 @Composable
 fun NeonEQTheme(content: @Composable () -> Unit) {
@@ -4651,7 +4651,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(if (preset.name in presetFavs) "★" else " ", fontSize = 8.sp, color = T.accent,
                                         modifier = Modifier.clickable { toggleFav(preset.name) })
-                                    PresetChip(
+                                    CustomPresetChip(
                                         preset = preset,
                                         selected = selectedPreset == preset.name,
                                         onClick = { previewPresetName = preset.name },
@@ -5009,7 +5009,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             )
         }
-    }
     }
 
     // ── Import dialog ──

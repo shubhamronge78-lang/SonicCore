@@ -1,7 +1,8 @@
 #!/bin/sh
 # Base44 preview entrypoint for the Neon EQ Android project.
-# Runs the full CI pipeline (DSP harness + unit tests + APK build),
-# then serves a status page with a download link on port 3000.
+# Serves a "building…" page immediately on port 3000, runs the full CI
+# pipeline (DSP harness + unit tests + APK build) in the background, then
+# replaces the status page with results (including APK download) when done.
 set -e
 
 PROJECT_DIR="/project"
@@ -13,7 +14,48 @@ cd "$PROJECT_DIR"
 # Write the SDK path for Gradle
 echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-# ---- Step 1: Native DSP host self-test (ASan/UBSan) ----
+# ---- Generate a "building" placeholder page immediately ----
+VERSION="3.7.0"
+cat > "$SERVE_DIR/index.html" <<HTMLEOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon EQ — Building…</title>
+<style>
+  :root { --bg:#0a0a0f; --card:#15151f; --accent:#00e5ff; --accent2:#b388ff; --text:#e0e0e0; --dim:#888; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,system-ui,'Segoe UI',Roboto,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .wrap { max-width:480px; text-align:center; }
+  h1 { font-size:1.6rem; margin-bottom:8px; background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .sub { color:var(--dim); font-size:.9rem; margin-bottom:24px; }
+  .spinner { width:40px; height:40px; border:3px solid rgba(255,255,255,.1); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 16px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .status { color:var(--dim); font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎧 Neon EQ</h1>
+  <div class="sub">Android system-wide equalizer · v$VERSION</div>
+  <div class="spinner"></div>
+  <div class="status">Building… DSP harness, unit tests, and APK. This page will refresh automatically.</div>
+  <script>setTimeout(function(){location.reload();},15000);</script>
+</div>
+</body>
+</html>
+HTMLEOF
+
+# ---- Start HTTP server in the background immediately ----
+cd "$SERVE_DIR"
+python3 -m http.server 3000 --bind 0.0.0.0 &
+HTTP_PID=$!
+
+# ---- Run the build pipeline in the foreground ----
+cd "$PROJECT_DIR"
+
+# Step 1: Native DSP host self-test (ASan/UBSan)
 HARNESS_OK="no"
 HARNESS_LOG="$SERVE_DIR/harness.log"
 {
@@ -26,12 +68,12 @@ HARNESS_LOG="$SERVE_DIR/harness.log"
   else
     echo "HARNESS_COMPILE_FAILED"
   fi
-} > "$HARNESS_LOG" 2>&1
+} > "$HARNESS_LOG" 2>&1 || true
 if grep -q "HARNESS PASS" "$HARNESS_LOG"; then
   HARNESS_OK="yes"
 fi
 
-# ---- Step 2: Unit tests ----
+# Step 2: Unit tests
 TEST_OK="no"
 TEST_LOG="$SERVE_DIR/tests.log"
 {
@@ -39,12 +81,12 @@ TEST_LOG="$SERVE_DIR/tests.log"
   chmod +x gradlew
   ./gradlew testDebugUnitTest --no-daemon --continue 2>&1
   echo "TEST_EXIT=$?"
-} > "$TEST_LOG" 2>&1
+} > "$TEST_LOG" 2>&1 || true
 if grep -q "BUILD SUCCESSFUL" "$TEST_LOG"; then
   TEST_OK="yes"
 fi
 
-# ---- Step 3: Build debug APK ----
+# Step 3: Build debug APK
 APK_OK="no"
 APK_LOG="$SERVE_DIR/apk.log"
 APK_PATH=""
@@ -52,7 +94,7 @@ APK_PATH=""
   echo "=== Gradle assembleDebug ==="
   ./gradlew assembleDebug --no-daemon -x test 2>&1
   echo "APK_EXIT=$?"
-} > "$APK_LOG" 2>&1
+} > "$APK_LOG" 2>&1 || true
 if grep -q "BUILD SUCCESSFUL" "$APK_LOG"; then
   APK_OK="yes"
   APK_PATH="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
@@ -61,14 +103,13 @@ if grep -q "BUILD SUCCESSFUL" "$APK_LOG"; then
   fi
 fi
 
-# ---- Determine version ----
-VERSION="3.7.0"
+# ---- Determine version & APK size ----
 APK_SIZE="—"
 if [ -f "$SERVE_DIR/app-debug.apk" ]; then
   APK_SIZE=$(du -h "$SERVE_DIR/app-debug.apk" | cut -f1)
 fi
 
-# ---- Generate status page ----
+# ---- Generate final status page ----
 OVERALL="FAILING"
 if [ "$HARNESS_OK" = "yes" ] && [ "$TEST_OK" = "yes" ] && [ "$APK_OK" = "yes" ]; then
   OVERALL="PASSING"
@@ -152,6 +193,5 @@ gen_status > "$SERVE_DIR/index.html"
 echo "=== Build complete: $OVERALL ==="
 echo "  Harness: $HARNESS_OK | Tests: $TEST_OK | APK: $APK_OK"
 
-# ---- Serve on port 3000 ----
-cd "$SERVE_DIR"
-exec python3 -m http.server 3000 --bind 0.0.0.0
+# ---- Keep the HTTP server in the foreground ----
+wait "$HTTP_PID"

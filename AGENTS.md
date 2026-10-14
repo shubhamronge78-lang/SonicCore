@@ -17,10 +17,14 @@ served on port 3000 that shows the CI pipeline results and offers the built APK 
    ASan/UBSan — it `#include`s the real `neondsp.cpp` directly (single TU).
 2. Runs **Gradle unit tests** (`./gradlew testDebugUnitTest`).
 3. Builds the **debug APK** (`./gradlew assembleDebug -x test`).
-4. Generates an HTML status page and serves it + the APK on port 3000 via `python3 -m http.server`.
+4. Replaces the placeholder with a final HTML status page and keeps serving it + the APK
+   on port 3000 via `python3 -m http.server`.
 
-First start takes ~3 min (Gradle dependency download + NDK install); the `gradle-cache`
-named volume speeds up restarts. Healthcheck has a 420 s startup grace to cover the build.
+The HTTP server starts **immediately** with a "building…" placeholder page (auto-refreshing
+every 15 s), so the healthcheck passes within seconds. The build runs in the foreground while
+the server runs in the background; the page updates when the build finishes. First build takes
+~3 min (Gradle dependency download + NDK install); the `gradle-cache` named volume speeds up
+restarts. Healthcheck has a 10 s startup grace.
 
 ## Key gotchas
 

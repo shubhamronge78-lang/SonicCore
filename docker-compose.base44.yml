@@ -21,7 +21,7 @@ services:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:3000/')\" || exit 1"]
       interval: 15s
       timeout: 5s
-      start_period: 420s
+      start_period: 10s
       retries: 5
 
 volumes:
