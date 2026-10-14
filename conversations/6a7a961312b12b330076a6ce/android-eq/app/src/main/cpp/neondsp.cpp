@@ -4,6 +4,7 @@
  * MASTER PROCESSING CONTRACT — per stereo frame, always in this order:
  *   input validation (NaN/Inf sanitized by the capture path; final guard below)
  *   -> stereo stage (mono/balance/swap -> width)
+ *   -> headphone crossfeed (one-pole LP cross-blend, optional)
  *   -> preamp
  *   -> parametric EQ (8 slots)
  *   -> graphic EQ (10/15/31 bands)
@@ -87,6 +88,15 @@ static float irL[MAXIR], irR[MAXIR];
 static float histL[MAXIR], histR[MAXIR];
 static int histIdx = 0;
 
+/* headphone crossfeed: one-pole low-pass per channel, cross-blended.
+ * Simulates head-shadow: low frequencies blend across channels (reducing
+ * the super-stereo effect of headphones), high frequencies stay separated
+ * (preserving directional cues). amount=0 is exact unity — no blend. */
+static bool cfOn = false;
+static double cfAmount = 0.0;       /* 0 = unity (no crossfeed), 1 = full blend */
+static double cfLpA = 0.0;          /* one-pole LP coefficient (~700 Hz cutoff) */
+static double cfLpL = 0.0, cfLpR = 0.0;  /* LP filter state per channel */
+
 static bool limOn = true;
 /* v146: same domain fix for the limiter — limGrDb is gain reduction (<= 0).
  * The old level-domain envelope attenuated a -6 dBFS sine to -68 dBFS
@@ -133,9 +143,10 @@ typedef struct {
     double stWidth, stBalance; int stSwap, stMono;
     int limOn; double limThreshDb;
     int convOn;
+    int cfOn; double cfAmount;
 } CfgScalar;
 static CfgScalar cfgTarget = { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005,
-                               1.0, 0.0, 0, 0, 1, -1.0, 0 };
+                               1.0, 0.0, 0, 0, 1, -1.0, 0, 0, 0.0 };
 static CfgScalar cfgApplied = cfgTarget;
 static volatile int cfgSeq = 0;   /* seqlock: even = stable */
 static PeqParam peqTarget[MAXPEQ];
@@ -347,6 +358,10 @@ static void applyPendingParams() {
             histIdx = 0;
             memset(histL, 0, sizeof(histL)); memset(histR, 0, sizeof(histR));
         }
+        if (snap2.cfOn && !cfgApplied.cfOn) {
+            /* fresh enable: reset crossfeed LP state to avoid stale transient */
+            cfLpL = cfLpR = 0.0;
+        }
         if (snap2.bassDb != cfgApplied.bassDb) {
             setShelfT(&bassSh[0], 100.0, snap2.bassDb, false);
             setShelfT(&bassSh[1], 100.0, snap2.bassDb, false);
@@ -365,6 +380,7 @@ static void applyPendingParams() {
         stSwap = snap2.stSwap; stMono = snap2.stMono;
         limOn = snap2.limOn; limThreshDb = snap2.limThreshDb;
         convOn = snap2.convOn;
+        cfOn = snap2.cfOn; cfAmount = snap2.cfAmount;
         cfgApplied = snap2;
         cfgVersion++;
         break;
@@ -402,6 +418,18 @@ static inline void processFrame(jshort* p) {
     if (stBalance != 0.0) {
         if (stBalance > 0) l *= (1.0 - stBalance * 0.99);
         else r *= (1.0 + stBalance * 0.99);
+    }
+    /* headphone crossfeed — blends a low-passed opposite channel to reduce
+       inter-aural separation at low frequencies (head-shadow simulation).
+       amount = 0 is exact unity (measured), preserving the flat-config
+       contract. The one-pole LP (~700 Hz) runs continuously while enabled so
+       the filter state stays warm across amount changes. */
+    if (cfOn) {
+        cfLpL += cfLpA * (l - cfLpL);
+        cfLpR += cfLpA * (r - cfLpR);
+        double ol = (1.0 - cfAmount) * l + cfAmount * cfLpR;
+        double orr = (1.0 - cfAmount) * r + cfAmount * cfLpL;
+        l = ol; r = orr;
     }
     /* convolver */
     if (convOn && irTaps > 0) {
@@ -452,6 +480,7 @@ static inline void processFrame(jshort* p) {
         for (int i = 0; i < MAXPEQ; i++) { clearB(&peq[i][0]); clearB(&peq[i][1]); }
         clearB(&bassSh[0]); clearB(&bassSh[1]); clearB(&trebSh[0]); clearB(&trebSh[1]);
         compGrDb = 0.0; limGrDb = 0.0;
+        cfLpL = cfLpR = 0.0;
         p[0] = inL; p[1] = inR;
         procFrames++;
         return;
@@ -500,13 +529,16 @@ Java_com_neon_eq_dsp_NeonDsp_init(JNIEnv* env, jobject thiz, jint rate, jint ban
         sh[i]->tb0 = sh[i]->b0; sh[i]->tb1 = sh[i]->b1; sh[i]->tb2 = sh[i]->b2;
         sh[i]->ta1 = sh[i]->a1; sh[i]->ta2 = sh[i]->a2; sh[i]->ramp = 0;
     }
-    cfgTarget = CfgScalar { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005, 1.0, 0.0, 0, 0, 1, -1.0, 0 };
+    cfgTarget = CfgScalar { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005, 1.0, 0.0, 0, 0, 1, -1.0, 0, 0, 0.0 };
     cfgApplied = cfgTarget;
     preampDb = 0.0; bassDb = 0.0; trebleDb = 0.0;
     compOn = 0; compThreshDb = -18.0; compRatio = 4.0; compGrDb = 0.0;
     stWidth = 1.0; stBalance = 0.0; stSwap = 0; stMono = 0;
     limOn = 1; limThreshDb = -1.0; limGrDb = 0.0;
     convOn = 0;
+    cfOn = 0; cfAmount = 0.0;
+    cfLpA = 1.0 - exp(-2.0 * M_PI * 700.0 / sr);
+    cfLpL = cfLpR = 0.0;
     __sync_synchronize();
 }
 
@@ -639,6 +671,17 @@ Java_com_neon_eq_dsp_NeonDsp_setConvolverEnabled(JNIEnv* env, jobject thiz, jboo
        (v136 reset convolver state from the UI thread mid-frame). */
     int s = cfgSeq; cfgSeq = s + 1; __sync_synchronize();
     cfgTarget.convOn = on == JNI_TRUE;
+    __sync_synchronize(); cfgSeq = s + 2;
+}
+
+JNIEXPORT void JNICALL
+Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(JNIEnv* env, jobject thiz, jboolean on, jfloat amount) {
+    double a = (double) amount;
+    if (!isfinite(a)) a = 0.0;
+    if (a < 0.0) a = 0.0; else if (a > 1.0) a = 1.0;
+    int s = cfgSeq; cfgSeq = s + 1; __sync_synchronize();
+    cfgTarget.cfOn = on == JNI_TRUE;
+    cfgTarget.cfAmount = a;
     __sync_synchronize(); cfgSeq = s + 2;
 }
 

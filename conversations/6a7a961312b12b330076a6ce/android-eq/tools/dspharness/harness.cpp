@@ -621,6 +621,63 @@ int main() {
         CHECK(Java_com_neon_eq_dsp_NeonDsp_processedFrames(&env, thiz) > 2500L * 480L, "frames counter advanced through the stress run");
     }
 
+    printf("[24] v147: HEADPHONE CROSSFEED — unity at 0, head-shadow at 1, finite under churn\n");
+    {
+        Java_com_neon_eq_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+        static jshort pr[480 * 2];
+        jshortArray pbuf = (jshortArray) &g_hostArrays[hostReg(pr, 480 * 2, 0)];
+        auto probeGain = [&](double freq, double amp) {
+            double inE = 0.0, outE = 0.0;
+            for (int b = 0; b < 50; b++) {
+                for (int i = 0; i < 480; i++) { double v = amp * sin(2*M_PI*freq*(b*480+i)/SR); pr[2*i]=(jshort)v; pr[2*i+1]=(jshort)v; }
+                Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, pbuf, 480);
+                if (b >= 35) for (int i = 0; i < 480; i++) {
+                    double s = amp * sin(2*M_PI*freq*(b*480+i)/SR);
+                    inE += 2.0 * s * s;
+                    double ol = pr[2*i], orr = pr[2*i+1];
+                    if (!isfinite(ol) || !isfinite(orr)) return 999.0;
+                    outE += ol*ol + orr*orr;
+                }
+            }
+            return 10.0 * log10(outE / inE);
+        };
+        /* crossfeed OFF: exact unity */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_FALSE, 0.0f);
+        double u = probeGain(1000.0, 8000.0);
+        CHECK(u > -0.3 && u < 0.3, "crossfeed OFF: exact unity");
+        /* crossfeed ON at amount=0: still unity (0 amount = no blend) */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_TRUE, 0.0f);
+        double u0 = probeGain(1000.0, 8000.0);
+        CHECK(u0 > -0.3 && u0 < 0.3, "crossfeed ON amount=0: exact unity");
+        /* crossfeed ON at amount=1, mono signal (L==R): output is the
+           low-passed signal. Below 700 Hz LP cutoff -> ~0 dB; well above ->
+           significantly attenuated (head-shadow effect). */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_TRUE, 1.0f);
+        double low = probeGain(100.0, 8000.0);
+        double high = probeGain(8000.0, 8000.0);
+        CHECK(low > -3.0 && low < 3.0, "crossfeed amount=1 @ 100 Hz: ~unity (LF passes through)");
+        CHECK(high < -6.0, "crossfeed amount=1 @ 8 kHz: HF attenuated (head shadow)");
+        /* crossfeed with phase-offset stereo signal: finite and bounded */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_TRUE, 0.5f);
+        bool ok = true;
+        for (int b = 0; b < 60; b++) {
+            for (int i = 0; i < 480; i++) {
+                double t = (b*480+i)/(double)SR;
+                double vL = 10000.0 * sin(2*M_PI*500.0*t);
+                double vR = 10000.0 * sin(2*M_PI*500.0*t + 2.0);
+                pr[2*i]=(jshort)vL; pr[2*i+1]=(jshort)vR;
+            }
+            Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, pbuf, 480);
+            for (int i = 0; i < 960; i++) { double s = pr[i]; if (!std::isfinite(s) || s > 32767 || s < -32768) ok = false; }
+        }
+        CHECK(ok, "crossfeed stereo 0.5: bounded, finite, no clipping");
+        CHECK(Java_com_neon_eq_dsp_NeonDsp_nanCount(&env, thiz) == 0, "crossfeed: no NaN");
+        /* disable: unity restored */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_FALSE, 0.0f);
+        double back = probeGain(1000.0, 8000.0);
+        CHECK(back > -0.3 && back < 0.3, "crossfeed disable: unity restored");
+    }
+
     printf("\n%s (%d failures)\n", fails ? "HARNESS FAIL" : "HARNESS PASS", fails);
     return fails ? 1 : 0;
 }

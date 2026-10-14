@@ -30,6 +30,9 @@ object NeonDsp {
     external fun setCompressor(on: Boolean, threshDb: Float, ratio: Float, atkMs: Float, relMs: Float)
     external fun setStereo(width: Float, balance: Float, swap: Boolean, mono: Boolean)
     external fun setLimiter(on: Boolean, threshDb: Float)
+    /** Headphone crossfeed: blends a low-passed opposite channel (head-shadow simulation).
+     *  amount 0 = unity (no crossfeed), 1 = full blend. */
+    external fun setCrossfeed(on: Boolean, amount: Float)
     external fun setConvolverEnabled(on: Boolean)
     external fun loadIr(left: FloatArray, right: FloatArray)
     external fun process(buffer: ShortArray, frames: Int)

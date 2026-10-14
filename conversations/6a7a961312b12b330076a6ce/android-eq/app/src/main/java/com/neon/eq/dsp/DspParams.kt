@@ -25,6 +25,8 @@ class DspParams {
     var compThresh = -18f
     var limiterOn = true
     var limThresh = -1f
+    var crossfeedOn = false
+    var crossfeedAmount = 0f
     var slots = List(8) { PeqSlot() }
 
     fun applyTo(dsp: NeonDsp) {
@@ -34,6 +36,7 @@ class DspParams {
             dsp.setStereo(width, balance, swap, mono)
             dsp.setCompressor(compOn, compThresh, 4f, 5f, 150f)
             dsp.setLimiter(limiterOn, limThresh)
+            dsp.setCrossfeed(crossfeedOn, crossfeedAmount)
             slots.forEachIndexed { i, s -> dsp.setParametric(i, s.on, s.freq, s.gain, s.q) }
         } catch (_: Throwable) { }
     }
@@ -46,6 +49,7 @@ class DspParams {
             o.put("mono", mono); o.put("swap", swap)
             o.put("compOn", compOn); o.put("compThresh", compThresh.toDouble())
             o.put("limiterOn", limiterOn); o.put("limThresh", limThresh.toDouble())
+            o.put("crossfeedOn", crossfeedOn); o.put("crossfeedAmount", crossfeedAmount.toDouble())
             val arr = JSONArray()
             slots.forEach { s ->
                 val p = JSONObject()
@@ -73,6 +77,8 @@ class DspParams {
                 p.compThresh = o.optDouble("compThresh", -18.0).toFloat().coerceIn(-60f, 0f)
                 p.limiterOn = o.optBoolean("limiterOn", true)
                 p.limThresh = o.optDouble("limThresh", -1.0).toFloat().coerceIn(-60f, 0f)
+                p.crossfeedOn = o.optBoolean("crossfeedOn", false)
+                p.crossfeedAmount = o.optDouble("crossfeedAmount", 0.0).toFloat().coerceIn(0f, 1f)
                 val arr = o.optJSONArray("peq")
                 if (arr != null) {
                     val list = ArrayList<PeqSlot>()
