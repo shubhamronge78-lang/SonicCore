@@ -1,5 +1,30 @@
 # Changelog
 
+## v3.8.0 — SonicCore Equalizer: Liquid Glass Redesign + Full Rebranding
+
+### Branding
+- All user-facing "NeonEQ" / "Neon EQ" references renamed to "SonicCore Equalizer"
+- App launcher label, notification text, widget title, tile label updated
+- Theme name `Theme.NeonEQ` → `Theme.SonicCore`, root project name → "SonicCore"
+- Internal package names, JNI symbols, preset format keys, storage keys preserved for compatibility
+
+### UI — Liquid Glass Redesign
+- Enhanced `GlassCard`: deeper shadow with colored ambient/spot lighting, gradient hairline border with stronger top highlight, 22dp corner radius
+- Enhanced `GlassBackground`: positioned atmospheric light fields (primary upper-left, secondary upper-right, accent lower-center) for console depth
+- Enhanced `GlassSection`: glass pill background behind section titles with hairline gradient rules
+- Enhanced power button: layered glass rings with outer halo, specular top highlight when active
+- Enhanced `SCMark`: inner specular highlight for glass curvature effect
+- Enhanced `GlassButton`: pressed-state scale animation with spring physics, gradient border
+- Header now shows "SONICCORE EQUALIZER" with gradient wordmark
+- Subtitle includes version number (v3.8.0)
+
+### Preserved
+- All native C++ DSP algorithms, processing order, parameter synchronization
+- AudioPlaybackCapture pipeline (no-root, no Shizuku, no private APIs)
+- Lock-free/atomic parameter updates
+- Meter snapshot bounds protection and atomic band-map fixes
+- All existing unit tests and native DSP harness
+
 ## v2.0.2 (Build #58) — volume + visualizer fixes
 
 ### Fixed: EQ toggle ON was quieter than OFF

@@ -1,8 +1,9 @@
-# AGENTS.md — SonicCore / NeonEQ
+# AGENTS.md — SonicCore Equalizer
 
 ## Project Overview
 Android system-wide audio equalizer app (Kotlin + Jetpack Compose + native C++ DSP).
 The actual Android project lives at `conversations/6a7a961312b12b330076a6ce/android-eq/`.
+Current version: v3.8.0 (Liquid Glass redesign, full SonicCore Equalizer rebranding).
 
 ## Why the Base44 preview is a test dashboard, not the app
 This is an Android APK project — it cannot run in a browser. The Base44 preview

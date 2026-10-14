@@ -29,10 +29,10 @@ android {
         minSdk = 21
         targetSdk = 34
         // Tie versionCode/versionName to the CI run so it's easy to confirm on-device
-        // (Settings > Apps > Neon EQ > version) that you're actually running the
+        // (Settings > Apps > SonicCore > version) that you're actually running the
         // build you think you're running.
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
-        versionName = "3.6.0"
+        versionName = "3.8.0"
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }

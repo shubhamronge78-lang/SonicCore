@@ -1,7 +1,7 @@
 package com.neon.eq.dsp
 
 /**
- * Build #117: the common pipeline contract. Both NeonEQ audio paths
+ * Build #117: the common pipeline contract. Both SonicCore audio paths
  * eventually converge on this shape:
  *
  *   AudioInput (AudioRecord / MediaCodec / TonePlayer)

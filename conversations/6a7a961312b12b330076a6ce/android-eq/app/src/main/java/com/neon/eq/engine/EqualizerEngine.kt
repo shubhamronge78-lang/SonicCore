@@ -77,7 +77,7 @@ class EqualizerEngine private constructor(context: Context) {
                 BandInfo(i, f, -1500, 1500)
             }
         }
-        private const val TAG = "NeonEQ"
+        private const val TAG = "SonicCore"
         private const val DB_TO_MILLIBEL = 100
         private const val POLL_INTERVAL_MS = 1500L
 
@@ -116,7 +116,7 @@ class EqualizerEngine private constructor(context: Context) {
         this.context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val audioExecutor = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "NeonEQ-Audio").apply { isDaemon = true }
+        Thread(r, "SonicCore-Audio").apply { isDaemon = true }
     }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pollHandler = Handler(Looper.getMainLooper())
@@ -188,7 +188,7 @@ class EqualizerEngine private constructor(context: Context) {
     // without resizing `bandPos`, and pickBands() assigned them in two steps
     // — on a 5-band device (Redmi 10C) applyBands() could see bands=15 with
     // bandPos=5 and throw ArrayIndexOutOfBoundsException(length=5, index=5)
-    // on the NeonEQ-Audio thread. They now travel as ONE immutable snapshot
+    // on the SonicCore-Audio thread. They now travel as ONE immutable snapshot
     // published through a single volatile write: an inconsistent pair is
     // UNREPRESENTABLE. Readers take one atomic snapshot and always agree.
     val bands: List<BandInfo> get() = bandMap.bands
@@ -900,7 +900,7 @@ class EqualizerEngine private constructor(context: Context) {
     }
 
     // Restore from a full backup blob. Returns false if the JSON is not a
-    // valid NeonEQ backup. Custom presets are replaced wholesale (backup
+    // valid SonicCore backup. Custom presets are replaced wholesale (backup
     // semantics, not merge) — current levels and effects are applied live.
     fun importFullBackup(json: String): Boolean {
         try {

@@ -45,9 +45,9 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
         fi
         VERSION="${VERSION#v}"
-        cp conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk "NeonEQ-v${VERSION}.apk"
+        cp conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk "SonicCore-v${VERSION}.apk"
         echo "VERSION=$VERSION" >> $GITHUB_ENV
-        echo "APK_FILE=NeonEQ-v${VERSION}.apk" >> $GITHUB_ENV
+        echo "APK_FILE=SonicCore-v${VERSION}.apk" >> $GITHUB_ENV
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1

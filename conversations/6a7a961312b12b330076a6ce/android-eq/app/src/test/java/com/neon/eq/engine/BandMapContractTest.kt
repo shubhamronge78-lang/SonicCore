@@ -10,7 +10,7 @@ import org.junit.Test
  * v141 regression — the Redmi 10C audio-thread crash:
  *
  *   java.lang.ArrayIndexOutOfBoundsException: length=5; index=5
- *     at EqualizerEngine.applyBands(...) — NeonEQ-Audio thread
+ *     at EqualizerEngine.applyBands(...) — SonicCore-Audio thread
  *
  * Root cause: `bands` and `bandPos` were two independent @Volatile fields.
  * On a device whose hardware EQ exposes 5 bands, attach published

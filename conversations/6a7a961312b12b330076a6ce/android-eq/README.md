@@ -1,6 +1,6 @@
-# 🎧 Neon EQ — Futuristic Android Equalizer
+# 🎧 SonicCore Equalizer — Professional Android Audio Processing
 
-A system-wide audio equalizer for Android with a neon AMOLED UI. Processes ALL device audio — Spotify, YouTube, games, everything.
+A system-wide audio equalizer for Android with a premium Liquid Glass UI and native C++ DSP. Processes ALL device audio — Spotify, YouTube, games, everything.
 
 ## ✨ Features
 
@@ -15,7 +15,7 @@ A system-wide audio equalizer for Android with a neon AMOLED UI. Processes ALL d
 - 📊 **Visualizer** — Bars, Wave & Circle styles, on-canvas rendered
 - 📱 **Home screen toggle widget** + **Quick Settings tile** — switch EQ without opening the app
 - 💾 **Backup & Restore** — full-state export/import incl. presets and per-app profiles
-- 🌙 **Glass-morphism AMOLED theme** — neon cards, gradient headers, cyan/purple/pink on pure black
+- 🌙 **Liquid Glass AMOLED theme** — frosted glass cards, gradient headers, cyan/violet/blue on deep navy
 - 📳 **Haptic fine-tuning** — feel a tick at every dB step while dragging bands
 - 🔧 **Foreground service** — keeps EQ running in background
 - ⚡ **On/off toggle** switch
@@ -27,7 +27,7 @@ A system-wide audio equalizer for Android with a neon AMOLED UI. Processes ALL d
 Assign a preset to any audio app — the EQ switches automatically when that app plays, and restores your previous preset when it stops.
 
 - **How it works:** the engine's existing session-scan loop detects the playing app via `AudioPlaybackConfiguration` client UID (reflection, `Throwable`-guarded) → `PackageManager` package lookup. No new background service or polling.
-- **Assign:** start the app playing audio, open Neon EQ → the **APP PROFILES** card shows the playing app with a row of preset pills. Tap one to assign; tap × on any listed profile to remove.
+- **Assign:** start the app playing audio, open SonicCore → the **APP PROFILES** card shows the playing app with a row of preset pills. Tap one to assign; tap × on any listed profile to remove.
 - **Manual input always wins** — if you tweak bands, effects, or pick a preset yourself while a profiled app is playing, auto-switching stays suppressed for that app until playback changes.
 - **Detection details:** package resolution uses public `PackageManager` API; reflection (with fallback) for the hidden client-UID call — consistent with the MI-safe session detection approach.
 - **Backup & Restore** includes your per-app profiles.
@@ -67,7 +67,7 @@ Assign a preset to any audio app — the EQ switches automatically when that app
 2. **Enable unknown sources** — Go to `Settings → Security → Install unknown apps` (or `Settings → Apps → Special access → Install unknown apps`) and allow your browser
 3. **Install** — Tap the downloaded APK file and tap "Install"
 4. **Grant permissions** — Allow audio modification when prompted
-5. **Enable EQ** — Open Neon EQ, toggle the switch ON, pick a preset or adjust bands manually
+5. **Enable EQ** — Open SonicCore, toggle the switch ON, pick a preset or adjust bands manually
 6. **Enjoy!** — The EQ processes all audio system-wide, even in the background
 
 > 💡 **Tip:** Keep the foreground service running for persistent EQ across all apps. If you close the app, the EQ turns off.
@@ -86,16 +86,17 @@ Assign a preset to any audio app — the EQ switches automatically when that app
 | EQ not working | Toggle off/on, or restart the app. Some devices need `RECORD_AUDIO` permission |
 | No sound change | The EQ works on session 0 (global). Some OEMs block this — try with headphones |
 | App crashes | Check Android version is 5.0+ (API 21+). Report the issue on GitHub |
-| Service stops | Battery optimization may kill it. Disable battery optimization for Neon EQ |
+| Service stops | Battery optimization may kill it. Disable battery optimization for SonicCore |
 
 ---
 
 ## 🛠️ Tech Stack
 
 - **Kotlin** + **Jetpack Compose** (Material 3)
-- Android `AudioEffect` API (`Equalizer`, `BassBoost`, `Virtualizer`, `LoudnessEnhancer`)
+- **Native C++ DSP** via JNI — preamp, parametric EQ, graphic EQ, shelves, compressor, stereo width, convolver, limiter
+- Android `AudioPlaybackCapture` API (no-root system-wide capture)
 - Foreground service with `mediaPlayback` type
-- Min SDK 21 (Android 5.0+)
+- Min SDK 21 (Android 5.0+), target SDK 34
 
 ## 🚀 Build from Source
 
@@ -124,15 +125,25 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ```
 app/src/main/java/com/neon/eq/
-├── MainActivity.kt            ← Jetpack Compose neon UI
-└── engine/
-    ├── EqualizerEngine.kt     ← Core audio FX engine
-    ├── Presets.kt              ← 10 EQ presets
-    └── EQService.kt            ← Background foreground service
-
-.github/workflows/
-├── build.yml                   ← Auto-build on push to main
-└── release.yml                 ← Versioned release on tag push (v*)
+├── MainActivity.kt            ← Jetpack Compose Liquid Glass UI
+├── dsp/
+│   ├── NeonDsp.kt             ← JNI bridge to native C++ DSP
+│   ├── DspParams.kt           ← DSP parameter model
+│   └── Pipeline.kt            ← Audio pipeline contract
+├── engine/
+│   ├── EqualizerEngine.kt     ← Core audio engine + session management
+│   ├── Presets.kt              ← Built-in + custom EQ presets
+│   ├── EQService.kt            ← Background foreground service
+│   ├── OutputContract.kt       ← Output route logic (JVM-tested)
+│   └── OutputRoutes.kt        ← Android audio device discovery
+├── capture/
+│   ├── CaptureEqService.kt    ← AudioPlaybackCapture service
+│   ├── AudioCapabilityManager.kt ← Device capability checks
+│   └── AudioPath.kt           ← Audio path diagnostics
+app/src/main/cpp/
+└── neondsp.cpp                ← Native C++ DSP chain (preamp→PEQ→GEQ→shelves→comp→stereo→conv→limiter)
+tools/dspharness/
+└── harness.cpp                ← Standalone C++ DSP self-test (ASan+UBSan, 66 assertions)
 ```
 
 ## 🔑 Permissions

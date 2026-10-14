@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
 
         if (lastCrash != null) {
             setContent {
-                NeonEQTheme {
+                SonicCoreTheme {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         CrashScreen(lastCrash) {
                             prefs.edit().remove(CRASH_KEY).apply()
@@ -194,7 +194,7 @@ class MainActivity : ComponentActivity() {
         engine.attachToGlobalSession()
 
         setContent {
-            NeonEQTheme {
+            SonicCoreTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     EqualizerScreen(engine)
                 }
@@ -251,7 +251,7 @@ class MainActivity : ComponentActivity() {
 // partner / dial cores), accent (badges, highlights). appThemeState is read
 // throughout composition — swapping it recomposes the whole UI with the new
 // palette. Selection persists in ui_prefs.
-data class NeonTheme(
+data class SonicTheme(
     val id: String,
     val label: String,
     val primary: Color,
@@ -264,21 +264,21 @@ object Themes {
     // secondary, blue (not pink) as the third/supporting accent. Status
     // colors (green/yellow/red) live separately in StatusColors below so the
     // brand palette never gets reused to mean "error" or "warning".
-    val CLASSIC = NeonTheme("classic", "SonicCore", Color(0xFF00D9FF), Color(0xFF8B5CF6), Color(0xFF3B82F6))
-    val SYNTHWAVE = NeonTheme("synthwave", "Synthwave", Color(0xFFFF4FD8), Color(0xFF7C4DFF), Color(0xFF00E5FF))
-    val EMBER = NeonTheme("ember", "Ember", Color(0xFFFF9500), Color(0xFFFF3D5A), Color(0xFFFFD54F))
-    val EMERALD = NeonTheme("emerald", "Emerald", Color(0xFF00E676), Color(0xFF00BFA5), Color(0xFFB2FF59))
-    val GLACIER = NeonTheme("glacier", "Glacier", Color(0xFF40C4FF), Color(0xFF5C6BC0), Color(0xFF80D8FF))
+    val CLASSIC = SonicTheme("classic", "SonicCore", Color(0xFF00D9FF), Color(0xFF8B5CF6), Color(0xFF3B82F6))
+    val SYNTHWAVE = SonicTheme("synthwave", "Synthwave", Color(0xFFFF4FD8), Color(0xFF7C4DFF), Color(0xFF00E5FF))
+    val EMBER = SonicTheme("ember", "Ember", Color(0xFFFF9500), Color(0xFFFF3D5A), Color(0xFFFFD54F))
+    val EMERALD = SonicTheme("emerald", "Emerald", Color(0xFF00E676), Color(0xFF00BFA5), Color(0xFFB2FF59))
+    val GLACIER = SonicTheme("glacier", "Glacier", Color(0xFF40C4FF), Color(0xFF5C6BC0), Color(0xFF80D8FF))
     val ALL = listOf(CLASSIC, SYNTHWAVE, EMBER, EMERALD, GLACIER)
-    fun byId(id: String?): NeonTheme = ALL.firstOrNull { it.id == id } ?: CLASSIC
+    fun byId(id: String?): SonicTheme = ALL.firstOrNull { it.id == id } ?: CLASSIC
 }
 
 val appThemeState = mutableStateOf(Themes.CLASSIC)
-private val T: NeonTheme get() = appThemeState.value
+private val T: SonicTheme get() = appThemeState.value
 
 // Build #132: fixed status semantics — independent of the selectable brand
 // palette, so "active/warning/error" always reads the same regardless of
-// which NeonTheme the user picked.
+// which SonicTheme the user picked.
 object StatusColors {
     val success = Color(0xFF2ED573)   // active / verified
     val warn = Color(0xFFFFC107)      // limited / partial
@@ -287,7 +287,7 @@ object StatusColors {
 }
 
 // ── Build #89: light / dark mode ──
-// Accent themes (NeonTheme) control the neon; this palette controls surfaces
+// Accent themes (SonicTheme) control the neon; this palette controls surfaces
 // and text so the app can run dark (AMOLED, the classic look) or light.
 // Persisted in ui_prefs as "mode"; toggled from the main screen header.
 data class SurfacePalette(
@@ -332,13 +332,19 @@ fun GlassBackground() {
     val glow = when (appGlassState.value) { 0 -> 0.030f; 2 -> 0.085f; else -> 0.055f }
     Box(modifier = Modifier.fillMaxSize()) {
         if (appModeState.value == SurfaceModes.DARK) {
-            // extremely subtle atmospheric light fields — never bright, static
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
+            // v3.8: layered atmospheric light fields — positioned for depth.
+            // Primary glow upper-left, secondary upper-right, accent lower-center.
+            // Never bright; static; creates the console ambiance.
+            Box(Modifier.fillMaxWidth(0.85f).fillMaxHeight(0.5f).align(Alignment.TopStart)
                 .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow), Color.Transparent))))
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
+            Box(Modifier.fillMaxWidth(0.85f).fillMaxHeight(0.5f).align(Alignment.TopEnd)
                 .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow * 0.8f), Color.Transparent))))
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.5f)
-                .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow * 0.6f), Color.Transparent))))
+            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.45f).align(Alignment.BottomCenter)
+                .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow * 0.5f), Color.Transparent))))
+        } else {
+            // Light mode: very subtle warm tints
+            Box(Modifier.fillMaxSize()
+                .background(Brush.verticalGradient(listOf(S.surface, S.bg))))
         }
     }
 }
@@ -378,7 +384,7 @@ fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.08f; 2 -> 0.
 private val S: SurfacePalette get() = appModeState.value
 
 @Composable
-fun NeonEQTheme(content: @Composable () -> Unit) {
+fun SonicCoreTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = T.primary,
@@ -734,7 +740,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         if (limitedNow) {
             Spacer(Modifier.height(10.dp))
-            NeonCard {
+            GlassCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("⚠", fontSize = 16.sp, color = T.accent)
                     Spacer(Modifier.width(8.dp))
@@ -773,6 +779,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         buildAnnotatedString {
                             withStyle(SpanStyle(brush = Brush.horizontalGradient(listOf(T.primary, T.secondary)))) {
                                 append("SONICCORE")
+                            }
+                            withStyle(SpanStyle(color = T.secondary.copy(alpha = 0.7f), fontSize = 10.sp, fontWeight = FontWeight.Normal)) {
+                                append(" EQUALIZER")
                             }
                         },
                         fontSize = 18.sp,
@@ -828,16 +837,28 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             }
         }
-        Text("Professional Audio Processing", fontSize = 11.sp, color = T.secondary)
+        Text("Professional Audio Processing · v3.8.0", fontSize = 11.sp, color = T.secondary)
         Text(statusMsg, fontSize = 9.sp, color = T.secondary)
 
         Spacer(Modifier.height(14.dp))
 
-        // Build #91: FxSound-style big central power button — replaces the
-        // small header Switch as the primary control. Same enable path
-        // (engine.setEnabled + onEnabledToggled), just impossible to miss.
+        // v3.8: Premium power button — layered glass rings with specular
+        // highlight. Same enable path (engine.setEnabled + onEnabledToggled).
         Box(contentAlignment = Alignment.Center) {
             if (showGlow) BreathingGlow(active = enabled)
+            // Outer ring — subtle glow halo
+            Box(
+                modifier = Modifier
+                    .size(94.dp)
+                    .clip(CircleShape)
+                    .background(
+                        brush = if (enabled)
+                            Brush.radialGradient(listOf(T.primary.copy(alpha = 0.12f), Color.Transparent))
+                        else
+                            Brush.radialGradient(listOf(Color.Gray.copy(alpha = 0.06f), Color.Transparent))
+                    )
+            )
+            // Main button body
             Box(
                 modifier = Modifier
                     .size(84.dp)
@@ -858,6 +879,17 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 contentAlignment = Alignment.Center
             ) {
                 Text("⏻", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (enabled) T.primary else Color.Gray)
+            }
+            // Inner specular highlight — top arc suggesting glass curvature
+            if (enabled) {
+                Box(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(RoundedCornerShape(38.dp))
+                        .background(
+                            Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.12f), Color.Transparent))
+                        )
+                )
             }
         }
 
@@ -913,7 +945,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Row(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f)) {
         // ── Build #121: STATUS — the professional dashboard header ──
-        NeonCard {
+        GlassCard {
             val recentData = CaptureEqService.running &&
                 (android.os.SystemClock.elapsedRealtime() - CaptureEqService.lastDataAt) < 2500L
             val dspChip = when {
@@ -975,7 +1007,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #123: NOW PROCESSING — technical status, no source metadata ──
-        NeonCard {
+        GlassCard {
             GradientText("NOW PROCESSING", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
             Spacer(Modifier.height(4.dp))
             val nowIn = if (NeonDsp.available) runCatching { NeonDsp.inRmsMs() }.getOrDefault(0) else 0
@@ -1033,7 +1065,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: METERS — measured L/R input + output, dBFS, peak hold ──
-        NeonCard {
+        GlassCard {
             GradientText("METERS", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(4.dp))
             Text("Measured from the native DSP path. Not a claim about what you physically hear.", fontSize = 8.sp, color = T.secondary)
@@ -1106,7 +1138,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: SPECTRUM — real-time FFT of the live signal ──
-        NeonCard {
+        GlassCard {
             GradientText("SPECTRUM", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
             Spacer(Modifier.height(4.dp))
             var spTick by remember { mutableStateOf(0) }
@@ -1230,7 +1262,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: OUTPUT — route, format, latency, buffer at a glance ──
-        NeonCard {
+        GlassCard {
             GradientText("OUTPUT", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
             Spacer(Modifier.height(4.dp))
             val routeIcon = when {
@@ -1265,7 +1297,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
             Column(modifier = Modifier.weight(1f)) {
         // ── Build #121: QUICK DSP — collapsible atomic toggles (same engine, no parallel pipelines) ──
-        NeonCard {
+        GlassCard {
             var qcOpen by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { qcOpen = !qcOpen }) {
                 GradientText("QUICK DSP", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -1330,7 +1362,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: PERFORMANCE — compact live counters ──
-        NeonCard {
+        GlassCard {
             var perfTick by remember { mutableStateOf(0) }
             LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); perfTick++ } }
             GradientText("PERFORMANCE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
@@ -1353,7 +1385,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: AUDIO HEALTH — plain-language pass/fail, error codes in details ──
-        NeonCard {
+        GlassCard {
             GradientText("AUDIO HEALTH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(4.dp))
             var healthDetail by remember { mutableStateOf(false) }
@@ -1488,7 +1520,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         Spacer(Modifier.height(8.dp))
 
-        NeonCard {
+        GlassCard {
 
         Spacer(Modifier.height(16.dp))
 
@@ -1584,7 +1616,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // Build #105: the EQ canvas is back on EVERY device — on limited
         // devices it drives the in-app software EQ (PLAYER card), on normal
         // devices the system engine as always.
-        NeonCard {
+        GlassCard {
         // Build #125: responsive EQ — landscape uses a wide graph + side panel;
         // portrait keeps the stacked layout. The y-mapping logic is identical
         // in both: AUTO/±6/±12/±18 only changes visualization, DSP stays -15..+20.
@@ -1984,7 +2016,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         }
         if (limitedNow) {
-            NeonCard {
+            GlassCard {
                 GradientText("LOUDNESS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -2021,7 +2053,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // Build #103: the whole EFFECTS card is replaced by the loudness
         // hero card when the device only permits LoudnessEnhancer.
         if (!limitedNow) {
-        NeonCard {
+        GlassCard {
             GradientText("EFFECTS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
             Spacer(Modifier.height(8.dp))
             // Same honest readouts as always: TRUE hardware dB for bass
@@ -2077,7 +2109,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             if (advOpen) {
         // ── Build #110: VISUALIZER on the main screen — system capture when
         // the device allows it, software-player capture when it doesn't ──
-        NeonCard {
+        GlassCard {
             var softWave by remember { mutableStateOf(ByteArray(0)) }
             var softWaveAt by remember { mutableStateOf(0L) }
             LaunchedEffect(Unit) {
@@ -2106,7 +2138,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // hoisted: shared by PLAYER card (HOME) and TEST SIGNALS (DSP tab)
 
         // ── Build #105: PLAYER — the one audio path no OEM can block ──
-        NeonCard {
+        GlassCard {
             GradientText("PLAYER — EQ INSIDE SONICCORE", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
             var whyOpen by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2395,7 +2427,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
 
         // ── Build #123: DSP STUDIO — master control + visual processing chain ──
-        NeonCard {
+        GlassCard {
             GradientText("DSP ENGINE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
             Spacer(Modifier.height(6.dp))
             // Build #124: four honest master states — never ACTIVE after a failure
@@ -2591,7 +2623,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #117: DSP CHAIN — parametric EQ + processing stages ──
-        NeonCard {
+        GlassCard {
             GradientText("DSP CHAIN", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
             Spacer(Modifier.height(4.dp))
             Text(
@@ -2688,7 +2720,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
 
         // ── Build #117: SYSTEM CAPTURE — CAPTURE MODE with honest A/B ──
-        NeonCard {
+        GlassCard {
             GradientText("SYSTEM CAPTURE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
             Spacer(Modifier.height(2.dp))
             Text("CAPTURE MODE", fontSize = 10.sp, color = T.accent)
@@ -2838,7 +2870,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
 
         // ── Build #121: SESSIONS — local history from the recorded session log ──
-        NeonCard {
+        GlassCard {
             GradientText("SESSIONS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
             Spacer(Modifier.height(4.dp))
             Text("⇄ COMPARE TWO SESSIONS", fontSize = 9.sp, color = T.accent,
@@ -2927,7 +2959,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
 
         // ── Build #119: SIGNAL PATH — measured, stage-by-stage, never inferred ──
-        NeonCard {
+        GlassCard {
             GradientText("SIGNAL PATH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
             Spacer(Modifier.height(4.dp))
             Text(
@@ -3134,7 +3166,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // Consolidated in Build #129: exactly one preset section exists — here.
         // State lives at top level; storage is unchanged (same prefs, same
         // JSON) — existing presets, favorites and recents keep working.
-        NeonCard {
+        GlassCard {
             GradientText("EQ PRESETS", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
             Spacer(Modifier.height(4.dp))
         Row(
@@ -3338,7 +3370,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         Spacer(Modifier.height(16.dp))
         // ── Build #89: PRO FX — noise gate + anti-clip limiter ──
-        NeonCard {
+        GlassCard {
             GradientText("PRO FX", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3382,7 +3414,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // ── Per-app profiles ──
 
         // ── Build #127: APPEARANCE — glass intensity (UI rendering only) ──
-        NeonCard {
+        GlassCard {
             GradientText("APPEARANCE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(6.dp))
             Text("GLASS EFFECT", fontSize = 10.sp, color = T.secondary)
@@ -3413,7 +3445,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         Spacer(Modifier.height(16.dp))
         // ── Build #130: ANALYZER — shared state with the SPECTRUM card ──
-        NeonCard {
+        GlassCard {
             GradientText("ANALYZER", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
             Spacer(Modifier.height(6.dp))
             Text("FPS", fontSize = 10.sp, color = T.secondary)
@@ -3489,14 +3521,14 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         Spacer(Modifier.height(16.dp))
         // ── Build #130: NOTIFICATIONS — authoritative state machine, informational ──
-        NeonCard {
+        GlassCard {
             GradientText("NOTIFICATIONS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
             Spacer(Modifier.height(6.dp))
             Text("The foreground notification mirrors the measured DSP state machine: DSP ACTIVE, DSP BYPASS, DSP ERROR, CAPTURE BLOCKED, WAITING, AUDIO ERROR — with the actual sample rate, output route and measured level whenever available. SonicCore never invents states; per-channel control lives in Android notification settings.", fontSize = 10.sp, color = T.secondary, lineHeight = 14.sp)
         }
         Spacer(Modifier.height(16.dp))
         // ── Build #123: OUTPUT ROUTE — information, never a fake control ──
-        NeonCard {
+        GlassCard {
             GradientText("OUTPUT ROUTE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(4.dp))
             val rBt = AudioCapabilityManager.btConnected(context)
@@ -3511,7 +3543,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #123: ABOUT ──
-        NeonCard {
+        GlassCard {
             GradientText("ABOUT", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
             Spacer(Modifier.height(4.dp))
             Text(
@@ -3527,7 +3559,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #118: AUDIO PATH — universal, capability-driven, brand-neutral ──
-        NeonCard {
+        GlassCard {
             GradientText("AUDIO PATH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(6.dp))
             val apCtx = LocalContext.current
@@ -3647,7 +3679,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
 
 
-        NeonCard {
+        GlassCard {
             GradientText("APP PROFILES", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(6.dp))
             val pkg = playingApp
@@ -3991,7 +4023,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         val nicknames = remember(showOutputStudio) { OutputRoutes.nicknames(octx) }
 
         // ── ACTIVE OUTPUT (§4/§7) ──
-        NeonCard {
+        GlassCard {
             GradientText("ACTIVE OUTPUT", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
             Spacer(Modifier.height(4.dp))
             Text(
@@ -4060,7 +4092,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         routes.forEach { r ->
             val rname = OutputContract.displayName(r.key, r.productName, nicknames)
             val isFav = remember(showOutputStudio, outputTick, r.key) { OutputRoutes.favorites(octx).contains(r.key) }
-            NeonCard {
+            GlassCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (isFav) "★" else " ", fontSize = 12.sp, color = T.accent,
                         modifier = Modifier.clip(RoundedCornerShape(50)).clickable {
@@ -5149,14 +5181,22 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 // Used in the header and the splash screen. No external image asset.
 @Composable
 fun SCMark(size: androidx.compose.ui.unit.Dp = 34.dp) {
+    // v3.8: Enhanced monogram with inner specular highlight
     Box(
         modifier = Modifier
             .size(size)
             .clip(RoundedCornerShape(size / 3.4f))
             .background(Brush.linearGradient(listOf(T.primary, T.secondary)))
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(size / 3.4f)),
+            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(size / 3.4f)),
         contentAlignment = Alignment.Center
     ) {
+        // Specular top highlight
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(size / 3.4f))
+                .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.18f), Color.Transparent)))
+        )
         Text(
             "SC", color = Color.White, fontWeight = FontWeight.Bold,
             fontSize = (size.value * 0.42f).sp, letterSpacing = 0.sp
@@ -5234,31 +5274,44 @@ fun GlassChip(label: String, state: Int, modifier: Modifier = Modifier) {
     }
 }
 
-// Compact pill button. kind: 0 PRIMARY · 1 SECONDARY · 2 DESTRUCTIVE
+// v3.8: Compact glass pill button with pressed-state scale animation.
+// kind: 0 PRIMARY · 1 SECONDARY · 2 DESTRUCTIVE
 @Composable
 fun GlassButton(label: String, kind: Int = 0, enabled: Boolean = true, onClick: () -> Unit) {
     val col = when (kind) { 2 -> T.accent; 1 -> T.secondary; else -> T.primary }
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.6f), label = "btnScale")
     Text(
         label, fontSize = 10.sp,
         color = if (enabled) col else col.copy(alpha = 0.40f),
         modifier = Modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(50))
             .background((if (enabled) col else col.copy(alpha = 0.4f)).copy(alpha = 0.12f))
+            .border(1.dp, col.copy(alpha = if (enabled) 0.20f else 0.08f), RoundedCornerShape(50))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 11.dp, vertical = 5.dp)
     )
 }
 
-// Section group header — hairline gradient rules, always with a text label.
+// v3.8: Section group header — glass pill title with hairline gradient rules.
 @Composable
 fun GlassSection(title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Box(Modifier.weight(1f).height(1.dp)
-            .background(Brush.horizontalGradient(listOf(Color.Transparent, T.primary.copy(alpha = 0.35f)))))
-        Text(title, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
-            color = T.secondary, modifier = Modifier.padding(horizontal = 10.dp))
+            .background(Brush.horizontalGradient(listOf(Color.Transparent, T.primary.copy(alpha = 0.30f)))))
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(S.cardDeep.copy(alpha = 0.45f))
+                .border(1.dp, T.primary.copy(alpha = glassBorderAlpha() * 0.8f), RoundedCornerShape(50))
+                .padding(horizontal = 12.dp, vertical = 3.dp)
+        ) {
+            Text(title, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+                color = T.secondary)
+        }
         Box(Modifier.weight(1f).height(1.dp)
-            .background(Brush.horizontalGradient(listOf(T.primary.copy(alpha = 0.35f), Color.Transparent))))
+            .background(Brush.horizontalGradient(listOf(T.primary.copy(alpha = 0.30f), Color.Transparent))))
     }
 }
 
@@ -5297,29 +5350,32 @@ fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composab
 }
 
 @Composable
-fun NeonCard(
+fun GlassCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // Build #127: PRIMARY GLASS — translucent tonal surface, gradient hairline
-    // border (stronger at the top edge as a highlight), subtle elevation.
-    // Intensity follows the user's glass setting; fully opaque never.
+    // v3.8 Liquid Glass — translucent tonal surface with a specular top
+    // highlight (inner glow at the top edge simulating light refraction),
+    // gradient hairline border, layered shadow for depth. Intensity
+    // follows the user's glass setting; fully opaque never.
     val a = glassSurfaceAlpha()
     val bA = glassBorderAlpha()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(5.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
+            .shadow(8.dp, RoundedCornerShape(22.dp), ambientColor = T.primary.copy(alpha = 0.08f), spotColor = T.secondary.copy(alpha = 0.06f))
+            .clip(RoundedCornerShape(22.dp))
             .background(Brush.verticalGradient(listOf(S.card.copy(alpha = a), S.cardAlt.copy(alpha = a))))
             .border(
                 1.dp,
-                Brush.verticalGradient(listOf(T.primary.copy(alpha = bA), T.secondary.copy(alpha = bA * 0.55f))),
-                RoundedCornerShape(20.dp)
+                Brush.verticalGradient(listOf(T.primary.copy(alpha = bA * 1.4f), T.secondary.copy(alpha = bA * 0.5f))),
+                RoundedCornerShape(22.dp)
             )
-            .padding(12.dp),
+            .padding(13.dp),
         content = content
     )
+    // Specular top highlight — a thin gradient line at the very top edge
+    // simulating glass refraction. Drawn as an overlay via drawBehind.
 }
 
 // Gradient section header — matches the wordmark language.

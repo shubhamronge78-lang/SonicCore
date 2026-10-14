@@ -33,7 +33,7 @@ import com.neon.eq.dsp.NeonDsp
  * → AudioRecord → native NeonDsp → AudioTrack → selected output device.
  *
  * HONEST LIMIT (shown in the UI, never hidden): Android may continue playing
- * the original signal while NeonEQ outputs the processed signal. No public
+ * the original signal while SonicCore outputs the processed signal. No public
  * API lets one app silence or redirect another app's playback. DRM content,
  * calls, and apps that opt out of capture are excluded by Android itself.
  *

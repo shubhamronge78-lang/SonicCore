@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Base44 preview server for the SonicCore/NeonEQ Android project.
+Base44 preview server for the SonicCore Equalizer Android project.
 
 This is an Android audio EQ app — it cannot run in a browser.  The preview
 server compiles and runs the native C++ DSP self-test harness (the same
@@ -146,7 +146,7 @@ def _render_page():
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SonicCore v146 — NeonEQ DSP Build Status</title>
+<title>SonicCore Equalizer v3.8.0 — DSP Build Status</title>
 <style>
   :root {{ --bg:#0a0a0f; --card:#15151f; --text:#e0e0e0; --dim:#888; --accent:#00e5ff; }}
   * {{ box-sizing:border-box; margin:0; padding:0; }}
@@ -180,8 +180,8 @@ def _render_page():
 </head>
 <body>
   <header>
-    <h1>🎧 SonicCore v146 — NeonEQ</h1>
-    <div class="subtitle">Audio Engine PRO · Native DSP Self-Test (ASan + UBSan)</div>
+    <h1>🎧 SonicCore Equalizer v3.8.0</h1>
+    <div class="subtitle">Liquid Glass Edition · Native DSP Self-Test (ASan + UBSan)</div>
     <div class="status-badge">{status_label}</div>
   </header>
 
@@ -194,9 +194,10 @@ def _render_page():
   <div class="info">
     <strong>Project:</strong> Android system-wide audio equalizer (Kotlin + native C++ DSP)<br>
     <strong>Build target:</strong> <code>tools/dspharness/harness.cpp</code> → includes real <code>neondsp.cpp</code><br>
-    <strong>What this proves:</strong> The v146 limiter/compressor gain-reduction fix compiles and passes all
-    numerical correctness, stability, and stress tests. The limiter is now transparent below the ceiling
-    (exact unity, measured) and the compressor no longer crushes below-threshold material.
+    <strong>What this proves:</strong> The native DSP chain (preamp → PEQ → graphic EQ → shelves →
+    compressor → stereo → convolver → limiter) compiles and passes all numerical correctness,
+    stability, and stress tests. The v146 limiter/compressor gain-reduction fix is verified:
+    transparent below ceiling (exact unity, measured), no below-threshold crushing.
   </div>
 
   <div class="actions">
@@ -208,7 +209,7 @@ def _render_page():
   {raw_output}
 
   <footer>
-    SonicCore v146 (3.6.0) · NeonEQ · Native DSP harness ·
+    SonicCore Equalizer v3.8.0 · Native DSP harness ·
     Built at {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(s.get("built_at", 0))) if s.get("built_at") else "—"}
   </footer>
 </body>

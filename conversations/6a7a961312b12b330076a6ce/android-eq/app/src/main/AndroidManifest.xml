@@ -15,7 +15,7 @@
         android:label="SonicCore"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:theme="@style/Theme.NeonEQ"
+        android:theme="@style/Theme.SonicCore"
         android:supportsRtl="true">
 
         <activity

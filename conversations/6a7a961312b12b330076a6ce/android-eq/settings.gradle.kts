@@ -12,5 +12,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NeonEQ"
+rootProject.name = "SonicCore"
 include(":app")
