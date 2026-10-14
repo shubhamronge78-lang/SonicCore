@@ -211,12 +211,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _serve_page(self):
         results = _get_results()
         page = _render_page(results)
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(page.encode())))
-        self.end_headers()
-        if self.command == "GET":
-            self.wfile.write(page.encode())
+        body = page.encode()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command == "GET":
+                self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client closed early (health-check proxy) — not an error
 
     def do_GET(self):
         self._serve_page()
