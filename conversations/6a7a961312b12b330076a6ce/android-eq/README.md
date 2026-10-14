@@ -8,7 +8,10 @@ A system-wide audio equalizer for Android with a premium Liquid Glass UI and nat
 - 🎵 **10 built-in presets** — Flat, Bass Boost, Rock, Pop, Jazz, EDM, Classical, Dance, Bass Extreme, Treble Boost
 - ✏️ **Custom presets** — create, rename, duplicate, reorder, update, delete, share & import (JSON); auto-apply last preset on startup
 - 🎯 **Per-app audio profiles** — auto-switch preset based on which app is playing (see v54 below)
-- 📊 **Selectable bands** — 5, 10, 15, or 31-band equalizer
+- 📊 **Selectable bands** — 10, 15, or 31-band graphic equalizer
+- 🔧 **8-slot parametric EQ** — per-slot frequency, gain (slider), Q; integrated in one continuous workspace with the graphic EQ
+- ↩️ **Undo/Redo** — up to 30 DSP state snapshots; A/B bypass; reset EQ and reset band
+- ⭐ **Preset favorites** — star, recent, search, and filter presets
 - 🔊 **Bass Boost** (0–300, speaker-safe range with preamp compensation)
 - 🎧 **3D Sound / Virtualizer** (0–300)
 - 📈 **Loudness Enhancer / Volume Booster** (0–300)
@@ -19,6 +22,29 @@ A system-wide audio equalizer for Android with a premium Liquid Glass UI and nat
 - 📳 **Haptic fine-tuning** — feel a tick at every dB step while dragging bands
 - 🔧 **Foreground service** — keeps EQ running in background
 - ⚡ **On/off toggle** switch
+
+## 🆕 What's New in v3.8.0 — Liquid Glass Redesign + Full Rebranding
+
+### 🎨 Liquid Glass UI
+- Enhanced `GlassCard` with specular top highlight, colored ambient/spot shadow, gradient hairline borders
+- Layered atmospheric light fields in the background for console depth
+- Premium PEQ slot editing with gain sliders, glass-styled slot rows, and labeled FREQ/GAIN/Q sections
+- `SCMark` monogram with inner specular highlight
+- `GlassButton` with pressed-state spring animation
+- `GlassSection` with glass pill titles and gradient rules
+
+### 🏷️ SonicCore Equalizer Rebranding
+- All user-facing "NeonEQ" / "Neon EQ" references renamed to "SonicCore Equalizer"
+- App launcher label, notification text, widget title, tile label updated
+- Internal package names, JNI symbols, preset format keys, storage keys preserved for compatibility
+
+### 🔧 Preserved
+- All native C++ DSP algorithms, processing order, parameter synchronization
+- AudioPlaybackCapture pipeline (no-root, no Shizuku, no private APIs)
+- Lock-free/atomic parameter updates, meter safety fixes, band-map protections
+- All existing unit tests and native DSP harness (23 sections, 66 assertions)
+
+---
 
 ## 🆕 What's New in Build #54
 

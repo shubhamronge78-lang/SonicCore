@@ -9,12 +9,13 @@
 - Internal package names, JNI symbols, preset format keys, storage keys preserved for compatibility
 
 ### UI — Liquid Glass Redesign
-- Enhanced `GlassCard`: deeper shadow with colored ambient/spot lighting, gradient hairline border with stronger top highlight, 22dp corner radius
+- Enhanced `GlassCard`: deeper shadow with colored ambient/spot lighting, gradient hairline border with stronger top highlight, 22dp corner radius, completed specular top highlight via `drawBehind` (glass refraction effect at the top edge)
 - Enhanced `GlassBackground`: positioned atmospheric light fields (primary upper-left, secondary upper-right, accent lower-center) for console depth
 - Enhanced `GlassSection`: glass pill background behind section titles with hairline gradient rules
 - Enhanced power button: layered glass rings with outer halo, specular top highlight when active
 - Enhanced `SCMark`: inner specular highlight for glass curvature effect
 - Enhanced `GlassButton`: pressed-state scale animation with spring physics, gradient border
+- Enhanced PEQ slot editing: glass-styled slot rows with gain sliders (replacing +/- buttons), labeled FREQ/GAIN/Q sections, monospace numeric display, per-slot enable toggle with visual state
 - Header now shows "SONICCORE EQUALIZER" with gradient wordmark
 - Subtitle includes version number (v3.8.0)
 

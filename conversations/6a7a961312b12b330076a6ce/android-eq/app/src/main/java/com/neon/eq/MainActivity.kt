@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
@@ -2690,25 +2691,92 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     dspP.save(engine)
                     bump()
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    miniBtn("P" + (idx + 1) + if (slot.on) " ✓" else "",
-                        { setSlot(slot.copy(on = !slot.on)) },
-                        slot.on)
-                    miniBtn("F−", {
-                        val i2 = (peqFreqs.indexOfFirst { it >= fq } - 1).coerceAtLeast(0)
-                        setSlot(slot.copy(freq = peqFreqs[i2]))
-                    })
-                    miniBtn("F+", {
-                        val i2 = (peqFreqs.indexOfFirst { it >= fq } + 1).coerceAtMost(peqFreqs.size - 1)
-                        setSlot(slot.copy(freq = peqFreqs[i2]))
-                    })
-                    Text((if (fq >= 1000) (fq / 1000).toInt().toString() + "k" else fq.toInt().toString()) + "Hz", fontSize = 9.sp, color = T.secondary, modifier = Modifier.width(44.dp))
-                    miniBtn("G−", { setSlot(slot.copy(gain = (slot.gain - 3f).coerceIn(-30f, 30f))) })
-                    miniBtn("G+", { setSlot(slot.copy(gain = (slot.gain + 3f).coerceIn(-30f, 30f))) })
-                    Text((if (slot.gain >= 0) "+" else "") + slot.gain.toInt() + "dB", fontSize = 9.sp, color = T.secondary, modifier = Modifier.width(44.dp))
-                    miniBtn("Q−", { setSlot(slot.copy(q = (slot.q / 2f).coerceAtLeast(0.25f))) })
-                    miniBtn("Q+", { setSlot(slot.copy(q = (slot.q * 2f).coerceAtMost(10f))) })
+                // v3.8: Premium PEQ slot — glass-styled row with gain slider
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(S.cardDeep.copy(alpha = if (slot.on) 0.45f else 0.22f))
+                        .border(1.dp, (if (slot.on) T.primary else T.secondary).copy(alpha = if (slot.on) 0.25f else 0.08f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    // Slot enable toggle
+                    Text(
+                        "P" + (idx + 1),
+                        fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        color = if (slot.on) T.primary else T.secondary,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background((if (slot.on) T.primary else T.secondary).copy(alpha = if (slot.on) 0.15f else 0.08f))
+                            .clickable { setSlot(slot.copy(on = !slot.on)) }
+                            .semantics { contentDescription = "Toggle parametric slot " + (idx + 1) }
+                            .wrapContentSize(Alignment.Center)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    // Frequency stepper
+                    Column(modifier = Modifier.width(56.dp)) {
+                        Text("FREQ", fontSize = 7.sp, color = T.secondary, letterSpacing = 1.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("−", fontSize = 12.sp, color = T.secondary,
+                                modifier = Modifier.clickable {
+                                    val i2 = (peqFreqs.indexOfFirst { it >= fq } - 1).coerceAtLeast(0)
+                                    setSlot(slot.copy(freq = peqFreqs[i2]))
+                                }.padding(horizontal = 4.dp))
+                            Text(
+                                if (fq >= 1000) (fq / 1000).toInt().toString() + "k" else fq.toInt().toString(),
+                                fontSize = 10.sp, color = if (slot.on) T.primary else T.secondary,
+                                modifier = Modifier.weight(1f), textAlign = TextAlign.Center
+                            )
+                            Text("+", fontSize = 12.sp, color = T.secondary,
+                                modifier = Modifier.clickable {
+                                    val i2 = (peqFreqs.indexOfFirst { it >= fq } + 1).coerceAtMost(peqFreqs.size - 1)
+                                    setSlot(slot.copy(freq = peqFreqs[i2]))
+                                }.padding(horizontal = 4.dp))
+                        }
+                        Text("Hz", fontSize = 7.sp, color = T.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // Gain slider — the primary interactive widget
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("GAIN", fontSize = 7.sp, color = T.secondary, letterSpacing = 1.sp)
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                (if (slot.gain >= 0) "+" else "") + "%.1f".format(slot.gain) + " dB",
+                                fontSize = 10.sp, color = if (slot.on) T.primary else T.secondary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Slider(
+                            value = slot.gain,
+                            onValueChange = { setSlot(slot.copy(gain = it)) },
+                            valueRange = -30f..30f,
+                            enabled = slot.on,
+                            modifier = Modifier.fillMaxWidth().height(28.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = T.primary,
+                                activeTrackColor = T.primary.copy(alpha = 0.6f),
+                                inactiveTrackColor = T.secondary.copy(alpha = 0.2f)
+                            )
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // Q stepper
+                    Column(modifier = Modifier.width(48.dp)) {
+                        Text("Q", fontSize = 7.sp, color = T.secondary, letterSpacing = 1.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("−", fontSize = 12.sp, color = T.secondary,
+                                modifier = Modifier.clickable { setSlot(slot.copy(q = (slot.q / 2f).coerceAtLeast(0.25f))) }.padding(horizontal = 4.dp))
+                            Text("%.2f".format(slot.q), fontSize = 9.sp, color = if (slot.on) T.primary else T.secondary,
+                                modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+                            Text("+", fontSize = 12.sp, color = T.secondary,
+                                modifier = Modifier.clickable { setSlot(slot.copy(q = (slot.q * 2f).coerceAtMost(10f))) }.padding(horizontal = 4.dp))
+                        }
+                    }
                 }
+                if (idx < 7) Spacer(Modifier.height(4.dp))
             }
             Text(
                 (if (dspVer < 0) "" else "") + "native: " + (if (NeonDsp.available) "loaded" else "unavailable"),
@@ -5366,6 +5434,25 @@ fun GlassCard(
             .shadow(8.dp, RoundedCornerShape(22.dp), ambientColor = T.primary.copy(alpha = 0.08f), spotColor = T.secondary.copy(alpha = 0.06f))
             .clip(RoundedCornerShape(22.dp))
             .background(Brush.verticalGradient(listOf(S.card.copy(alpha = a), S.cardAlt.copy(alpha = a))))
+            .drawBehind {
+                // v3.8: Specular top highlight — a thin gradient line at the
+                // very top edge simulating glass refraction. Intensity scales
+                // with the glass setting; invisible at LOW, subtle at HIGH.
+                val h = 2.dp.toPx()
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = bA * 1.6f),
+                            Color.Transparent
+                        ),
+                        startX = size.width * 0.15f,
+                        endX = size.width * 0.85f
+                    ),
+                    topLeft = Offset.Zero,
+                    size = Size(size.width, h)
+                )
+            }
             .border(
                 1.dp,
                 Brush.verticalGradient(listOf(T.primary.copy(alpha = bA * 1.4f), T.secondary.copy(alpha = bA * 0.5f))),
@@ -5374,8 +5461,6 @@ fun GlassCard(
             .padding(13.dp),
         content = content
     )
-    // Specular top highlight — a thin gradient line at the very top edge
-    // simulating glass refraction. Drawn as an overlay via drawBehind.
 }
 
 // Gradient section header — matches the wordmark language.
