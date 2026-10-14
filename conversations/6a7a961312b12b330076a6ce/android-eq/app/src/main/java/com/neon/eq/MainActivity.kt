@@ -158,13 +158,6 @@ class MainActivity : ComponentActivity() {
                     .getString("glass", "1")?.toIntOrNull() ?: 1).coerceIn(0, 2)
         } catch (_: Throwable) { }
 
-        // v147: restore unified console theme (overrides the three above if set)
-        // and apply blur fallback for low-RAM devices.
-        try {
-            restoreConsoleTheme(this)
-            applyBlurFallback(this)
-        } catch (_: Throwable) { }
-
         val perms = mutableListOf(Manifest.permission.MODIFY_AUDIO_SETTINGS, Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             perms.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -337,9 +330,8 @@ object SurfaceModes {
 @Composable
 fun GlassBackground() {
     val glow = when (appGlassState.value) { 0 -> 0.030f; 2 -> 0.085f; else -> 0.055f }
-    val isAurora = appConsoleThemeState.value.aurora
     Box(modifier = Modifier.fillMaxSize()) {
-        if (appModeState.value == SurfaceModes.DARK || isAurora) {
+        if (appModeState.value == SurfaceModes.DARK) {
             // extremely subtle atmospheric light fields — never bright, static
             Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
                 .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow), Color.Transparent))))
@@ -347,13 +339,6 @@ fun GlassBackground() {
                 .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow * 0.8f), Color.Transparent))))
             Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.5f)
                 .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow * 0.6f), Color.Transparent))))
-            // Aurora theme: extra multicolor gradient blooms for the aurora effect
-            if (isAurora) {
-                Box(Modifier.fillMaxWidth(0.7f).fillMaxHeight(0.45f)
-                    .background(Brush.radialGradient(listOf(Color(0xFF69F0AE).copy(alpha = glow * 0.5f), Color.Transparent))))
-                Box(Modifier.fillMaxWidth(0.6f).fillMaxHeight(0.6f)
-                    .background(Brush.radialGradient(listOf(Color(0xFFFF80AB).copy(alpha = glow * 0.4f), Color.Transparent))))
-            }
         }
     }
 }
@@ -4777,11 +4762,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // ── v147: THEME STUDIO — four unified console themes ──
-                    ThemeStudioGrid()
-                    Spacer(Modifier.height(16.dp))
-                    // ── Performance Mode (UI effects only, DSP quality never changes) ──
+                    // ── Build #89: App theme ──
+                    val ctx = LocalContext.current
                     Column {
+                        Text("App Theme", fontSize = 14.sp, color = S.text)
+                        Text("Accent palette for the entire UI", fontSize = 11.sp, color = Color.Gray)
+                        Spacer(Modifier.height(12.dp))
                         Text("Performance Mode", fontSize = 14.sp, color = S.text)
                         Text("UI effects only — audio DSP quality never changes", fontSize = 11.sp, color = Color.Gray)
                         Spacer(Modifier.height(6.dp))
@@ -4801,6 +4787,40 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                         .clickable { perfSel = mode; OutputRoutes.setPerfMode(pctx, mode); outputTick++ }
                                         .padding(horizontal = 10.dp, vertical = 5.dp)
                                         .semantics { contentDescription = "Performance mode " + label })
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(10.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Themes.ALL.forEach { t ->
+                                val selected = appThemeState.value.id == t.id
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (selected) t.primary.copy(alpha = 0.12f) else S.cardDeep)
+                                        .border(1.dp, if (selected) t.primary else S.borderDim, RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            appThemeState.value = t
+                                            try {
+                                                ctx.getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
+                                                    .edit().putString("theme", t.id).apply()
+                                            } catch (_: Throwable) { }
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        listOf(t.primary, t.secondary, t.accent).forEach { c ->
+                                            Box(Modifier.size(14.dp).clip(CircleShape).background(c))
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                    }
+                                    Text(t.label, fontSize = 13.sp,
+                                        color = if (selected) t.primary else S.textSoft,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                                }
                             }
                         }
                     }
