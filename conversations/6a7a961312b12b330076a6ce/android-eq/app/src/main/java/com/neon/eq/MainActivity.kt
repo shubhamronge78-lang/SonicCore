@@ -2463,7 +2463,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Spacer(Modifier.height(8.dp))
             Text("PROCESSING CHAIN", fontSize = 11.sp, color = T.accent)
             Spacer(Modifier.height(2.dp))
-            val stBase = remember { try { DspParams.load(engine) } catch (_: Throwable) { DspParams() } }
+            var stBase by remember { mutableStateOf(try { DspParams.load(engine) } catch (_: Throwable) { DspParams() }) }
             var stOn by remember { mutableStateOf(mapOf(
                 "preamp" to true, "graphic" to true, "parametric" to true, "bass" to true,
                 "treble" to true, "comp" to stBase.compOn, "stereo" to true,
@@ -2505,7 +2505,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 "bass" to "BASS SHELF · " + "%+.1f dB".format(stBase.bass),
                 "treble" to "TREBLE SHELF · " + "%+.1f dB".format(stBase.treble),
                 "stereo" to "STEREO · " + "%.0f%%".format(stBase.width * 100),
-                "crossfeed" to "CROSSFEED · " + (if (stOn["crossfeed"] == true) "%.0f%%".format(stBase.crossfeedAmount * 200) else "off"),
+                "crossfeed" to "CROSSFEED · " + (if (stOn["crossfeed"] == true) "%.0f%%".format(stBase.crossfeedAmount * 100) else "off"),
                 "comp" to "COMPRESSOR · " + if (stOn["comp"] == true) "ON" else "off" +
                     (if (stBase.compKnee > 0f) " · knee " + "%.0f".format(stBase.compKnee) + "dB" else "") +
                     (if (stBase.compMakeup > 0f) " · makeup +" + "%.0f".format(stBase.compMakeup) + "dB" else ""),
@@ -2570,6 +2570,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         "stereo" -> curParams.width
                         "comp" -> curParams.compThresh
                         "limiter" -> curParams.limThresh
+                        "crossfeed" -> curParams.crossfeedAmount
                         else -> 0f
                     })
                 }
@@ -2579,6 +2580,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         mutate(p)
                         p.applyTo(NeonDsp)
                         p.save(engine)
+                        // Build #148: re-read the committed params so the rack
+                        // labels show what was just applied, not the stale snapshot.
+                        stBase = DspParams.load(engine)
                     } catch (_: Throwable) { }
                 }
                 AlertDialog(
@@ -2595,6 +2599,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 "stereo" -> { Text("Stereo width", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = 0.5f..2f, onValueChangeFinished = { pushUndo(true, "Stereo"); stApply { it.width = stVal } }); Text("%.0f%%".format(stVal * 100), fontSize = 12.sp, color = T.primary) }
                                 "comp" -> { Text("Compressor threshold (the only control the native engine exposes)", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = -48f..0f, onValueChangeFinished = { pushUndo(true, "Compressor"); stApply { it.compThresh = stVal; it.compOn = true } }); Text("%.0f dB".format(stVal), fontSize = 12.sp, color = T.primary) }
                                 "limiter" -> { Text("Limiter threshold (the only control the native engine exposes)", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = -18f..0f, onValueChangeFinished = { pushUndo(true, "Limiter"); stApply { it.limThresh = stVal; it.limiterOn = true } }); Text("%.1f dB".format(stVal), fontSize = 12.sp, color = T.primary) }
+                                "crossfeed" -> { Text("Crossfeed amount — how much of the opposite channel's low-passed signal is blended in (head-shadow). 0% is exact unity.", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = 0f..1f, onValueChangeFinished = { pushUndo(true, "Crossfeed"); stApply { it.crossfeedAmount = stVal; it.crossfeedOn = true } }); Text("%.0f%%".format(stVal * 100), fontSize = 12.sp, color = T.primary) }
                                 "parametric" -> Text("Parametric slots are edited in the DSP CHAIN card below — no duplicated controls here.", fontSize = 10.sp, color = T.secondary)
                                 "graphic" -> Text("Graphic bands are dragged on the EQ tab — no duplicated controls here.", fontSize = 10.sp, color = T.secondary)
                             }
@@ -2612,6 +2617,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                         "stereo" -> it.width = 1f
                                         "comp" -> { it.compOn = false }
                                         "limiter" -> { it.limThresh = -1f; it.limiterOn = true }
+                                        "crossfeed" -> { it.crossfeedAmount = 0f }
                                     }
                                 }
                                 stEdit = null
@@ -3312,7 +3318,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }.getOrDefault("not available") else "not available") + "\n" +
                 "CROSSFEED: " + (if (NeonDsp.available) runCatching {
                     val cf = DspParams.load(engine)
-                    (if (cf.crossfeedOn) "ON · " + "%.0f%%".format(cf.crossfeedAmount * 200) else "off")
+                    (if (cf.crossfeedOn) "ON · " + "%.0f%%".format(cf.crossfeedAmount * 100) else "off")
                 }.getOrDefault("not available") else "not available") +
                 " · DSP BLOCK: " + (if (NeonDsp.available) runCatching { NeonDsp.dspProcUs().toString() + "µs" }.getOrDefault("—") else "—") +
                 " · CFG v" + (if (NeonDsp.available) runCatching { NeonDsp.paramVersion().toString() }.getOrDefault("—") else "—") +
