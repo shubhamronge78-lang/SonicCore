@@ -621,6 +621,154 @@ int main() {
         CHECK(Java_com_neon_eq_dsp_NeonDsp_processedFrames(&env, thiz) > 2500L * 480L, "frames counter advanced through the stress run");
     }
 
+    printf("[24] v147: HEADPHONE CROSSFEED — unity at 0, head-shadow at 1, finite under churn\n");
+    {
+        Java_com_neon_eq_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+        static jshort pr[480 * 2];
+        jshortArray pbuf = (jshortArray) &g_hostArrays[hostReg(pr, 480 * 2, 0)];
+        auto probeGain = [&](double freq, double amp) {
+            double inE = 0.0, outE = 0.0;
+            for (int b = 0; b < 50; b++) {
+                for (int i = 0; i < 480; i++) { double v = amp * sin(2*M_PI*freq*(b*480+i)/SR); pr[2*i]=(jshort)v; pr[2*i+1]=(jshort)v; }
+                Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, pbuf, 480);
+                if (b >= 35) for (int i = 0; i < 480; i++) {
+                    double s = amp * sin(2*M_PI*freq*(b*480+i)/SR);
+                    inE += 2.0 * s * s;
+                    double ol = pr[2*i], orr = pr[2*i+1];
+                    if (!isfinite(ol) || !isfinite(orr)) return 999.0;
+                    outE += ol*ol + orr*orr;
+                }
+            }
+            return 10.0 * log10(outE / inE);
+        };
+        /* crossfeed OFF: exact unity */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_FALSE, 0.0f);
+        double u = probeGain(1000.0, 8000.0);
+        CHECK(u > -0.3 && u < 0.3, "crossfeed OFF: exact unity");
+        /* crossfeed ON at amount=0: still unity (0 amount = no blend) */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_TRUE, 0.0f);
+        double u0 = probeGain(1000.0, 8000.0);
+        CHECK(u0 > -0.3 && u0 < 0.3, "crossfeed ON amount=0: exact unity");
+        /* crossfeed ON at amount=1, mono signal (L==R): output is the
+           low-passed signal. Below 700 Hz LP cutoff -> ~0 dB; well above ->
+           significantly attenuated (head-shadow effect). */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_TRUE, 1.0f);
+        double low = probeGain(100.0, 8000.0);
+        double high = probeGain(8000.0, 8000.0);
+        CHECK(low > -3.0 && low < 3.0, "crossfeed amount=1 @ 100 Hz: ~unity (LF passes through)");
+        CHECK(high < -6.0, "crossfeed amount=1 @ 8 kHz: HF attenuated (head shadow)");
+        /* crossfeed with phase-offset stereo signal: finite and bounded */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_TRUE, 0.5f);
+        bool ok = true;
+        for (int b = 0; b < 60; b++) {
+            for (int i = 0; i < 480; i++) {
+                double t = (b*480+i)/(double)SR;
+                double vL = 10000.0 * sin(2*M_PI*500.0*t);
+                double vR = 10000.0 * sin(2*M_PI*500.0*t + 2.0);
+                pr[2*i]=(jshort)vL; pr[2*i+1]=(jshort)vR;
+            }
+            Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, pbuf, 480);
+            for (int i = 0; i < 960; i++) { double s = pr[i]; if (!std::isfinite(s) || s > 32767 || s < -32768) ok = false; }
+        }
+        CHECK(ok, "crossfeed stereo 0.5: bounded, finite, no clipping");
+        CHECK(Java_com_neon_eq_dsp_NeonDsp_nanCount(&env, thiz) == 0, "crossfeed: no NaN");
+        /* disable: unity restored */
+        Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, JNI_FALSE, 0.0f);
+        double back = probeGain(1000.0, 8000.0);
+        CHECK(back > -0.3 && back < 0.3, "crossfeed disable: unity restored");
+    }
+
+    printf("[25] v147: COMPRESSOR soft knee + makeup gain\n");
+    {
+        Java_com_neon_eq_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+        static jshort pr[480 * 2];
+        jshortArray pbuf = (jshortArray) &g_hostArrays[hostReg(pr, 480 * 2, 0)];
+        auto measureGain = [&](double freq, double amp) {
+            double inE = 0.0, outE = 0.0;
+            for (int b = 0; b < 50; b++) {
+                for (int i = 0; i < 480; i++) { double v = amp * sin(2*M_PI*freq*(b*480+i)/SR); pr[2*i]=(jshort)v; pr[2*i+1]=(jshort)v; }
+                Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, pbuf, 480);
+                if (b >= 35) for (int i = 0; i < 480; i++) {
+                    double s = amp * sin(2*M_PI*freq*(b*480+i)/SR);
+                    inE += 2.0 * s * s; double ol = pr[2*i], orr = pr[2*i+1];
+                    if (!isfinite(ol) || !isfinite(orr)) return 999.0;
+                    outE += ol*ol + orr*orr;
+                }
+            }
+            return 10.0 * log10(outE / inE);
+        };
+        /* knee=0 → hard knee = v146 behavior (unity below, reduction above) */
+        Java_com_neon_eq_dsp_NeonDsp_setLimiter(&env, thiz, JNI_FALSE, -1.0f);
+        Java_com_neon_eq_dsp_NeonDsp_setCompressor(&env, thiz, JNI_TRUE, -12.0f, 4.0f, 5.0f, 150.0f);
+        Java_com_neon_eq_dsp_NeonDsp_setCompressorKnee(&env, thiz, 0.0f);
+        double hardBelow = measureGain(1000.0, 1000.0);   // ~-30dBFS, below threshold
+        CHECK(hardBelow > -0.3 && hardBelow < 0.3, "knee=0: below threshold = EXACT unity");
+        double hardAbove = measureGain(1000.0, 16000.0);  // ~-6dBFS, above threshold
+        CHECK(hardAbove > -6.0 && hardAbove < -1.0, "knee=0: above threshold = bounded reduction (hard knee)");
+        /* soft knee=6 → smoother transition, less reduction just above threshold */
+        Java_com_neon_eq_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+        Java_com_neon_eq_dsp_NeonDsp_setLimiter(&env, thiz, JNI_FALSE, -1.0f);
+        Java_com_neon_eq_dsp_NeonDsp_setCompressor(&env, thiz, JNI_TRUE, -12.0f, 4.0f, 5.0f, 150.0f);
+        Java_com_neon_eq_dsp_NeonDsp_setCompressorKnee(&env, thiz, 6.0f);
+        double softBelow = measureGain(1000.0, 1000.0);   // below knee
+        CHECK(softBelow > -0.3 && softBelow < 0.3, "knee=6: below knee = EXACT unity");
+        double softAbove = measureGain(1000.0, 16000.0);  // above knee
+        CHECK(softAbove > -6.0 && softAbove < 0.5, "knee=6: above threshold = bounded (soft knee ≤ hard knee reduction)");
+        /* soft knee should reduce LESS than hard knee near the threshold edge */
+        CHECK(softAbove >= hardAbove - 0.1, "soft knee: less or equal reduction vs hard knee");
+        /* makeup gain: comp ON below threshold (no compression, makeup applies) */
+        Java_com_neon_eq_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+        Java_com_neon_eq_dsp_NeonDsp_setLimiter(&env, thiz, JNI_FALSE, -1.0f);
+        Java_com_neon_eq_dsp_NeonDsp_setCompressor(&env, thiz, JNI_TRUE, -18.0f, 4.0f, 5.0f, 150.0f);
+        Java_com_neon_eq_dsp_NeonDsp_setCompressorMakeup(&env, thiz, 0.0f);
+        double makeup0 = measureGain(1000.0, 1000.0);   // below threshold, makeup=0
+        CHECK(makeup0 > -0.3 && makeup0 < 0.3, "makeup=0, comp ON below threshold: EXACT unity");
+        Java_com_neon_eq_dsp_NeonDsp_setCompressorMakeup(&env, thiz, 6.0f);
+        double makeup6 = measureGain(1000.0, 1000.0);   // below threshold, makeup=+6
+        CHECK(makeup6 > 5.0 && makeup6 < 7.5, "makeup=+6dB, comp ON below threshold: ~+6 dB boost");
+        /* comp OFF → entire module bypassed including makeup */
+        Java_com_neon_eq_dsp_NeonDsp_setCompressor(&env, thiz, JNI_FALSE, -18.0f, 4.0f, 5.0f, 150.0f);
+        double makeupBypassed = measureGain(1000.0, 1000.0);
+        CHECK(makeupBypassed > -0.3 && makeupBypassed < 0.3, "comp OFF: makeup bypassed (unity)");
+        Java_com_neon_eq_dsp_NeonDsp_setLimiter(&env, thiz, JNI_TRUE, -1.0f);
+        CHECK(Java_com_neon_eq_dsp_NeonDsp_nanCount(&env, thiz) == 0, "knee/makeup tests: no NaN");
+    }
+
+    printf("[26] v147: FLAT CONFIG with new features at defaults = TRUE UNITY\n");
+    {
+        Java_com_neon_eq_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+        static jshort pr[480 * 2];
+        jshortArray pbuf = (jshortArray) &g_hostArrays[hostReg(pr, 480 * 2, 0)];
+        /* All new features at defaults: crossfeed off, knee=0, makeup=0.
+           The flat config must still be exact unity. */
+        double inE = 0.0, outE = 0.0;
+        for (int b = 0; b < 45; b++) {
+            for (int i = 0; i < 480; i++) { double v = 8200.0 * sin(2*M_PI*1000.0*(b*480+i)/SR); pr[2*i]=(jshort)v; pr[2*i+1]=(jshort)v; }
+            Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, pbuf, 480);
+            if (b >= 30) for (int i = 0; i < 480; i++) {
+                double s = 8200.0 * sin(2*M_PI*1000.0*(b*480+i)/SR);
+                inE += 2.0 * s * s; outE += (double)pr[2*i]*(double)pr[2*i] + (double)pr[2*i+1]*(double)pr[2*i+1];
+            }
+        }
+        double gainDb = 10.0 * log10(outE / inE);
+        CHECK(gainDb > -0.15 && gainDb < 0.15, "v147 defaults: flat config unity within 0.15dB");
+        /* rapid churn with new features toggled — no NaN, no instability */
+        srand(147);
+        bool bad = false;
+        for (int b = 0; b < 300; b++) {
+            Java_com_neon_eq_dsp_NeonDsp_setCrossfeed(&env, thiz, (b % 2) ? JNI_TRUE : JNI_FALSE, (float)(rand() % 50) / 100.0);
+            Java_com_neon_eq_dsp_NeonDsp_setCompressorKnee(&env, thiz, (float)(rand() % 120) / 10.0);
+            Java_com_neon_eq_dsp_NeonDsp_setCompressorMakeup(&env, thiz, (float)(rand() % 240) / 10.0);
+            Java_com_neon_eq_dsp_NeonDsp_setCompressor(&env, thiz, (b % 2) ? JNI_TRUE : JNI_FALSE, -18.0f, 4.0f, 5.0f, 150.0f);
+            for (int i = 0; i < 480; i++) { double v = 10000.0 * sin(2*M_PI*440.0*(b*480+i)/SR); pr[2*i]=(jshort)v; pr[2*i+1]=(jshort)v; }
+            Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, pbuf, 480);
+            for (int i = 0; i < 960; i++) { double s = pr[i]; if (!isfinite(s) || s > 32767 || s < -32768) { bad = true; break; } }
+            if (bad) break;
+        }
+        CHECK(!bad, "v147 churn: crossfeed+knee+makeup rapid toggle, no NaN/overflow");
+        CHECK(Java_com_neon_eq_dsp_NeonDsp_nanCount(&env, thiz) == 0, "v147 churn: no NaN");
+    }
+
     printf("\n%s (%d failures)\n", fails ? "HARNESS FAIL" : "HARNESS PASS", fails);
     return fails ? 1 : 0;
 }

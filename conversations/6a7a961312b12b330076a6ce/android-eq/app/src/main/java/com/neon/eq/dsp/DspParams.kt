@@ -23,6 +23,10 @@ class DspParams {
     var swap = false
     var compOn = false
     var compThresh = -18f
+    var compKnee = 0f
+    var compMakeup = 0f
+    var crossfeedOn = false
+    var crossfeedAmount = 0f
     var limiterOn = true
     var limThresh = -1f
     var slots = List(8) { PeqSlot() }
@@ -33,6 +37,9 @@ class DspParams {
             dsp.setShelves(bass, treble)
             dsp.setStereo(width, balance, swap, mono)
             dsp.setCompressor(compOn, compThresh, 4f, 5f, 150f)
+            dsp.setCompressorKnee(compKnee)
+            dsp.setCompressorMakeup(compMakeup)
+            dsp.setCrossfeed(crossfeedOn, crossfeedAmount)
             dsp.setLimiter(limiterOn, limThresh)
             slots.forEachIndexed { i, s -> dsp.setParametric(i, s.on, s.freq, s.gain, s.q) }
         } catch (_: Throwable) { }
@@ -45,6 +52,8 @@ class DspParams {
             o.put("width", width.toDouble()); o.put("balance", balance.toDouble())
             o.put("mono", mono); o.put("swap", swap)
             o.put("compOn", compOn); o.put("compThresh", compThresh.toDouble())
+            o.put("compKnee", compKnee.toDouble()); o.put("compMakeup", compMakeup.toDouble())
+            o.put("crossfeedOn", crossfeedOn); o.put("crossfeedAmount", crossfeedAmount.toDouble())
             o.put("limiterOn", limiterOn); o.put("limThresh", limThresh.toDouble())
             val arr = JSONArray()
             slots.forEach { s ->
@@ -71,8 +80,13 @@ class DspParams {
                 p.swap = o.optBoolean("swap", false)
                 p.compOn = o.optBoolean("compOn", false)
                 p.compThresh = o.optDouble("compThresh", -18.0).toFloat().coerceIn(-60f, 0f)
+                p.compKnee = o.optDouble("compKnee", 0.0).toFloat().coerceIn(0f, 12f)
+                p.compMakeup = o.optDouble("compMakeup", 0.0).toFloat().coerceIn(0f, 24f)
+                p.crossfeedOn = o.optBoolean("crossfeedOn", false)
                 p.limiterOn = o.optBoolean("limiterOn", true)
                 p.limThresh = o.optDouble("limThresh", -1.0).toFloat().coerceIn(-60f, 0f)
+                p.crossfeedOn = o.optBoolean("crossfeedOn", false)
+                p.crossfeedAmount = o.optDouble("crossfeedAmount", 0.0).toFloat().coerceIn(0f, 1f)
                 val arr = o.optJSONArray("peq")
                 if (arr != null) {
                     val list = ArrayList<PeqSlot>()
