@@ -1,0 +1,86 @@
+# Base44 dev environment for the Neon EQ / SonicCore Android app.
+#
+# IMPORTANT — there is no web frontend or server anywhere in this repository.
+# The only project is an Android application (Kotlin + Jetpack Compose + native
+# C++ DSP) stored under conversations/<conversation-id>/android-eq, together
+# with the GitHub Actions workflows that build its APK.
+#
+# An Android app has no browser surface, so it cannot be rendered inside the
+# preview iframe. Instead this stack builds the app from the cloned source and
+# serves the result on host port 3000: a status page with the debug APK to
+# install on a phone, the Gradle unit-test report and the native DSP test log.
+#
+# Bring up:  docker compose -f docker-compose.base44.yml up -d --build
+# Progress:  docker compose -f docker-compose.base44.yml logs -f android-build
+
+services:
+  # User-facing entry point (host port 3000). Serves the static preview page
+  # plus everything the one-shot build services drop into ./build-output.
+  web:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      # index.html is mounted as a single file (not the whole directory) so that
+      # the sibling /download mountpoint below can still be created inside the
+      # image's own html root.
+      - ./.base44/preview/index.html:/usr/share/nginx/html/index.html:ro
+      - ./build-output:/usr/share/nginx/html/download:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: on-failure
+
+  # Native DSP host self-test — the project's own regression gate. Compiles the
+  # REAL production DSP (tools/dspharness/harness.cpp #includes neondsp.cpp)
+  # under ASan+UBSan and asserts the engine stays finite and bounded. Fast
+  # (seconds) and needs no Android SDK, so it is the quickest way to prove the
+  # audio engine still works.
+  dsp-test:
+    image: gcc:13
+    working_dir: /src
+    volumes:
+      - ./conversations/6a7a961312b12b330076a6ce/android-eq:/src
+      - ./build-output:/out
+    command:
+      - bash
+      - -ec
+      - |
+        set -o pipefail
+        g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+          -I tools/dspharness -I . tools/dspharness/harness.cpp \
+          -o /tmp/dsp_harness -lpthread
+        /tmp/dsp_harness 2>&1 | tee /out/dsp-test.log
+
+  # Builds the app from source: JVM unit tests, then the debug APK, then copies
+  # the artifacts where the web service can serve them. First run downloads
+  # Gradle 8.5 and the Maven dependencies (several minutes); the gradle-home
+  # volume keeps them for later runs.
+  android-build:
+    image: neoneq-android-builder
+    build:
+      context: .base44/android
+    working_dir: /src
+    volumes:
+      - ./conversations/6a7a961312b12b330076a6ce/android-eq:/src
+      - ./build-output:/out
+      - gradle-home:/gradle
+    environment:
+      GRADLE_USER_HOME: /gradle
+    command:
+      - bash
+      - -ec
+      - |
+        chmod +x gradlew
+        ./gradlew :app:testDebugUnitTest :app:assembleDebug \
+          --no-daemon --console=plain > /out/build.log 2>&1
+        cp app/build/outputs/apk/debug/app-debug.apk /out/NeonEQ-debug.apk
+        rm -rf /out/tests
+        cp -r app/build/reports/tests/testDebugUnitTest /out/tests
+        echo "BUILD OK"
+
+volumes:
+  gradle-home:
