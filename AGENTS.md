@@ -18,21 +18,33 @@ surface, so it can never render inside a browser preview.
 bind-mounted at `/src`, never baked into an image) and serves the results on host
 port 3000, because that is the only port the preview can show.
 
-| Service | What it does |
-| --- | --- |
-| `web` | nginx on host port 3000: status page + the built APK, test report and logs from `./build-output`. Long-running. |
-| `dsp-test` | One-shot. Compiles the **real** production DSP (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and runs its assertions. Takes seconds. |
-| `android-build` | One-shot. `./gradlew :app:testDebugUnitTest :app:assembleDebug`, then copies APK + test report + build log into `./build-output`. |
+Everything lives in **one long-running service, `app`**:
+
+1. Native DSP host self-test — compiles the **real** production DSP
+   (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
+   runs its assertions. Takes seconds and needs no Android SDK.
+2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — 38 JVM unit tests plus
+   the debug APK, built from the mounted source.
+3. `python3 -m http.server` on port 80 serving `./build-output`, which the host
+   exposes on port 3000.
 
 ```bash
-docker compose -f docker-compose.base44.yml up -d --build   # full build
-docker compose -f docker-compose.base44.yml logs -f android-build
-docker compose -f docker-compose.base44.yml run --rm dsp-test   # quick engine check
+docker compose -f docker-compose.base44.yml up -d --build
+docker compose -f docker-compose.base44.yml ps          # wait for "healthy"
+docker compose -f docker-compose.base44.yml logs -f app
 ```
 
-There is **no live-reload dev server** for an Android app: after editing source,
-re-run `up -d --build` (the Gradle layer is cached in the `gradle-home` volume, so
-subsequent builds are much faster) and then reload the preview.
+- **Why one service and not three.** The DSP test and the Gradle build are
+  one-shot jobs. A compose service that exits — *even with exit code 0* — is
+  reported as a failed application service by the platform's health monitoring,
+  so they must not be declared as their own services. The single `app` service
+  runs them to completion and then stays up serving, with a healthcheck on the
+  served page (`start_period: 900s` covers the cold-cache build).
+- **There is no live-reload dev server** for an Android app. After editing the
+  source, re-run `up -d --build` (the Gradle cache lives in the `gradle-home`
+  volume, so the rebuild is ~2.5 min rather than ~5), then reload the preview.
+- Artifacts land in `./build-output` (gitignored): `NeonEQ-debug.apk`,
+  `build.log`, `dsp-test.log`, `tests/`.
 
 ## Non-obvious findings
 
@@ -49,13 +61,17 @@ subsequent builds are much faster) and then reload the preview.
   build-tools 34.0.0, **NDK 25.1.8937393** (AGP 8.2.x default), **CMake 3.22.1**
   (pinned in `app/build.gradle.kts`), JDK 17. `.base44/android/Dockerfile` installs
   exactly these.
+- **Keep the Dockerfile's `python3` layer last.** The Android SDK/NDK layers above
+  it total ~1.5 GB; inserting an apt layer before them throws that cache away and
+  makes every rebuild re-download the NDK.
 - **Debug signing is pinned** to the checked-in `app/debug.keystore.p12`
   (`storeType PKCS12`, alias `androiddebugkey`, password `android`). Every build is
   signed identically so installs update cleanly over each other. Don't remove it or
   AGP will auto-generate a new random key per build.
 - **No credentials are required.** The app is offline — Android `AudioEffect` API
-  plus local native DSP. Nothing reads `process.env` or a config file, so there are
-  no secrets and no `.env` file to provide.
+  plus local native DSP. The only environment read anywhere is
+  `System.getenv("GITHUB_RUN_NUMBER")` for `versionCode`, which defaults to 1.
+  There are no secrets and no `.env` file to provide.
 - **`workflow-template.yml` at the repo root** is a stale, partial copy of
   `.github/workflows/build.yml` (it builds from the repo root, which has no Gradle
   project). The workflows under `.github/workflows/` are the real ones; don't

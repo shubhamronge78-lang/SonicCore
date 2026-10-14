@@ -98,19 +98,19 @@
       <span class="dot" id="dot"></span>
       <span id="status-text">Checking build…</span>
     </div>
-    <a class="btn" id="apk" href="download/NeonEQ-debug.apk" download aria-disabled="true">Download debug APK</a>
+    <a class="btn" id="apk" href="NeonEQ-debug.apk" download aria-disabled="true">Download debug APK</a>
     <p class="muted" style="margin-top:14px">
-      First build takes a few minutes (Gradle + Android SDK downloads). The page
-      updates on reload.
+      This page is served once the first from-source build finishes — a few
+      minutes on a cold Gradle cache, then cached after that.
     </p>
   </div>
 
   <div class="card">
     <h2>Build &amp; test results</h2>
     <ul>
-      <li><a href="download/tests/index.html">JVM unit-test report</a> — preset validation, band map and output-route contracts</li>
-      <li><a href="download/dsp-test.log">Native DSP self-test log</a> — production engine compiled with ASan/UBSan</li>
-      <li><a href="download/build.log">Full Gradle build log</a></li>
+      <li><a href="tests/index.html">JVM unit-test report</a> — preset validation, band map and output-route contracts</li>
+      <li><a href="dsp-test.log">Native DSP self-test log</a> — production engine compiled with ASan/UBSan</li>
+      <li><a href="build.log">Full Gradle build log</a></li>
     </ul>
   </div>
 
@@ -135,7 +135,7 @@
 <script>
   // The APK only exists once the one-shot build service has finished, so probe
   // for it instead of promising a download that would 404.
-  fetch('download/NeonEQ-debug.apk', { method: 'HEAD' })
+  fetch('NeonEQ-debug.apk', { method: 'HEAD' })
     .then(function (r) {
       var ready = r.ok;
       document.getElementById('dot').classList.toggle('ready', ready);

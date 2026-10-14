@@ -6,66 +6,35 @@
 # with the GitHub Actions workflows that build its APK.
 #
 # An Android app has no browser surface, so it cannot be rendered inside the
-# preview iframe. Instead this stack builds the app from the cloned source and
+# preview iframe. This stack therefore builds the app from the cloned source and
 # serves the result on host port 3000: a status page with the debug APK to
 # install on a phone, the Gradle unit-test report and the native DSP test log.
 #
+# The build/test/serve steps all live in ONE long-running service on purpose.
+# Build and test are one-shot jobs, and a compose service that exits — even with
+# exit code 0 — reads as a failed application service to health monitoring. So
+# the service runs the checks to completion and then stays up serving the
+# artifacts, which is also the only component that needs to stay alive.
+#
 # Bring up:  docker compose -f docker-compose.base44.yml up -d --build
-# Progress:  docker compose -f docker-compose.base44.yml logs -f android-build
+# Wait:      docker compose -f docker-compose.base44.yml ps   # until "healthy"
+# Logs:      docker compose -f docker-compose.base44.yml logs -f app
 
 services:
-  # User-facing entry point (host port 3000). Serves the static preview page
-  # plus everything the one-shot build services drop into ./build-output.
-  web:
-    image: nginx:alpine
-    ports:
-      - "3000:80"
-    volumes:
-      # index.html is mounted as a single file (not the whole directory) so that
-      # the sibling /download mountpoint below can still be created inside the
-      # image's own html root.
-      - ./.base44/preview/index.html:/usr/share/nginx/html/index.html:ro
-      - ./build-output:/usr/share/nginx/html/download:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
-    restart: on-failure
-
-  # Native DSP host self-test — the project's own regression gate. Compiles the
-  # REAL production DSP (tools/dspharness/harness.cpp #includes neondsp.cpp)
-  # under ASan+UBSan and asserts the engine stays finite and bounded. Fast
-  # (seconds) and needs no Android SDK, so it is the quickest way to prove the
-  # audio engine still works.
-  dsp-test:
-    image: gcc:13
-    working_dir: /src
-    volumes:
-      - ./conversations/6a7a961312b12b330076a6ce/android-eq:/src
-      - ./build-output:/out
-    command:
-      - bash
-      - -ec
-      - |
-        set -o pipefail
-        g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
-          -I tools/dspharness -I . tools/dspharness/harness.cpp \
-          -o /tmp/dsp_harness -lpthread
-        /tmp/dsp_harness 2>&1 | tee /out/dsp-test.log
-
-  # Builds the app from source: JVM unit tests, then the debug APK, then copies
-  # the artifacts where the web service can serve them. First run downloads
-  # Gradle 8.5 and the Maven dependencies (several minutes); the gradle-home
-  # volume keeps them for later runs.
-  android-build:
+  # User-facing entry point (host port 3000). On start it runs the native DSP
+  # regression gate, builds the APK and the unit tests from source, then serves
+  # the artifacts plus the status page. First run takes a few minutes (Gradle and
+  # Maven downloads); later runs reuse the gradle-home volume.
+  app:
     image: neoneq-android-builder
     build:
       context: .base44/android
     working_dir: /src
+    ports:
+      - "3000:80"
     volumes:
       - ./conversations/6a7a961312b12b330076a6ce/android-eq:/src
+      - ./.base44/preview:/preview:ro
       - ./build-output:/out
       - gradle-home:/gradle
     environment:
@@ -74,13 +43,36 @@ services:
       - bash
       - -ec
       - |
+        # 1. Native DSP host self-test — the project's own regression gate.
+        #    Compiles the REAL production DSP (the harness #includes neondsp.cpp)
+        #    under ASan+UBSan and asserts the engine stays finite and bounded.
+        set -o pipefail
+        g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+          -I tools/dspharness -I . tools/dspharness/harness.cpp \
+          -o /tmp/dsp_harness -lpthread
+        /tmp/dsp_harness 2>&1 | tee /out/dsp-test.log
+
+        # 2. Build the app from source: JVM unit tests, then the debug APK.
         chmod +x gradlew
         ./gradlew :app:testDebugUnitTest :app:assembleDebug \
           --no-daemon --console=plain > /out/build.log 2>&1
         cp app/build/outputs/apk/debug/app-debug.apk /out/NeonEQ-debug.apk
         rm -rf /out/tests
         cp -r app/build/reports/tests/testDebugUnitTest /out/tests
-        echo "BUILD OK"
+
+        # 3. Serve the artifacts and the status page on the preview port.
+        cp /preview/index.html /out/index.html
+        echo "artifacts ready — serving on :80"
+        exec python3 -m http.server 80 --directory /out
+    healthcheck:
+      # The served page is what the preview consumes, so probe that over HTTP.
+      # start_period covers the from-source build on a cold gradle volume.
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 900s
+    restart: on-failure
 
 volumes:
   gradle-home:
