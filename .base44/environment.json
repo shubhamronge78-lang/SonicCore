@@ -1,0 +1,7 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml run --rm build-apk",
+  "secrets": [],
+  "notes": "Native Android app (Kotlin + Jetpack Compose + NDK C++ DSP). Builds a debug APK — no web server, cannot appear in browser preview. Use 'docker compose -f docker-compose.base44.yml run --rm dsp-test' for the native DSP harness, 'run --rm build-apk' for the APK build, or add 'testDebugUnitTest' for JVM unit tests."
+}

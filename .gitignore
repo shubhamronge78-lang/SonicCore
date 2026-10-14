@@ -8,3 +8,4 @@ conversations/b137/
 logs.zip
 logs[0-9].zip
 conversations/b*/
+*.apk

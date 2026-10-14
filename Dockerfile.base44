@@ -1,0 +1,29 @@
+# Base44 build image for NeonEQ — Android APK build (JDK 17 + Android SDK + NDK + CMake)
+FROM eclipse-temurin:17-jdk
+
+ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH="${PATH}:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools"
+
+# Install basic tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unzip zip wget git cmake ninja-build build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install Android command-line tools
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdtools.zip && \
+    unzip -q /tmp/cmdtools.zip -d ${ANDROID_HOME}/cmdline-tools && \
+    mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm /tmp/cmdtools.zip
+
+# Accept licenses and install SDK components
+RUN yes | sdkmanager --licenses > /dev/null 2>&1 && \
+    sdkmanager \
+      "platform-tools" \
+      "platforms;android-34" \
+      "build-tools;34.0.0" \
+      "ndk;26.3.11579264" \
+      "cmake;3.22.1" > /dev/null 2>&1
+
+WORKDIR /project

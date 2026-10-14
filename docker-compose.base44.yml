@@ -1,0 +1,28 @@
+services:
+  build-apk:
+    build:
+      context: .
+      dockerfile: Dockerfile.base44
+    volumes:
+      - ./conversations/6a7a961312b12b330076a6ce/android-eq:/project
+      - gradle-cache:/root/.gradle
+    working_dir: /project
+    command: ["sh", "-c", "chmod +x gradlew && ./gradlew assembleDebug --no-daemon -x test 2>&1"]
+    environment:
+      - BASE44_PREVIEW_MODE=1
+    restart: "no"
+
+  dsp-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.base44
+    volumes:
+      - ./conversations/6a7a961312b12b330076a6ce/android-eq:/project
+    working_dir: /project
+    command: ["sh", "-c", "g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -I tools/dspharness -I . tools/dspharness/harness.cpp -o /tmp/dsp_harness -lpthread && /tmp/dsp_harness 2>&1"]
+    environment:
+      - BASE44_PREVIEW_MODE=1
+    restart: "no"
+
+volumes:
+  gradle-cache:
