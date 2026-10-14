@@ -1,0 +1,29 @@
+# Base44 development environment for SonicCore/NeonEQ
+#
+# This is an Android audio EQ app — it cannot run in a browser.  The preview
+# server compiles and runs the native C++ DSP self-test harness (same flags
+# as CI: ASan+UBSan) and serves the results as a web page on port 3000.
+services:
+  preview:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - .:/app:cached
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - PROJECT_DIR=/app/conversations/6a7a961312b12b330076a6ce/android-eq
+      - BASE44_PREVIEW_MODE=${BASE44_PREVIEW_MODE:-}
+      - BASE44_PUBLIC_HOST_SUFFIX=${BASE44_PUBLIC_HOST_SUFFIX:-}
+      - BASE44_SANDBOX_HOST_DOMAIN=${BASE44_SANDBOX_HOST_DOMAIN:-}
+    command: ["sh", "-ec",
+      "apt-get update -qq && apt-get install -y -qq g++ > /dev/null 2>&1 && exec python3 /app/base44_preview_server.py"]
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:3000/health').read()"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: on-failure
