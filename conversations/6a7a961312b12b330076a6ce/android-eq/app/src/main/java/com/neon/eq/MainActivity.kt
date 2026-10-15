@@ -978,10 +978,31 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         Spacer(Modifier.height(16.dp))
 
-        // ── Build #123: NOW PROCESSING — technical status, no source metadata ──
-        NeonCard {
-            GradientText("NOW PROCESSING", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
-            Spacer(Modifier.height(4.dp))
+        // ── v3.7: NOW PROCESSING — console telemetry dashboard with glass metrics ──
+        ConsoleCard(accentColor = T.accent) {
+            ConsoleSectionHeader("NOW PROCESSING",
+                if (CaptureEqService.running && !CaptureEqService.bypass) "DSP ACTIVE" else if (CaptureEqService.bypass) "BYPASS" else "IDLE",
+                if (CaptureEqService.running && !CaptureEqService.bypass) T.primary else T.secondary)
+            Spacer(Modifier.height(8.dp))
+            // v3.7: GlassMetric telemetry row — sample rate, DSP load, latency, bands
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                GlassMetric("SAMPLE RATE",
+                    if (CaptureEqService.captureSampleRate > 0) (CaptureEqService.captureSampleRate / 1000).toString() else "—",
+                    "kHz", T.primary)
+                GlassMetric("DSP LOAD",
+                    "%.0f".format(CaptureEqService.dspLoadPct),
+                    "%", if (CaptureEqService.dspLoadPct > 80) StatusColors.warn else T.accent)
+                GlassMetric("LATENCY",
+                    "%.0f".format(CaptureEqService.totalLatencyMs),
+                    "ms", T.secondary)
+                GlassMetric("BANDS",
+                    bandCount.toString(),
+                    "EQ", T.primary)
+            }
+            Spacer(Modifier.height(8.dp))
             val nowIn = if (NeonDsp.available) runCatching { NeonDsp.inRmsMs() }.getOrDefault(0) else 0
             val nowOut = if (NeonDsp.available) runCatching { NeonDsp.outRmsMs() }.getOrDefault(0) else 0
             fun dbS(ms: Int): String = if (ms > 0) "%.1f dB".format(20 * Math.log10(ms / 1000.0)) else "-∞"
@@ -989,7 +1010,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 (if (CaptureEqService.running) "Captured playback · " + CaptureEqService.captureSampleRate + " Hz · Stereo" else "Player / idle") +
                     "\n" + (if (CaptureEqService.bypass) "DSP BYPASS" else "DSP ACTIVE") +
                     " · Input " + dbS(nowIn) + " · Output " + dbS(nowOut),
-                fontSize = 11.sp, color = T.primary, lineHeight = 15.sp
+                fontSize = 10.sp, color = T.primary, lineHeight = 14.sp
             )
             Text("Technical status of SonicCore's own pipeline. SonicCore does not read or control another app's media session.", fontSize = 8.sp, color = T.secondary)
         }
@@ -1037,8 +1058,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: METERS — measured L/R input + output, dBFS, peak hold ──
-        NeonCard {
-            GradientText("METERS", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
+        ConsoleCard {
+            ConsoleSectionHeader("METERS", "LIVE", T.primary)
             Spacer(Modifier.height(4.dp))
             Text("Measured from the native DSP path. Not a claim about what you physically hear.", fontSize = 8.sp, color = T.secondary)
             Spacer(Modifier.height(6.dp))
@@ -1110,8 +1131,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: SPECTRUM — real-time FFT of the live signal ──
-        NeonCard {
-            GradientText("SPECTRUM", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
+        ConsoleCard(accentColor = T.accent) {
+            ConsoleSectionHeader("SPECTRUM", "FFT", T.accent)
             Spacer(Modifier.height(4.dp))
             var spTick by remember { mutableStateOf(0) }
             var spPost by remember { mutableStateOf(false) }
@@ -2035,7 +2056,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // hero card when the device only permits LoudnessEnhancer.
         if (!limitedNow) {
         NeonCard {
-            GradientText("EFFECTS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
+            ConsoleSectionHeader("PRO FX", "EFFECTS", T.accent)
             Spacer(Modifier.height(8.dp))
             // Same honest readouts as always: TRUE hardware dB for bass
             // (engine bassBoostDb()), percent width for 3D (no dB exists for
@@ -2120,7 +2141,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         // ── Build #105: PLAYER — the one audio path no OEM can block ──
         NeonCard {
-            GradientText("PLAYER — EQ INSIDE SONICCORE", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
+            ConsoleSectionHeader("PLAYER — EQ INSIDE SONICCORE", null, T.accent)
             var whyOpen by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("ENGINE: " + (SoftwareEq.lastEngineLabel ?: "—"), fontSize = 9.sp, color = T.secondary)
@@ -2407,9 +2428,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
-        // ── Build #123: DSP STUDIO — master control + visual processing chain ──
-        NeonCard {
-            GradientText("DSP ENGINE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
+        // ── v3.7: DSP STUDIO — master control + visual processing chain ──
+        ConsoleCard(accentColor = T.primary) {
+            ConsoleSectionHeader("DSP ENGINE", "STUDIO", T.primary)
             Spacer(Modifier.height(6.dp))
             // Build #124: four honest master states — never ACTIVE after a failure
             val masterState = when {
@@ -2500,7 +2521,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             var stEdit by remember { mutableStateOf<String?>(null) }
             @Composable
             fun StageCard(si: Int, key: String, label: String) {
-                if (si > 0) Text("↓", fontSize = 10.sp, color = T.secondary, modifier = Modifier.padding(start = 10.dp))
+                if (si > 0) FlowConnector(active = dspMoving && stOn[key] == true, vertical = true)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text((if (dspMoving && stOn[key] == true) "✓ " else "") + label, fontSize = 10.sp,
                         color = if (stOn[key] == true) T.primary else T.secondary)
@@ -2613,7 +2634,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         // ── Build #117: DSP CHAIN — parametric EQ + processing stages ──
         NeonCard {
-            GradientText("DSP CHAIN", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
+            ConsoleSectionHeader("DSP CHAIN", "PARAMETERS", T.accent)
             Spacer(Modifier.height(4.dp))
             Text(
                 "The shared native C++ chain: preamp → parametric EQ (8 slots) → graphic EQ → bass/treble → stereo width/balance/swap/mono → compressor → convolver → output limiter. PLAYER and CAPTURE both process through this engine (player: graphic EQ + preamp + limiter; capture: full chain). Settings persist.",
@@ -2710,7 +2731,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         // ── Build #117: SYSTEM CAPTURE — CAPTURE MODE with honest A/B ──
         NeonCard {
-            GradientText("SYSTEM CAPTURE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
+            ConsoleSectionHeader("SYSTEM CAPTURE", "CAPTURE", T.secondary)
             Spacer(Modifier.height(2.dp))
             Text("CAPTURE MODE", fontSize = 10.sp, color = T.accent)
             Spacer(Modifier.height(4.dp))
@@ -2860,7 +2881,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         // ── Build #121: SESSIONS — local history from the recorded session log ──
         NeonCard {
-            GradientText("SESSIONS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
+            ConsoleSectionHeader("SESSIONS", "HISTORY", T.accent)
             Spacer(Modifier.height(4.dp))
             Text("⇄ COMPARE TWO SESSIONS", fontSize = 9.sp, color = T.accent,
                 modifier = Modifier.clip(RoundedCornerShape(50)).background(T.accent.copy(alpha = 0.10f))
@@ -2947,9 +2968,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
-        // ── Build #119: SIGNAL PATH — measured, stage-by-stage, never inferred ──
-        NeonCard {
-            GradientText("SIGNAL PATH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
+        // ── v3.7: SIGNAL PATH — visual flow diagram, measured stage-by-stage ──
+        ConsoleCard(accentColor = T.primary) {
+            ConsoleSectionHeader("SIGNAL PATH", "LIVE", T.primary)
             Spacer(Modifier.height(4.dp))
             Text(
                 "Each stage is measured from live frame counters — a running service alone never reports ACTIVE.",
@@ -3020,25 +3041,70 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 dDsp > 0 && dOut > 0 -> "CAPTURE ACTIVE · DSP ACTIVE · OUTPUT ACTIVE"
                 else -> "CAPTURE ACTIVE"
             }
-            Text(
-                "SOURCE PLAYBACK: " + srcState + "\n" +
-                "AUDIOPLAYBACKCAPTURE: " + (if (!CaptureEqService.running) "—" else if (dCap > 0 || CaptureEqService.framesCaptured > 0) "ACTIVE (" + CaptureEqService.framesCaptured + ")" else "NO DATA") + "\n" +
-                "AUDIORECORD: " + (if (!CaptureEqService.running) "—" else if (dCap > 0 || CaptureEqService.recordFrames > 0) "ACTIVE (" + CaptureEqService.recordFrames + ")" else "NO DATA") + "\n" +
-                "JNI → NATIVE DSP INPUT: " + jniState + "\n" +
-                "NATIVE DSP OUTPUT: " + dspOutState + "\n" +
-                "AUDIOTRACK OUTPUT: " + trackState + "\n" +
-                "OUTPUT DEVICE: " + AudioCapabilityManager.outputDeviceLine(LocalContext.current),
-                fontSize = 10.sp, color = T.secondary, lineHeight = 15.sp
+            // v3.7: Visual signal path flow — animated nodes replace the text dump.
+            // Same measured state variables, now rendered as a console flow diagram.
+            val spNodes = listOf(
+                Triple("SOURCE PLAYBACK",
+                    if (CaptureEqService.running && !CaptureEqService.noEligiblePlayback) "eligible"
+                    else if (CaptureEqService.noEligiblePlayback) "blocked" else "—",
+                    when {
+                        !CaptureEqService.running -> FlowState.IDLE
+                        CaptureEqService.noEligiblePlayback -> FlowState.ERROR
+                        recentData -> FlowState.ACTIVE
+                        else -> FlowState.IDLE
+                    }),
+                Triple("AUDIOPLAYBACKCAPTURE",
+                    if (CaptureEqService.framesCaptured > 0) CaptureEqService.framesCaptured.toString() + " frames" else "—",
+                    if (dCap > 0 || CaptureEqService.framesCaptured > 0) FlowState.ACTIVE else FlowState.IDLE),
+                Triple("AUDIORECORD",
+                    if (CaptureEqService.recordFrames > 0) CaptureEqService.recordFrames.toString() + " frames" else "—",
+                    if (dCap > 0 || CaptureEqService.recordFrames > 0) FlowState.ACTIVE else FlowState.IDLE),
+                Triple("JNI → NATIVE DSP",
+                    if (CaptureEqService.bypass) "BYPASSED" else if (jniNow > 0) jniNow.toString() + " frames" else "—",
+                    when {
+                        !CaptureEqService.running -> FlowState.IDLE
+                        CaptureEqService.bypass -> FlowState.BYPASS
+                        dJni > 0 -> FlowState.ACTIVE
+                        dCap > 0 -> FlowState.ERROR
+                        jniNow > 0 -> FlowState.ACTIVE
+                        else -> FlowState.IDLE
+                    }),
+                Triple("NATIVE DSP ENGINE",
+                    if (CaptureEqService.bypass) "BYPASSED" else if (dspNow > 0) dspNow.toString() + " frames" else "—",
+                    when {
+                        !CaptureEqService.running -> FlowState.IDLE
+                        CaptureEqService.bypass -> FlowState.BYPASS
+                        dDsp > 0 -> FlowState.ACTIVE
+                        else -> FlowState.IDLE
+                    }),
+                Triple("AUDIOTRACK OUTPUT",
+                    if (CaptureEqService.framesDone > 0) CaptureEqService.framesDone.toString() + " frames" else "—",
+                    when {
+                        !CaptureEqService.running -> FlowState.IDLE
+                        dOut > 0 -> FlowState.ACTIVE
+                        dDsp > 0 -> FlowState.ERROR
+                        else -> FlowState.IDLE
+                    }),
+                Triple("OUTPUT DEVICE",
+                    AudioCapabilityManager.outputDeviceLine(LocalContext.current),
+                    if (dOut > 0) FlowState.ACTIVE else FlowState.IDLE)
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "STATUS: " + simpleStatus,
-                fontSize = 12.sp, color = T.primary
-            )
-            Text(
-                "VERDICT: " + pathVerdict,
-                fontSize = 11.sp, color = if (pathVerdict.startsWith("SIGNAL PATH ACTIVE")) T.primary else T.accent
-            )
+            FlowDiagram(nodes = spNodes)
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text("STATUS: ", fontSize = 11.sp, color = T.secondary, fontWeight = FontWeight.Bold)
+                Text(simpleStatus, fontSize = 11.sp, color = T.primary, fontWeight = FontWeight.Bold)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text("VERDICT: ", fontSize = 10.sp, color = T.secondary, fontWeight = FontWeight.Bold)
+                Text(pathVerdict, fontSize = 10.sp, color = if (pathVerdict.startsWith("SIGNAL PATH ACTIVE")) T.primary else T.accent, fontWeight = FontWeight.Bold)
+            }
             Spacer(Modifier.height(4.dp))
             // Build #120: output confidence (spec 3) — three separate claims,
             // honestly separated. Processed-PCM delivery is verifiable; what
@@ -3151,7 +3217,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
         // ── Build #130: ANALYZER — shared state with the SPECTRUM card ──
         NeonCard {
-            GradientText("ANALYZER", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
+            ConsoleSectionHeader("ANALYZER", "SHARED", T.primary)
             Spacer(Modifier.height(6.dp))
             Text("FPS", fontSize = 10.sp, color = T.secondary)
             Row(verticalAlignment = Alignment.CenterVertically) {
