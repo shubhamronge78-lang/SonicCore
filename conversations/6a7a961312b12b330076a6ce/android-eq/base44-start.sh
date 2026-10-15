@@ -9,6 +9,29 @@ PROJECT_DIR="/project"
 SERVE_DIR="/serve"
 mkdir -p "$SERVE_DIR"
 
+# ---- Generate a favicon.ico (minimal 16x16 ICO) ----
+python3 -c "
+import struct
+# ICO header: 0,0 (reserved), 1 (type=icon), 1 (count)
+header = struct.pack('<HHH', 0, 1, 1)
+# ICO directory entry: 16x16, 0 colors, 0, 1 plane, 32 bpp, size, offset
+bmp_size = 40 + 64 + 512  # header + palette + pixels (16x16x2)
+entry = struct.pack('<BBBBHHII', 16, 16, 0, 0, 1, 32, bmp_size, 22)
+# BMP info header (40 bytes)
+bmp_header = struct.pack('<IiiHHIIiiII', 40, 16, 32, 1, 32, 0, 0, 0, 0, 0, 0)
+# 16x16 BGRA pixels - cyan/purple gradient
+pixels = b''
+for y in range(16):
+    for x in range(16):
+        b, g, r = 0, 0xE5, 0xFF  # cyan-ish
+        if x > 8: b, g, r = 0xFF, 0x88, 0xB3  # purple-ish
+        pixels += struct.pack('BBBx', b, g, r)
+# AND mask (16x16, 1bpp, padded to 4 bytes per row = 8 bytes per row)
+and_mask = b'\x00' * (4 * 16)
+with open('$SERVE_DIR/favicon.ico', 'wb') as f:
+    f.write(header + entry + bmp_header + pixels + and_mask)
+"
+
 cd "$PROJECT_DIR"
 
 # Write the SDK path for Gradle
@@ -23,6 +46,7 @@ cat > "$SERVE_DIR/index.html" <<HTMLEOF
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Neon EQ — Building…</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>">
 <style>
   :root { --bg:#0a0a0f; --card:#15151f; --accent:#00e5ff; --accent2:#b388ff; --text:#e0e0e0; --dim:#888; }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -125,6 +149,7 @@ gen_status() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Neon EQ — Build Status</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>">
 <style>
   :root { --bg:#0a0a0f; --card:#15151f; --accent:#00e5ff; --accent2:#b388ff; --ok:#00e676; --err:#ff5252; --text:#e0e0e0; --dim:#888; }
   * { box-sizing:border-box; margin:0; padding:0; }
