@@ -1,0 +1,43 @@
+# Base44 sandbox environment for SonicCore (NeonEQ).
+#
+# WHAT THIS IS: a development toolchain container for building and testing this
+# native Android (Kotlin + Jetpack Compose + C++/NeonDsp) app inside the Base44
+# sandbox. It mirrors the project's GitHub Actions build: JDK 17 + Android SDK 34
+# + build-tools 34, driven by the checked-in Gradle wrapper.
+#
+# WHY NO PORT 3000 / PREVIEW SERVER: this repository is a native Android
+# application — it has no web frontend and no HTTP server to preview. The Base44
+# preview iframe (host port 3000) therefore has nothing to render. The app itself
+# runs on an Android device/emulator; the CI workflow at
+# .github/workflows/build.yml produces the installable APK.
+#
+# The source tree is bind-mounted so edits are picked up without rebuilding the
+# container. The Android SDK and the Gradle cache live in named volumes so they
+# survive container restarts (the SDK download is large).
+#
+# Usage (from the repo root):
+#   docker compose -f docker-compose.base44.yml up -d
+#   docker compose -f docker-compose.base44.yml exec android-toolchain \
+#     ./gradlew testDebugUnitTest --no-daemon
+#   docker compose -f docker-compose.base44.yml exec android-toolchain \
+#     ./gradlew assembleDebug --no-daemon -x test
+
+name: soniccore-base44
+
+services:
+  android-toolchain:
+    image: eclipse-temurin:17-jdk-jammy
+    working_dir: /workspace/conversations/6a7a961312b12b330076a6ce/android-eq
+    environment:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      GRADLE_USER_HOME: /root/.gradle
+    volumes:
+      - ./:/workspace
+      - android-sdk:/opt/android-sdk
+      - gradle-cache:/root/.gradle
+    command: ["bash", "-lc", "bash /workspace/scripts/base44-android-sdk.sh && exec sleep infinity"]
+
+volumes:
+  android-sdk:
+  gradle-cache:

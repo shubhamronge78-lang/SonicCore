@@ -1,0 +1,7 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "notes": "Native Android app (Kotlin/Jetpack Compose + C++ NeonDsp). It has no web frontend, so nothing serves port 3000 and the preview iframe has nothing to render. The compose service 'android-toolchain' provides the JDK 17 + Android SDK 34 build environment; verify with `docker compose -f docker-compose.base44.yml exec android-toolchain ./gradlew testDebugUnitTest assembleDebug --no-daemon`.",
+  "secrets": []
+}

@@ -5,6 +5,8 @@ import android.media.AudioDeviceInfo
 import android.Manifest
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -274,7 +276,7 @@ object Themes {
 }
 
 val appThemeState = mutableStateOf(Themes.CLASSIC)
-private val T: NeonTheme get() = appThemeState.value
+internal val T: NeonTheme get() = appThemeState.value
 
 // Build #132: fixed status semantics — independent of the selectable brand
 // palette, so "active/warning/error" always reads the same regardless of
@@ -331,6 +333,23 @@ object SurfaceModes {
 fun GlassBackground() {
     val glow = when (appGlassState.value) { 0 -> 0.030f; 2 -> 0.085f; else -> 0.055f }
     Box(modifier = Modifier.fillMaxSize()) {
+        // .bg + .scrim — full-bleed liquid-glass backdrop behind the panels,
+        // so the frosted glass actually reads through to content.
+        if (appModeState.value == SurfaceModes.DARK) {
+            Image(
+                painter = painterResource(R.drawable.glass_bg),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().alpha(0.85f)
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        listOf(S.bg.copy(alpha = 0.35f), S.bg.copy(alpha = 0.70f))
+                    )
+                )
+            )
+        }
         if (appModeState.value == SurfaceModes.DARK) {
             // extremely subtle atmospheric light fields — never bright, static
             Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
@@ -346,36 +365,26 @@ fun GlassBackground() {
 // Reusable glass status chip — icon + text, never color-only.
 @Composable
 fun StatusChip(label: String, kind: Int, dot: Boolean = true) {
-    // Build #132: semantic status colors — green/amber/red/gray stay fixed
-    // regardless of the selected brand palette (spec §5).
-    val (col, glyph) = when (kind) {
-        0 -> StatusColors.success to "●"   // ACTIVE
-        2 -> StatusColors.error to "⚠"    // ERROR
-        1 -> StatusColors.inactive to "○" // muted / bypass
-        else -> StatusColors.inactive to "·"
+    // Semantic status now lives in the chip variant colours (.on/.off/.err).
+    val (k, glyph) = when (kind) {
+        0 -> GlassChipKind.Active to "●"
+        2 -> GlassChipKind.Error to "⚠"
+        1 -> GlassChipKind.Muted to "○"
+        else -> GlassChipKind.Neutral to "·"
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(S.cardDeep.copy(alpha = 0.55f))
-            .border(1.dp, col.copy(alpha = 0.25f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .semantics { contentDescription = label }
-    ) {
-        if (dot) Text(glyph, fontSize = 8.sp, color = col)
-        Text(label, fontSize = 9.sp, color = col,
-            modifier = if (dot) Modifier.padding(start = 4.dp) else Modifier)
-    }
+    LiquidChip(
+        label = label,
+        kind = k,
+        glyph = if (dot) glyph else null,
+        modifier = Modifier.semantics { contentDescription = label }
+    )
 }
 
 val appModeState = mutableStateOf(SurfaceModes.DARK)
 // Build #127: glass intensity — UI rendering ONLY. Never touches DSP, capture,
 // buffers, latency or sample rate. 0 LOW · 1 MEDIUM (default) · 2 HIGH.
 val appGlassState = mutableStateOf(1)
-fun glassSurfaceAlpha(): Float = when (appGlassState.value) { 0 -> 0.96f; 2 -> 0.74f; else -> 0.86f }
-fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.08f; 2 -> 0.22f; else -> 0.14f }
-private val S: SurfacePalette get() = appModeState.value
+internal val S: SurfacePalette get() = appModeState.value
 
 @Composable
 fun NeonEQTheme(content: @Composable () -> Unit) {
@@ -758,6 +767,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             }
         }
         // ── Header with breathing glow ──
+        GlassSurface(modifier = Modifier.fillMaxWidth().riseIn(50)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
             if (showGlow) BreathingGlow(active = enabled)
             Row(
@@ -770,14 +781,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     SCMark(26.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(brush = Brush.horizontalGradient(listOf(T.primary, T.secondary)))) {
-                                append("SONICCORE")
-                            }
-                        },
-                        fontSize = 18.sp,
+                        "SONICCORE",
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 3.sp
+                        letterSpacing = 0.3.sp,
+                        color = S.text
                     )
                     Spacer(Modifier.width(8.dp))
                     // Build #130: live system state — always visible, all tabs,
@@ -796,8 +804,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .background(T.secondary.copy(alpha = 0.15f))
-                            .border(1.dp, T.secondary.copy(alpha = 0.4f), CircleShape)
+                            .background(Color.White.copy(alpha = 0.10f))
+                            .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
                             .clickable { showSettings = true },
                         contentAlignment = Alignment.Center
                     ) {
@@ -810,8 +818,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .background(T.accent.copy(alpha = 0.15f))
-                            .border(1.dp, T.accent.copy(alpha = 0.4f), CircleShape)
+                            .background(Color.White.copy(alpha = 0.10f))
+                            .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
                             .clickable {
                                 val next = if (appModeState.value == SurfaceModes.DARK) SurfaceModes.LIGHT else SurfaceModes.DARK
                                 appModeState.value = next
@@ -828,8 +836,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             }
         }
-        Text("Professional Audio Processing", fontSize = 11.sp, color = T.secondary)
-        Text(statusMsg, fontSize = 9.sp, color = T.secondary)
+            Spacer(Modifier.height(6.dp))
+            Text("Professional Audio Processing", fontSize = 11.sp, color = S.textSoft.copy(alpha = 0.75f))
+            Text(statusMsg, fontSize = 11.sp, color = S.textSoft.copy(alpha = 0.75f))
+        }
+        }
 
         Spacer(Modifier.height(14.dp))
 
@@ -838,27 +849,16 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // (engine.setEnabled + onEnabledToggled), just impossible to miss.
         Box(contentAlignment = Alignment.Center) {
             if (showGlow) BreathingGlow(active = enabled)
-            Box(
-                modifier = Modifier
-                    .size(84.dp)
-                    .clip(CircleShape)
-                    .background(
-                        brush = if (enabled)
-                            Brush.radialGradient(listOf(T.primary.copy(alpha = 0.35f), T.primary.copy(alpha = 0.06f)))
-                        else
-                            Brush.radialGradient(listOf(Color.Gray.copy(alpha = 0.14f), Color.Transparent))
-                    )
-                    .border(2.dp, if (enabled) T.primary else Color.Gray.copy(alpha = 0.3f), CircleShape)
-                    .clickable {
-                        val next = !enabled
-                        enabled = next
-                        engine.setEnabled(next)
-                        if (context is MainActivity) context.onEnabledToggled(next)
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("⏻", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (enabled) T.primary else Color.Gray)
-            }
+            LiquidOrb(
+                active = enabled,
+                size = 84.dp,
+                onClick = {
+                    val next = !enabled
+                    enabled = next
+                    engine.setEnabled(next)
+                    if (context is MainActivity) context.onEnabledToggled(next)
+                }
+            )
         }
 
         Spacer(Modifier.height(16.dp))
@@ -913,7 +913,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Row(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f)) {
         // ── Build #121: STATUS — the professional dashboard header ──
-        NeonCard {
+        NeonCard(riseDelayMs = 50) {
             val recentData = CaptureEqService.running &&
                 (android.os.SystemClock.elapsedRealtime() - CaptureEqService.lastDataAt) < 2500L
             val dspChip = when {
@@ -975,7 +975,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #123: NOW PROCESSING — technical status, no source metadata ──
-        NeonCard {
+        NeonCard(riseDelayMs = 150) {
             GradientText("NOW PROCESSING", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
             Spacer(Modifier.height(4.dp))
             val nowIn = if (NeonDsp.available) runCatching { NeonDsp.inRmsMs() }.getOrDefault(0) else 0
@@ -1033,7 +1033,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: METERS — measured L/R input + output, dBFS, peak hold ──
-        NeonCard {
+        NeonCard(riseDelayMs = 250) {
             GradientText("METERS", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(4.dp))
             Text("Measured from the native DSP path. Not a claim about what you physically hear.", fontSize = 8.sp, color = T.secondary)
@@ -1106,7 +1106,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #121: SPECTRUM — real-time FFT of the live signal ──
-        NeonCard {
+        NeonCard(riseDelayMs = 350) {
             GradientText("SPECTRUM", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
             Spacer(Modifier.height(4.dp))
             var spTick by remember { mutableStateOf(0) }
@@ -1229,8 +1229,21 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         Spacer(Modifier.height(16.dp))
 
+        // .img — decorative liquid-glass visual (16:9, rounded, hairline edge)
+        Image(
+            painter = painterResource(R.drawable.glass_banner),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, glassEdgeTop(), RoundedCornerShape(16.dp))
+        )
+        Spacer(Modifier.height(16.dp))
+
         // ── Build #121: OUTPUT — route, format, latency, buffer at a glance ──
-        NeonCard {
+        NeonCard(riseDelayMs = 450) {
             GradientText("OUTPUT", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
             Spacer(Modifier.height(4.dp))
             val routeIcon = when {
@@ -1265,7 +1278,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
             Column(modifier = Modifier.weight(1f)) {
         // ── Build #121: QUICK DSP — collapsible atomic toggles (same engine, no parallel pipelines) ──
-        NeonCard {
+        NeonCard(riseDelayMs = 550) {
             var qcOpen by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { qcOpen = !qcOpen }) {
                 GradientText("QUICK DSP", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -3983,6 +3996,19 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     // ══════════════ v144: OUTPUT STUDIO ══════════════
     GlassBottomSheet(visible = showOutputStudio, onDismiss = { showOutputStudio = false }) {
         GradientText("OUTPUT STUDIO", 13.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
+        // .img — Output Studio visual (16:9, rounded, hairline edge)
+        Image(
+            painter = painterResource(R.drawable.glass_output),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, glassEdgeTop(), RoundedCornerShape(16.dp))
+        )
+        Spacer(Modifier.height(10.dp))
+
         Text("Choose where SonicCore sends processed audio", fontSize = 9.sp, color = T.secondary)
         Spacer(Modifier.height(8.dp))
         val octx = context
@@ -4835,16 +4861,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Start on Boot", fontSize = 14.sp, color = S.text)
                             Text("Auto-start EQ after device reboot", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = startOnBoot,
                             onCheckedChange = {
                                 startOnBoot = it
                                 engine.setStartOnBoot(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     // Auto-apply last preset
@@ -4857,16 +4879,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Auto-apply Preset", fontSize = 14.sp, color = S.text)
                             Text("Restore last preset on app launch", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = autoApplyPreset,
                             onCheckedChange = {
                                 autoApplyPreset = it
                                 engine.setAutoApplyPreset(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     // Show visualizer
@@ -4879,16 +4897,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Visualizer", fontSize = 14.sp, color = S.text)
                             Text("Show live spectrum bars", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = showVisualizer,
                             onCheckedChange = {
                                 showVisualizer = it
                                 engine.setShowVisualizer(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     // Visualizer style picker
@@ -4925,16 +4939,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Breathing Glow", fontSize = 14.sp, color = S.text)
                             Text("Animated glow behind header", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = showGlow,
                             onCheckedChange = {
                                 showGlow = it
                                 engine.setShowGlow(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     Spacer(Modifier.height(4.dp))
@@ -5173,7 +5183,7 @@ private fun meterFraction(mb: Int): Float = ((mb / 100f + 60f) / 60f).coerceIn(0
 fun StereoMeterBar(label: String, lMb: Int, rMb: Int, clipping: Boolean = false) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, fontSize = 9.sp, color = T.secondary, letterSpacing = 1.sp, modifier = Modifier.width(28.dp))
+            Text(label, fontSize = 9.sp, color = S.textSoft.copy(alpha = 0.8f), letterSpacing = 1.sp, modifier = Modifier.width(28.dp))
             if (clipping) {
                 Spacer(Modifier.width(4.dp))
                 Text("⚠", fontSize = 9.sp, color = StatusColors.error)
@@ -5182,26 +5192,31 @@ fun StereoMeterBar(label: String, lMb: Int, rMb: Int, clipping: Boolean = false)
         listOf("L" to lMb, "R" to rMb).forEach { (ch, mb) ->
             val frac by animateFloatAsState(meterFraction(mb), tween(90), label = "meter$ch")
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                Text(ch, fontSize = 8.sp, color = T.secondary, modifier = Modifier.width(10.dp))
+                Text(ch, fontSize = 8.sp, color = S.textSoft.copy(alpha = 0.8f), modifier = Modifier.width(10.dp))
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(S.borderDim.copy(alpha = 0.5f))
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(glassTrack())
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth(frac)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(if (clipping) StatusColors.error else T.primary)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (clipping)
+                                    Brush.horizontalGradient(listOf(StatusColors.error, Color(0xFFFFB199)))
+                                else
+                                    Brush.horizontalGradient(listOf(Color(0xFF3A7BFF), Color(0xFF7FF3FF)))
+                            )
                     )
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    String.format("%.1f dB", mb / 100f), fontSize = 8.sp, color = T.secondary,
-                    modifier = Modifier.width(42.dp)
+                    String.format("%.1f dB", mb / 100f), fontSize = 8.sp,
+                    color = S.textSoft.copy(alpha = 0.8f), modifier = Modifier.width(42.dp)
                 )
             }
         }
@@ -5211,42 +5226,25 @@ fun StereoMeterBar(label: String, lMb: Int, rMb: Int, clipping: Boolean = false)
 
 @Composable
 fun GlassChip(label: String, state: Int, modifier: Modifier = Modifier) {
-    // Build #132: semantic status colors (spec §5) — cyan keeps the
-    // "processing" meaning on ACTIVE, the rest are fixed status colors.
-    val (col, glyph) = when (state) {
-        0 -> T.primary to "●"                    // ACTIVE / processing
-        2 -> StatusColors.warn to "⚠"            // WARNING
-        3 -> StatusColors.error to "✗"           // ERROR
-        4 -> StatusColors.inactive to "·"        // NEUTRAL
-        else -> StatusColors.inactive to "○"     // MUTED / inactive
+    val (k, glyph) = when (state) {
+        0 -> GlassChipKind.Active to "●"
+        2 -> GlassChipKind.Warn to "⚠"
+        3 -> GlassChipKind.Error to "✗"
+        4 -> GlassChipKind.Neutral to "·"
+        else -> GlassChipKind.Muted to "○"
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(S.cardDeep.copy(alpha = 0.55f))
-            .border(1.dp, col.copy(alpha = 0.25f), RoundedCornerShape(50))
-            .padding(horizontal = 9.dp, vertical = 4.dp)
-            .semantics { contentDescription = label }
-    ) {
-        Text(glyph, fontSize = 8.sp, color = col)
-        Text(label, fontSize = 9.sp, color = col, modifier = Modifier.padding(start = 4.dp))
-    }
+    LiquidChip(
+        label = label,
+        kind = k,
+        glyph = glyph,
+        modifier = modifier.semantics { contentDescription = label }
+    )
 }
 
 // Compact pill button. kind: 0 PRIMARY · 1 SECONDARY · 2 DESTRUCTIVE
 @Composable
 fun GlassButton(label: String, kind: Int = 0, enabled: Boolean = true, onClick: () -> Unit) {
-    val col = when (kind) { 2 -> T.accent; 1 -> T.secondary; else -> T.primary }
-    Text(
-        label, fontSize = 10.sp,
-        color = if (enabled) col else col.copy(alpha = 0.40f),
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background((if (enabled) col else col.copy(alpha = 0.4f)).copy(alpha = 0.12f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 5.dp)
-    )
+    LiquidButton(label = label, destructive = kind == 2, enabled = enabled, onClick = onClick)
 }
 
 // Section group header — hairline gradient rules, always with a text label.
@@ -5275,22 +5273,26 @@ fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composab
     if (!visible) return
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() }) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .shadow(12.dp, RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                    .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                    .background(S.card.copy(alpha = 0.97f))
-                    .border(1.dp, Brush.verticalGradient(listOf(T.primary.copy(alpha = 0.22f), T.secondary.copy(alpha = 0.10f))), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 10.dp, bottom = 20.dp),
+            GlassSurface(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding(),
+                shape = RoundedCornerShape(
+                    topStart = GLASS_SHEET_RADIUS, topEnd = GLASS_SHEET_RADIUS,
+                    bottomStart = GLASS_RADIUS, bottomEnd = GLASS_RADIUS
+                )
             ) {
-                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50))
-                    .background(T.secondary.copy(alpha = 0.35f)).align(Alignment.CenterHorizontally))
-                Spacer(Modifier.height(10.dp))
-                content()
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        .padding(top = 10.dp, bottom = 20.dp)
+                ) {
+                    // .grab — 42x4 rgba(255,255,255,.5)
+                    Box(
+                        Modifier.width(42.dp).height(4.dp).clip(RoundedCornerShape(50))
+                            .background(Color.White.copy(alpha = 0.5f))
+                            .align(Alignment.CenterHorizontally)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    content()
+                }
             }
         }
     }
@@ -5299,39 +5301,27 @@ fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composab
 @Composable
 fun NeonCard(
     modifier: Modifier = Modifier,
+    riseDelayMs: Int = 0,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // Build #127: PRIMARY GLASS — translucent tonal surface, gradient hairline
-    // border (stronger at the top edge as a highlight), subtle elevation.
-    // Intensity follows the user's glass setting; fully opaque never.
-    val a = glassSurfaceAlpha()
-    val bA = glassBorderAlpha()
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(5.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
-            .background(Brush.verticalGradient(listOf(S.card.copy(alpha = a), S.cardAlt.copy(alpha = a))))
-            .border(
-                1.dp,
-                Brush.verticalGradient(listOf(T.primary.copy(alpha = bA), T.secondary.copy(alpha = bA * 0.55f))),
-                RoundedCornerShape(20.dp)
-            )
-            .padding(12.dp),
-        content = content
-    )
+    // LIQUID GLASS panel (.g) — translucent frosted surface, specular top edge,
+    // soft drop shadow; the backdrop reads through it.
+    GlassSurface(modifier = modifier.fillMaxWidth().riseIn(riseDelayMs)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(14.dp), content = content)
+    }
 }
 
 // Gradient section header — matches the wordmark language.
 @Composable
 fun GradientText(text: String, fontSize: androidx.compose.ui.unit.TextUnit, brush: Brush) {
+    // .h — restrained uppercase section label: 600 weight, 1.6px tracking,
+    // 80% ink. The liquid-glass direction drops the neon gradient sweep.
     Text(
-        buildAnnotatedString {
-            withStyle(SpanStyle(brush = brush)) { append(text) }
-        },
+        text.uppercase(),
         fontSize = fontSize,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 2.sp
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.6.sp,
+        color = S.textSoft.copy(alpha = 0.8f)
     )
 }
 
@@ -5972,14 +5962,19 @@ fun AppProfileChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
         fontSize = 10.sp,
-        color = if (selected) T.primary else Color.Gray,
+        color = if (selected) Color.White else chipInk(),
         maxLines = 1,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(if (selected) T.primary.copy(alpha = 0.15f) else S.cardDeep)
+            .background(
+                if (selected)
+                    chipSelectedBrush()
+                else
+                    Brush.linearGradient(listOf(chipFill(false, false), chipFill(false, false)))
+            )
             .border(
                 1.dp,
-                if (selected) T.primary.copy(alpha = 0.5f) else T.primary.copy(alpha = 0.12f),
+                Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
                 RoundedCornerShape(50)
             )
             .clickable {
@@ -6002,11 +5997,14 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
             }
             .clip(RoundedCornerShape(16.dp))
             .background(
-                if (selected) T.primary.copy(alpha = 0.15f) else S.cardDeep
+                if (selected)
+                    chipSelectedBrush()
+                else
+                    Brush.linearGradient(listOf(chipFill(false, false), chipFill(false, false)))
             )
             .border(
                 1.dp,
-                if (selected) T.primary.copy(alpha = 0.6f) else T.primary.copy(alpha = 0.12f),
+                Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
                 RoundedCornerShape(16.dp)
             )
             .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -6014,7 +6012,7 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
         // Mini sparkline preview — 24px tall, draws the EQ curve shape
         // Hoisted out of the draw loop — the old version allocated two Color
         // objects per band per frame while the row scrolled (31 bands x N chips).
-        val thumbColor = if (selected) T.primary.copy(alpha = 0.8f) else T.secondary.copy(alpha = 0.5f)
+        val thumbColor = if (selected) Color.White.copy(alpha = 0.9f) else Color(0xFF9FD8FF).copy(alpha = 0.6f)
         Canvas(modifier = Modifier.width(60.dp).height(24.dp)) {
             val levels = preset.levels
             // Build #93: built-in presets are 10-slot curves now; user-saved
@@ -6038,7 +6036,7 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(2.dp))
-        Text(preset.name, fontSize = 10.sp, color = if (selected) T.primary else Color.Gray, maxLines = 1)
+        Text(preset.name, fontSize = 10.sp, color = if (selected) Color.White else chipInk(), maxLines = 1)
     }
 }
 
@@ -6057,11 +6055,14 @@ fun CustomPresetChip(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
             .background(
-                if (selected) T.secondary.copy(alpha = 0.2f) else S.cardDeep
+                if (selected)
+                    chipSelectedBrush()
+                else
+                    Brush.linearGradient(listOf(chipFill(false, false), chipFill(false, false)))
             )
             .border(
                 1.dp,
-                if (selected) T.secondary.copy(alpha = 0.6f) else T.secondary.copy(alpha = 0.15f),
+                Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
                 RoundedCornerShape(16.dp)
             )
             .padding(horizontal = 4.dp)
@@ -6092,7 +6093,7 @@ fun CustomPresetChip(
         Text(
             preset.name,
             fontSize = 10.sp,
-            color = if (selected) T.secondary else Color.Gray,
+            color = if (selected) Color.White else chipInk(),
             modifier = Modifier
                 .combinedClickable(
                     onClick = {
@@ -6134,9 +6135,6 @@ fun CircularDial(
 
     // Build #136: hoisted out of the draw pass — was allocating a new
     // shader every frame while the dial animated.
-    val dialSweepBrush = remember(T.primary, T.secondary) {
-        Brush.sweepGradient(0.375f to T.secondary, 1.0f to T.primary)
-    }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(contentAlignment = Alignment.Center) {
             Canvas(
@@ -6176,7 +6174,7 @@ fun CircularDial(
 
                 // Track — full 270° in muted surface tone
                 drawArc(
-                    color = Color.Gray.copy(alpha = 0.18f),
+                    color = glassTrack(),
                     startAngle = 135f,
                     sweepAngle = 270f,
                     useCenter = false,
@@ -6187,7 +6185,7 @@ fun CircularDial(
                 // Progress — neon gradient sweep (cyan → purple), stops
                 // shifted so the gradient begins at the dial's 135° start.
                 drawArc(
-                    brush = dialSweepBrush,
+                    color = T.primary,
                     startAngle = 135f,
                     sweepAngle = 270f * fraction,
                     useCenter = false,
@@ -6206,15 +6204,24 @@ fun CircularDial(
                     )
                 )
             }
-            Text(
-                valueText ?: "$value",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = T.accent
-            )
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(dialCoreBrush())
+                    .border(1.dp, dialEdge(), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    valueText ?: "$value",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = dialInk()
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
-        Text(label, fontSize = 10.sp, color = Color.Gray, letterSpacing = 1.sp)
+        Text(label, fontSize = 10.sp, color = S.textSoft.copy(alpha = 0.75f), letterSpacing = 1.sp)
     }
 }
 
