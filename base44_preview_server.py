@@ -241,6 +241,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(html.encode())
+        elif path == "/favicon.ico":
+            # Minimal inline favicon (16x16 cyan dot on dark bg)
+            ico = bytes.fromhex(
+                "00000100010010100000010020006804000016000000280000001000000020"
+                "0000000100040000000000c004000000000000000000000000000000000000"
+                "0000000000000000000000000000ffffff00ccffff00" + "00" * 472)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/x-icon")
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(ico)
         else:
             self.send_response(404)
             self.end_headers()
