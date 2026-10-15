@@ -274,6 +274,18 @@ object Themes {
     fun byId(id: String?): SonicTheme = ALL.firstOrNull { it.id == id } ?: CLASSIC
 }
 
+
+enum class Screen(val label: String, val icon: String) {
+    DASHBOARD("Dashboard", "▦"),
+    EQUALIZER("EQ", "≡"),
+    PLAYER("Player", "▶"),
+    STUDIO("Studio", "∿"),
+    CAPTURE("Capture", "◉"),
+    SIGNAL("Signal", "→"),
+    SESSIONS("Sessions", "⏱"),
+    PROFX("Pro FX", "✦")
+}
+
 val appThemeState = mutableStateOf(Themes.CLASSIC)
 private val T: SonicTheme get() = appThemeState.value
 
@@ -621,8 +633,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     var spBars by remember { mutableStateOf(FloatArray(48)) }
     var spHold by remember { mutableStateOf(FloatArray(48)) }
     // v143: FOCUS EQ — immersive EQ workspace; STUDIO & SYSTEM collapsed by default.
-    var focusEq by remember { mutableStateOf(false) }
-    var advOpen by remember { mutableStateOf(false) }
+    var currentScreen by remember { mutableStateOf(Screen.DASHBOARD) }
     var spSmoothAmt by remember { mutableStateOf(when (favPrefs.getInt("an_smooth", 1)) { 0 -> 0.35f; 2 -> 0.75f; else -> 0.55f }) }
     var spFrozen by remember { mutableStateOf(false) }
     var presetFavs by remember { mutableStateOf(favPrefs.getStringSet("preset_favs", emptySet<String>()) ?: emptySet()) }
@@ -725,7 +736,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .background(Color.Transparent)
-            .padding(16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 64.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Build #100: limited-mode banner — when the device's audio policy
@@ -938,9 +949,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(6.dp))
         // Build #124: landscape audio console — two-column workspace,
         // never a stretched portrait layout
-        // v143 §32: FOCUS EQ hides the technical dashboard; the compact
-        // power/status header above always stays.
-        if (!focusEq) {
+        // Navigation: dashboard sections show only on DASHBOARD screen
+        if (currentScreen == Screen.DASHBOARD) {
         val isLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -1426,7 +1436,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         } // landscape columns
             } // landscape row
-        }   // v143: dashboard hidden in FOCUS EQ
+        }   // dashboard screen
 
 
         var editBand by remember { mutableStateOf(-1) }
@@ -1454,20 +1464,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             } catch (_: Throwable) { null }
         }
+        if (currentScreen == Screen.EQUALIZER) {
         // ── v143: EQUALIZER header — title + FOCUS EQ (§32) ──
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             GradientText("EQUALIZER", 16.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
             Spacer(Modifier.weight(1f))
-            Text(
-                if (focusEq) "✕ EXIT FOCUS" else "◎ FOCUS EQ", fontSize = 10.sp,
-                color = if (focusEq) T.accent else T.primary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background((if (focusEq) T.accent else T.primary).copy(alpha = 0.14f))
-                    .clickable { focusEq = !focusEq }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .semantics { contentDescription = if (focusEq) "Exit Focus EQ mode" else "Enter Focus EQ — immersive full-screen EQ workspace" }
-            )
+            Spacer(Modifier.weight(1f))
         }
         // ── v143 §4: PRESET BAR — star, prev/next (measured preview), browser, save ──
         val presetOrder = remember(customPresets) { Presets.presets.map { it.name } + customPresets.map { it.name } }
@@ -1775,7 +1777,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 spectrumBins = spBars,
                 spectrumHold = spHold,
                 showHold = eqHold,
-                graphHeight = if (focusEq) 460.dp else 360.dp
+                graphHeight = if (currentScreen == Screen.EQUALIZER) 460.dp else 360.dp
             )
             // Build #124: visual scale selector — visualization only, never alters DSP gains
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2087,27 +2089,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         } // tab guard
+        }
 
-        // v143 §31/§32: STUDIO & SYSTEM — every technical section stays one
-        // tap away, but the EQ is the centerpiece. Collapsed by default in
-        // normal mode; fully hidden in FOCUS EQ. Same composables, same state.
-        if (!focusEq) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(50))
-                    .background(T.secondary.copy(alpha = 0.08f))
-                    .clickable { advOpen = !advOpen }
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .semantics { contentDescription = (if (advOpen) "Collapse studio and system sections" else "Expand studio and system sections") }
-            ) {
-                GradientText("STUDIO & SYSTEM", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
-                Spacer(Modifier.weight(1f))
-                Text(if (advOpen) "▾ COLLAPSE" else "▸ EXPAND", fontSize = 10.sp, color = if (advOpen) T.primary else T.secondary)
-            }
-            Spacer(Modifier.height(8.dp))
-            if (advOpen) {
+        if (currentScreen == Screen.PLAYER) {
         // ── Build #110: VISUALIZER on the main screen — system capture when
         // the device allows it, software-player capture when it doesn't ──
         GlassCard {
@@ -2423,7 +2407,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             }
         }
+        }
 
+        if (currentScreen == Screen.STUDIO) {
         Spacer(Modifier.height(16.dp))
 
 
@@ -2621,6 +2607,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             }
             Text("Stage bypass modifies the existing configuration atomically — no parallel pipelines. Values snapshot at card open; fine-tune stages below.", fontSize = 8.sp, color = T.secondary)
         }
+        }
+        if (currentScreen == Screen.STUDIO) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #117: DSP CHAIN — parametric EQ + processing stages ──
@@ -2783,7 +2771,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 fontSize = 9.sp, color = T.secondary
             )
         }
+        }
 
+        if (currentScreen == Screen.CAPTURE) {
         Spacer(Modifier.height(16.dp))
 
 
@@ -2933,7 +2923,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 )
             }
         }
+        }
 
+        if (currentScreen == Screen.SESSIONS) {
         Spacer(Modifier.height(16.dp))
 
 
@@ -3022,7 +3014,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }
+        }
 
+        if (currentScreen == Screen.SIGNAL) {
         Spacer(Modifier.height(16.dp))
 
 
@@ -3226,7 +3220,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 ) { Text("EXPORT SESSION DIAGNOSTICS", fontSize = 8.sp) }
             }
         }
+        }
 
+        if (currentScreen == Screen.EQUALIZER) {
         Spacer(Modifier.height(16.dp))
 
 
@@ -3436,6 +3432,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             }
         }
         }
+        }
+        if (currentScreen == Screen.PROFX) {
         Spacer(Modifier.height(16.dp))
         // ── Build #89: PRO FX — noise gate + anti-clip limiter ──
         GlassCard {
@@ -3476,7 +3474,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 )
             }
         }
+        }
 
+        if (currentScreen == Screen.PROFX) {
         Spacer(Modifier.height(16.dp))
 
         // ── Per-app profiles ──
@@ -3511,6 +3511,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Spacer(Modifier.height(4.dp))
             Text("Glass effect changes UI rendering only. It never affects DSP, capture, audio buffers, latency or sample rate. If the device struggles, the glass reduces gracefully while borders and transparency remain.", fontSize = 8.sp, color = T.secondary)
         }
+        }
+        if (currentScreen == Screen.PROFX) {
         Spacer(Modifier.height(16.dp))
         // ── Build #130: ANALYZER — shared state with the SPECTRUM card ──
         GlassCard {
@@ -3587,6 +3589,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Spacer(Modifier.height(4.dp))
             Text("Same controls as the SPECTRUM card — one shared state, no duplicate settings. The analyzer renders from native DSP snapshots outside the real-time audio callback.", fontSize = 8.sp, color = T.secondary)
         }
+        }
+        if (currentScreen == Screen.CAPTURE) {
         Spacer(Modifier.height(16.dp))
         // ── Build #130: NOTIFICATIONS — authoritative state machine, informational ──
         GlassCard {
@@ -3594,6 +3598,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Spacer(Modifier.height(6.dp))
             Text("The foreground notification mirrors the measured DSP state machine: DSP ACTIVE, DSP BYPASS, DSP ERROR, CAPTURE BLOCKED, WAITING, AUDIO ERROR — with the actual sample rate, output route and measured level whenever available. SonicCore never invents states; per-channel control lives in Android notification settings.", fontSize = 10.sp, color = T.secondary, lineHeight = 14.sp)
         }
+        }
+        if (currentScreen == Screen.CAPTURE) {
         Spacer(Modifier.height(16.dp))
         // ── Build #123: OUTPUT ROUTE — information, never a fake control ──
         GlassCard {
@@ -3608,6 +3614,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             if (rUsb) Text("○ USB audio connected", fontSize = 10.sp, color = T.secondary)
             Text("System-controlled route — Android owns route selection. SonicCore reports the active route and rebuilds its own output when it changes; it cannot force a different system route.", fontSize = 8.sp, color = T.secondary)
         }
+        }
+        if (currentScreen == Screen.PROFX) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #123: ABOUT ──
@@ -3624,6 +3632,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 fontSize = 10.sp, color = T.secondary, lineHeight = 14.sp
             )
         }
+        }
+        if (currentScreen == Screen.CAPTURE) {
         Spacer(Modifier.height(16.dp))
 
         // ── Build #118: AUDIO PATH — universal, capability-driven, brand-neutral ──
@@ -3742,7 +3752,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     }
             )
         }
+        }
 
+        if (currentScreen == Screen.CAPTURE) {
         Spacer(Modifier.height(16.dp))
 
 
@@ -3809,13 +3821,20 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             }
         }
+        }
 
 
-        }   // v143: studio expanded
-        }   // v143: hidden in FOCUS EQ
 
         Spacer(Modifier.height(24.dp))
     }
+        }
+        }
+        }
+        }
+        }
+        }
+        }
+        }
     } }
     // v144 §11: live route monitoring — public AudioDeviceCallback, registered
     // for the composition and ALWAYS unregistered on dispose (lifecycle-safe;
@@ -3880,9 +3899,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     Box(modifier = Modifier.fillMaxSize()) {
     GlassBackground()
     mainContent()
+    GlassNavBar(current = currentScreen, onSelect = { currentScreen = it },
+        modifier = Modifier.align(Alignment.BottomCenter))
     SnackbarHost(
         hostState = snackbarHost,
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 56.dp)
     )
     } // end Box
 
@@ -5316,6 +5337,41 @@ fun StereoMeterBar(label: String, lMb: Int, rMb: Int, clipping: Boolean = false)
     }
 }
 
+
+@Composable
+fun GlassNavBar(current: Screen, onSelect: (Screen) -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = S.card.copy(alpha = glassSurfaceAlpha()),
+        shadowElevation = 8.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Screen.values().forEach { screen ->
+                val selected = current == screen
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onSelect(screen) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .semantics { contentDescription = screen.label + " tab" }
+                ) {
+                    Text(screen.icon, fontSize = 16.sp,
+                        color = if (selected) T.primary else T.secondary)
+                    Text(screen.label, fontSize = 8.sp,
+                        color = if (selected) T.primary else T.secondary,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun GlassChip(label: String, state: Int, modifier: Modifier = Modifier) {
