@@ -53,9 +53,9 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ env.VERSION }}
-        name: "Neon EQ v${{ env.VERSION }}"
+        name: "SonicCore Equalizer v${{ env.VERSION }}"
         body: |
-          # 🎧 Neon EQ v${{ env.VERSION }}
+          # 🎧 SonicCore Equalizer v${{ env.VERSION }}
 
           ## 📦 Installation
           1. Download the APK file below
@@ -64,26 +64,21 @@ jobs:
           4. Grant audio permissions when prompted
           5. Toggle the EQ on and enjoy!
 
-          ## ✨ What's New in 2.0.2
-          - 🔊 **Fixed: EQ toggle no longer reduces volume** — preamp compensation no longer cancels out the Loudness slider; EQ on now sounds the same as off, or slightly louder. Distortion protection still engages at extreme settings
-          - 📊 **Fixed: Visualizer no longer stalls or freezes** — self-heal watchdog re-attaches waveform capture when MIUI silently kills it (screen-off, track change), and the idle pulse shows whenever data is stale — even mid-playback — instead of a frozen frame
-          - 🎚️ **New band canvas** — smooth neon curve through band tops, dashed 0 dB reference line, active-band glow with floating value bubble while dragging
-          - ⚡ **Zero-allocation rendering** — all Paths, Paints, Brushes and buffers in the redraw paths are hoisted and reused; no GC pauses mid-playback on low-end devices
-          - 🎯 **Per-app audio profiles** — auto-switch presets based on which app is playing
-          - ✏️ **Custom presets** — create, rename, duplicate, reorder, share & import
-          - 📳 **Haptic fine-tuning** — feel a tick at every dB step while dragging bands
-          - 📱 **Home screen widget + Quick Settings tile**
-          - 💾 **Backup & Restore** — full-state export/import
-          - 📊 **Visualizer styles** — Bars, Wave & Circle
-          - 🔊 **Speaker-safe effects** — capped at 300 with preamp compensation
-          - 🌙 **Glass-morphism UI** — neon cards, gradient headers, AMOLED black
+          ## ✨ What's New in 3.8.0
+          - 🎨 **Liquid Glass redesign** — frosted glass panels, specular highlights, AMOLED-inspired backgrounds, restrained accent lighting
+          - 🔊 **Full SonicCore Equalizer rebranding** — all user-facing references updated
+          - 🎚️ **Parametric EQ with glass sliders** — functional gain sliders with labeled sections
+          - 📊 **Frequency-response graph** — real-time visual feedback
+          - 🔧 **Critical limiter/compressor fix (v146)** — both stages now track gain reduction (≤0 dB) instead of smoothed detector level, fixing the -6 dBFS → -68 dBFS crush bug
+          - 📈 **DSP telemetry** — live GR, DSP block µs, config version lines
+          - 🧪 **Expanded DSP harness** — 23 test sections, 66 assertions with ASan+UBSan
 
           ## ✨ Core Features
           - System-wide audio equalization (all apps)
           - 10 built-in presets + unlimited custom presets
           - 5/10/15/31 band equalizer
           - Auto-apply last preset on startup
-          - Neon AMOLED dark theme
+          - Liquid Glass AMOLED dark theme
           - Background foreground service
 
           ## 📋 Requirements
