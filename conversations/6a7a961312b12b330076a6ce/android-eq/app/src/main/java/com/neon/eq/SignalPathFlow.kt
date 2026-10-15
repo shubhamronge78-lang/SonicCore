@@ -140,7 +140,7 @@ fun SignalPathFlow(
         val verdictColor = if (pathVerdict.startsWith("SIGNAL PATH ACTIVE")) T.primary else StatusColors.warn
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Alignment.CenterHorizontally
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center
         ) {
             Text("VERDICT: ", fontSize = 11.sp, color = T.secondary, fontWeight = FontWeight.Bold)
             Text(pathVerdict, fontSize = 11.sp, color = verdictColor, fontWeight = FontWeight.Bold)

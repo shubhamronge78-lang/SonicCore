@@ -122,7 +122,7 @@ private fun DspStageNode(
             Text("EDIT", fontSize = 8.sp, color = if (stage.on) T.primary else T.secondary.copy(alpha = 0.5f),
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(if (stage.on) T.primary else T.secondary).copy(alpha = if (stage.on) 0.12f else 0.06f)
+                    .background((if (stage.on) T.primary else T.secondary).copy(alpha = if (stage.on) 0.12f else 0.06f))
                     .clickable { if (stage.on) onEdit() }
                     .padding(horizontal = 8.dp, vertical = 3.dp))
             Spacer(Modifier.width(6.dp))
@@ -134,8 +134,8 @@ private fun DspStageNode(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(
-                        if (stage.on) StatusColors.warn else T.primary
-                    ).copy(alpha = 0.12f)
+                        (if (stage.on) StatusColors.warn else T.primary).copy(alpha = 0.12f)
+                    )
                     .clickable { onToggle() }
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             )
