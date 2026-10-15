@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -330,14 +331,24 @@ object SurfaceModes {
 @Composable
 fun GlassBackground() {
     val glow = when (appGlassState.value) { 0 -> 0.030f; 2 -> 0.085f; else -> 0.055f }
+    // Liquid glass: light fields slowly drift, simulating refracted light
+    val infinite = rememberInfiniteTransition(label = "glassBg")
+    val drift by infinite.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "glassDrift"
+    )
     Box(modifier = Modifier.fillMaxSize()) {
         if (appModeState.value == SurfaceModes.DARK) {
-            // extremely subtle atmospheric light fields — never bright, static
+            // drifting atmospheric light fields — never bright, liquid motion
             Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
+                .graphicsLayer { translationX = (drift - 0.5f) * 80f; translationY = (drift - 0.5f) * 40f }
                 .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow), Color.Transparent))))
             Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
+                .graphicsLayer { translationX = (0.5f - drift) * 60f; translationY = (drift - 0.5f) * 50f }
                 .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow * 0.8f), Color.Transparent))))
             Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.5f)
+                .graphicsLayer { translationX = (drift - 0.5f) * 50f; translationY = (0.5f - drift) * 30f }
                 .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow * 0.6f), Color.Transparent))))
         }
     }
@@ -358,8 +369,14 @@ fun StatusChip(label: String, kind: Int, dot: Boolean = true) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(S.cardDeep.copy(alpha = 0.55f))
-            .border(1.dp, col.copy(alpha = 0.25f), RoundedCornerShape(50))
+            .background(Brush.verticalGradient(listOf(
+                S.cardDeep.copy(alpha = 0.60f),
+                S.cardDeep.copy(alpha = 0.48f)
+            )))
+            .border(1.dp, Brush.verticalGradient(listOf(
+                Color.White.copy(alpha = glassSpecularAlpha() * 1.2f),
+                col.copy(alpha = 0.25f)
+            )), RoundedCornerShape(50))
             .padding(horizontal = 10.dp, vertical = 4.dp)
             .semantics { contentDescription = label }
     ) {
@@ -373,8 +390,9 @@ val appModeState = mutableStateOf(SurfaceModes.DARK)
 // Build #127: glass intensity — UI rendering ONLY. Never touches DSP, capture,
 // buffers, latency or sample rate. 0 LOW · 1 MEDIUM (default) · 2 HIGH.
 val appGlassState = mutableStateOf(1)
-fun glassSurfaceAlpha(): Float = when (appGlassState.value) { 0 -> 0.96f; 2 -> 0.74f; else -> 0.86f }
-fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.08f; 2 -> 0.22f; else -> 0.14f }
+fun glassSurfaceAlpha(): Float = when (appGlassState.value) { 0 -> 0.94f; 2 -> 0.66f; else -> 0.78f }
+fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.10f; 2 -> 0.30f; else -> 0.20f }
+fun glassSpecularAlpha(): Float = when (appGlassState.value) { 0 -> 0.06f; 2 -> 0.18f; else -> 0.12f }
 private val S: SurfacePalette get() = appModeState.value
 
 @Composable
@@ -796,8 +814,25 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .background(T.secondary.copy(alpha = 0.15f))
-                            .border(1.dp, T.secondary.copy(alpha = 0.4f), CircleShape)
+                            .shadow(3.dp, CircleShape)
+                            .background(Brush.radialGradient(listOf(
+                                T.secondary.copy(alpha = 0.20f),
+                                T.secondary.copy(alpha = 0.08f)
+                            )))
+                            .drawBehind {
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0f to Color.White.copy(alpha = 0.15f),
+                                        0.5f to Color.Transparent
+                                    ),
+                                    topLeft = Offset.Zero,
+                                    size = Size(size.width, size.height * 0.5f)
+                                )
+                            }
+                            .border(1.dp, Brush.verticalGradient(listOf(
+                                Color.White.copy(alpha = 0.25f),
+                                T.secondary.copy(alpha = 0.35f)
+                            )), CircleShape)
                             .clickable { showSettings = true },
                         contentAlignment = Alignment.Center
                     ) {
@@ -810,8 +845,25 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .background(T.accent.copy(alpha = 0.15f))
-                            .border(1.dp, T.accent.copy(alpha = 0.4f), CircleShape)
+                            .shadow(3.dp, CircleShape)
+                            .background(Brush.radialGradient(listOf(
+                                T.accent.copy(alpha = 0.20f),
+                                T.accent.copy(alpha = 0.08f)
+                            )))
+                            .drawBehind {
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0f to Color.White.copy(alpha = 0.15f),
+                                        0.5f to Color.Transparent
+                                    ),
+                                    topLeft = Offset.Zero,
+                                    size = Size(size.width, size.height * 0.5f)
+                                )
+                            }
+                            .border(1.dp, Brush.verticalGradient(listOf(
+                                Color.White.copy(alpha = 0.25f),
+                                T.accent.copy(alpha = 0.35f)
+                            )), CircleShape)
                             .clickable {
                                 val next = if (appModeState.value == SurfaceModes.DARK) SurfaceModes.LIGHT else SurfaceModes.DARK
                                 appModeState.value = next
@@ -842,13 +894,37 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 modifier = Modifier
                     .size(84.dp)
                     .clip(CircleShape)
+                    .shadow(if (enabled) 12.dp else 4.dp, CircleShape)
                     .background(
                         brush = if (enabled)
-                            Brush.radialGradient(listOf(T.primary.copy(alpha = 0.35f), T.primary.copy(alpha = 0.06f)))
+                            Brush.radialGradient(
+                                0f to T.primary.copy(alpha = 0.40f),
+                                0.5f to T.primary.copy(alpha = 0.18f),
+                                1f to T.secondary.copy(alpha = 0.08f)
+                            )
                         else
-                            Brush.radialGradient(listOf(Color.Gray.copy(alpha = 0.14f), Color.Transparent))
+                            Brush.radialGradient(
+                                0f to Color.Gray.copy(alpha = 0.16f),
+                                1f to Color.Transparent
+                            )
                     )
-                    .border(2.dp, if (enabled) T.primary else Color.Gray.copy(alpha = 0.3f), CircleShape)
+                    .drawBehind {
+                        // Liquid glass orb — specular highlight at the top
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.White.copy(alpha = if (enabled) 0.25f else 0.08f),
+                                0.35f to Color.White.copy(alpha = if (enabled) 0.06f else 0.02f),
+                                0.5f to Color.Transparent
+                            ),
+                            topLeft = Offset(0f, 0f),
+                            size = Size(size.width, size.height * 0.5f)
+                        )
+                    }
+                    .border(2.dp, Brush.verticalGradient(listOf(
+                        Color.White.copy(alpha = if (enabled) 0.40f else 0.12f),
+                        (if (enabled) T.primary else Color.Gray).copy(alpha = if (enabled) 0.50f else 0.25f),
+                        (if (enabled) T.secondary else Color.Gray).copy(alpha = if (enabled) 0.20f else 0.10f)
+                    )), CircleShape)
                     .clickable {
                         val next = !enabled
                         enabled = next
@@ -892,7 +968,14 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(50))
-                .background(T.primary.copy(alpha = 0.10f))
+                .background(Brush.horizontalGradient(listOf(
+                    T.primary.copy(alpha = 0.12f),
+                    T.secondary.copy(alpha = 0.06f)
+                )))
+                .border(1.dp, Brush.verticalGradient(listOf(
+                    Color.White.copy(alpha = glassSpecularAlpha()),
+                    T.primary.copy(alpha = 0.12f)
+                )), RoundedCornerShape(50))
                 .clickable { showOutputStudio = true }
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .semantics { contentDescription = "Output: " + quickRoute + " — opens Output Studio" }) {
@@ -2064,7 +2147,14 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(50))
-                    .background(T.secondary.copy(alpha = 0.08f))
+                    .background(Brush.horizontalGradient(listOf(
+                        T.secondary.copy(alpha = 0.10f),
+                        T.primary.copy(alpha = 0.05f)
+                    )))
+                    .border(1.dp, Brush.verticalGradient(listOf(
+                        Color.White.copy(alpha = glassSpecularAlpha() * 0.8f),
+                        T.secondary.copy(alpha = 0.10f)
+                    )), RoundedCornerShape(50))
                     .clickable { advOpen = !advOpen }
                     .padding(horizontal = 12.dp, vertical = 10.dp)
                     .semantics { contentDescription = (if (advOpen) "Collapse studio and system sections" else "Expand studio and system sections") }
@@ -5153,8 +5243,26 @@ fun SCMark(size: androidx.compose.ui.unit.Dp = 34.dp) {
         modifier = Modifier
             .size(size)
             .clip(RoundedCornerShape(size / 3.4f))
-            .background(Brush.linearGradient(listOf(T.primary, T.secondary)))
-            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(size / 3.4f)),
+            .background(Brush.verticalGradient(listOf(
+                T.primary.copy(alpha = 0.90f),
+                T.secondary.copy(alpha = 0.85f)
+            )))
+            .drawBehind {
+                // Glass specular — bright top half, like light catching a glass tile
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.30f),
+                        0.5f to Color.White.copy(alpha = 0.06f),
+                        1f to Color.Transparent
+                    ),
+                    topLeft = Offset.Zero,
+                    size = size
+                )
+            }
+            .border(1.dp, Brush.verticalGradient(listOf(
+                Color.White.copy(alpha = 0.35f),
+                Color.White.copy(alpha = 0.08f)
+            )), RoundedCornerShape(size / 3.4f)),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -5224,8 +5332,14 @@ fun GlassChip(label: String, state: Int, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .clip(RoundedCornerShape(50))
-            .background(S.cardDeep.copy(alpha = 0.55f))
-            .border(1.dp, col.copy(alpha = 0.25f), RoundedCornerShape(50))
+            .background(Brush.verticalGradient(listOf(
+                S.cardDeep.copy(alpha = 0.60f),
+                S.cardDeep.copy(alpha = 0.50f)
+            )))
+            .border(1.dp, Brush.verticalGradient(listOf(
+                Color.White.copy(alpha = glassSpecularAlpha() * 1.5f),
+                col.copy(alpha = 0.25f)
+            )), RoundedCornerShape(50))
             .padding(horizontal = 9.dp, vertical = 4.dp)
             .semantics { contentDescription = label }
     ) {
@@ -5243,7 +5357,14 @@ fun GlassButton(label: String, kind: Int = 0, enabled: Boolean = true, onClick: 
         color = if (enabled) col else col.copy(alpha = 0.40f),
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background((if (enabled) col else col.copy(alpha = 0.4f)).copy(alpha = 0.12f))
+            .background(Brush.verticalGradient(listOf(
+                (if (enabled) col else col.copy(alpha = 0.4f)).copy(alpha = 0.16f),
+                (if (enabled) col else col.copy(alpha = 0.4f)).copy(alpha = 0.08f)
+            )))
+            .border(1.dp, Brush.verticalGradient(listOf(
+                Color.White.copy(alpha = if (enabled) glassSpecularAlpha() * 1.2f else 0.04f),
+                col.copy(alpha = 0.15f)
+            )), RoundedCornerShape(50))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 11.dp, vertical = 5.dp)
     )
@@ -5280,10 +5401,28 @@ fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composab
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .shadow(12.dp, RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                    .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                    .background(S.card.copy(alpha = 0.97f))
-                    .border(1.dp, Brush.verticalGradient(listOf(T.primary.copy(alpha = 0.22f), T.secondary.copy(alpha = 0.10f))), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+                    .shadow(14.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .background(Brush.verticalGradient(listOf(
+                        S.card.copy(alpha = 0.92f),
+                        S.cardAlt.copy(alpha = 0.96f)
+                    )))
+                    .drawBehind {
+                        // Specular highlight along the top edge of the sheet
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.White.copy(alpha = glassSpecularAlpha() * 1.5f),
+                                1f to Color.Transparent
+                            ),
+                            topLeft = Offset(0f, 0f),
+                            size = Size(size.width, 4.dp.toPx())
+                        )
+                    }
+                    .border(1.dp, Brush.verticalGradient(listOf(
+                        Color.White.copy(alpha = glassBorderAlpha() * 1.2f),
+                        T.primary.copy(alpha = 0.22f),
+                        T.secondary.copy(alpha = 0.10f)
+                    )), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .padding(horizontal = 16.dp)
                     .padding(top = 10.dp, bottom = 20.dp),
             ) {
@@ -5301,23 +5440,56 @@ fun NeonCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // Build #127: PRIMARY GLASS — translucent tonal surface, gradient hairline
-    // border (stronger at the top edge as a highlight), subtle elevation.
-    // Intensity follows the user's glass setting; fully opaque never.
+    // Liquid Glass: translucent tonal surface with specular top highlight,
+    // inner depth shadow, and neon gradient border. The top edge catches
+    // light (white specular), the bottom recedes (inner shadow) — giving
+    // each card the appearance of a shaped glass panel.
     val a = glassSurfaceAlpha()
     val bA = glassBorderAlpha()
+    val sA = glassSpecularAlpha()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(5.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
-            .background(Brush.verticalGradient(listOf(S.card.copy(alpha = a), S.cardAlt.copy(alpha = a))))
+            .shadow(8.dp, RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(22.dp))
+            .background(Brush.verticalGradient(
+                listOf(
+                    S.card.copy(alpha = (a * 0.82f).coerceAtMost(0.98f)),
+                    S.card.copy(alpha = a),
+                    S.cardAlt.copy(alpha = (a * 1.06f).coerceAtMost(0.99f))
+                )
+            ))
+            .drawBehind {
+                // Specular highlight — bright line at the top edge (light catching glass)
+                val specH = 3.dp.toPx()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = sA),
+                        1f to Color.Transparent
+                    ),
+                    topLeft = Offset(0f, 0f),
+                    size = Size(size.width, specH)
+                )
+                // Inner depth — subtle shadow at the bottom edge
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = sA * 0.5f)
+                    ),
+                    topLeft = Offset(0f, size.height - specH),
+                    size = Size(size.width, specH)
+                )
+            }
             .border(
                 1.dp,
-                Brush.verticalGradient(listOf(T.primary.copy(alpha = bA), T.secondary.copy(alpha = bA * 0.55f))),
-                RoundedCornerShape(20.dp)
+                Brush.verticalGradient(listOf(
+                    Color.White.copy(alpha = (bA * 1.5f).coerceAtMost(0.4f)),
+                    T.primary.copy(alpha = bA * 0.7f),
+                    T.secondary.copy(alpha = bA * 0.35f)
+                )),
+                RoundedCornerShape(22.dp)
             )
-            .padding(12.dp),
+            .padding(14.dp),
         content = content
     )
 }
@@ -5347,6 +5519,17 @@ fun BreathingGlow(active: Boolean) {
         ),
         label = "glowAlpha"
     )
+    // Liquid glass: secondary color glow breathes at a slightly different
+    // rhythm, creating a layered aurora effect instead of a single pulse.
+    val alpha2 by infinite.animateFloat(
+        initialValue = if (active) 0.06f else 0.02f,
+        targetValue = if (active) 0.22f else 0.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (active) 2000 else 3200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha2"
+    )
     Box(
         modifier = Modifier
             .height(80.dp)
@@ -5354,6 +5537,16 @@ fun BreathingGlow(active: Boolean) {
             .background(
                 Brush.radialGradient(
                     colors = listOf(T.primary.copy(alpha = alpha), Color.Transparent)
+                )
+            )
+    )
+    Box(
+        modifier = Modifier
+            .height(70.dp)
+            .fillMaxWidth(0.5f)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(T.secondary.copy(alpha = alpha2), Color.Transparent)
                 )
             )
     )
@@ -6195,15 +6388,29 @@ fun CircularDial(
                     size = arcSize,
                     style = Stroke(width = strokePx, cap = StrokeCap.Round)
                 )
-                // Knob dot riding the arc at the current value
+                // Knob dot riding the arc at the current value — glass orb
                 val knobAngle = Math.toRadians((135f + 270f * fraction).toDouble())
+                val knobCenter = Offset(
+                    (size.width / 2f) + (r * cos(knobAngle)).toFloat(),
+                    (size.height / 2f) + (r * sin(knobAngle)).toFloat()
+                )
+                // Outer glow ring
                 drawCircle(
-                    color = Color.White.copy(alpha = 0.9f),
-                    radius = strokePx * 0.75f,
-                    center = Offset(
-                        (size.width / 2f) + (r * cos(knobAngle)).toFloat(),
-                        (size.height / 2f) + (r * sin(knobAngle)).toFloat()
-                    )
+                    color = T.primary.copy(alpha = 0.25f),
+                    radius = strokePx * 0.95f,
+                    center = knobCenter
+                )
+                // Glass knob
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.92f),
+                    radius = strokePx * 0.72f,
+                    center = knobCenter
+                )
+                // Specular highlight on the knob
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.50f),
+                    radius = strokePx * 0.30f,
+                    center = Offset(knobCenter.x - strokePx * 0.15f, knobCenter.y - strokePx * 0.15f)
                 )
             }
             Text(
