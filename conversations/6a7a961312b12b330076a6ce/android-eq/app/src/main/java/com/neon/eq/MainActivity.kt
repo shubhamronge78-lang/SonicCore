@@ -16,6 +16,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.content.ContentUris
 import android.net.Uri
 import android.provider.MediaStore
+import com.neon.eq.ui.ConsoleScaffold
+import com.neon.eq.ui.ConsoleScreen
+import com.neon.eq.ui.ConsoleTokens
+import com.neon.eq.ui.GlassPanel
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -264,7 +268,9 @@ object Themes {
     // secondary, blue (not pink) as the third/supporting accent. Status
     // colors (green/yellow/red) live separately in StatusColors below so the
     // brand palette never gets reused to mean "error" or "warning".
-    val CLASSIC = NeonTheme("classic", "SonicCore", Color(0xFF00D9FF), Color(0xFF8B5CF6), Color(0xFF3B82F6))
+    // v3.8: the console palette moved to the Liquid Glass reference — the
+    // cyan/violet aurora pair is the only accent family the chrome uses.
+    val CLASSIC = NeonTheme("classic", "SonicCore", Color(0xFF00F0FF), Color(0xFFA554FF), Color(0xFF3B82F6))
     val SYNTHWAVE = NeonTheme("synthwave", "Synthwave", Color(0xFFFF4FD8), Color(0xFF7C4DFF), Color(0xFF00E5FF))
     val EMBER = NeonTheme("ember", "Ember", Color(0xFFFF9500), Color(0xFFFF3D5A), Color(0xFFFFD54F))
     val EMERALD = NeonTheme("emerald", "Emerald", Color(0xFF00E676), Color(0xFF00BFA5), Color(0xFFB2FF59))
@@ -306,11 +312,14 @@ object SurfaceModes {
     // AMOLED black — the reference's "professional console" feel comes from
     // depth (bg -> surface -> card -> cardAlt each a shade lighter), not
     // from pure black. Hue drifts toward blue (210°) instead of purple.
+    // v3.8: deeper midnight stock so the aurora light field has something to
+    // sit against — bg -> surface -> card -> cardAlt still steps one shade at
+    // a time for depth, but the whole ramp dropped a stop.
     val DARK = SurfacePalette(
-        bg = Color(0xFF060A14), surface = Color(0xFF0A0F1D),
-        card = Color(0xFF101828), cardAlt = Color(0xFF0C1220),
-        cardDeep = Color(0xFF18213A), borderDim = Color(0xFF232E4A),
-        text = Color.White, textSoft = Color(0xFFD8E0F5)
+        bg = Color(0xFF05080F), surface = Color(0xFF080D18),
+        card = Color(0xFF0C1526), cardAlt = Color(0xFF0A1020),
+        cardDeep = Color(0xFF141F36), borderDim = Color(0xFF1E2A44),
+        text = Color(0xFFEDF4FF), textSoft = Color(0xFFA9B9D9)
     )
     val LIGHT = SurfacePalette(
         bg = Color(0xFFF2F3F9), surface = Color(0xFFFCFDFF),
@@ -321,27 +330,13 @@ object SurfaceModes {
     fun byId(id: String?): SurfacePalette = if (id == "light") LIGHT else DARK
 }
 
-// ── Build #127: GLASS SYSTEM — dark glass + neon audio console ──
-// Real-time blur on an AMOLED background is invisible under dark glass and
-// costs GPU on low-end devices, so glass here is delivered efficiently via
-// translucency, gradient hairline borders and top highlights. The glass
-// intensity setting scales all three. No glass work ever runs outside the
-// UI layer.
-@Composable
-fun GlassBackground() {
-    val glow = when (appGlassState.value) { 0 -> 0.030f; 2 -> 0.085f; else -> 0.055f }
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (appModeState.value == SurfaceModes.DARK) {
-            // extremely subtle atmospheric light fields — never bright, static
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
-                .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow), Color.Transparent))))
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
-                .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow * 0.8f), Color.Transparent))))
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.5f)
-                .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow * 0.6f), Color.Transparent))))
-        }
-    }
-}
+// ── Build #127 / v3.8: GLASS SYSTEM — dark glass audio console ──
+// The backdrop and the panel primitive now live in the console design system
+// (com.neon.eq.ui: AuroraBackground + GlassPanel). Glass is still delivered
+// via translucency, hairline borders and top highlights — never a live blur,
+// which is invisible on a near-black surface and costs GPU on low-end devices.
+// The glass intensity setting still scales all three, and no glass work ever
+// runs outside the UI layer.
 
 // Reusable glass status chip — icon + text, never color-only.
 @Composable
@@ -615,7 +610,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     var spHold by remember { mutableStateOf(FloatArray(48)) }
     // v143: FOCUS EQ — immersive EQ workspace; STUDIO & SYSTEM collapsed by default.
     var focusEq by remember { mutableStateOf(false) }
-    var advOpen by remember { mutableStateOf(false) }
+    // v3.8 console navigation: one destination at a time. This replaces the
+    // old "expand studio & system" disclosure — navigation is real now, and
+    // FOCUS EQ is no longer used to hide whole screens.
+    var consoleScreen by remember { mutableStateOf(ConsoleScreen.DASHBOARD) }
     var spSmoothAmt by remember { mutableStateOf(when (favPrefs.getInt("an_smooth", 1)) { 0 -> 0.35f; 2 -> 0.75f; else -> 0.55f }) }
     var spFrozen by remember { mutableStateOf(false) }
     var presetFavs by remember { mutableStateOf(favPrefs.getStringSet("preset_favs", emptySet<String>()) ?: emptySet()) }
@@ -673,6 +671,21 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     val player = remember { SoftEqPlayer(dsp) }
     val tone = remember { TonePlayer(dsp) }
     var toneOn by remember { mutableStateOf(false) }
+    // ── v3.8: PLAYER destination state, hoisted to the screen ──
+    // Splitting the console into destinations must not reset what the player is
+    // doing. The picked track, the scanned folder library and the chosen output
+    // routing now outlive a visit to another destination, exactly as they did
+    // when the console was one long scroll. Same names, same semantics.
+    var outVol by remember { mutableStateOf(engine.getPlayerVolume()) }
+    var outSel by remember { mutableStateOf(-1) }
+    var pickedName by remember { mutableStateOf<String?>(null) }
+    var pickedPlaying by remember { mutableStateOf(false) }
+    var folderTracks by remember { mutableStateOf<List<Pair<String, Uri>>>(emptyList()) }
+    var folderName by remember { mutableStateOf<String?>(null) }
+    var folderScanned by remember { mutableStateOf(false) }
+    var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var nowUri by remember { mutableStateOf<String?>(null) }
+    var playing by remember { mutableStateOf(false) }
 
     // Build #132: universal landscape sidebar — ALL five tabs (not just
     // HOME) get Sidebar | Content on landscape/tablet, matching the
@@ -905,9 +918,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(6.dp))
         // Build #124: landscape audio console — two-column workspace,
         // never a stretched portrait layout
-        // v143 §32: FOCUS EQ hides the technical dashboard; the compact
-        // power/status header above always stays.
-        if (!focusEq) {
+        // v3.8: the dashboard is its own destination now, so it no longer has
+        // to hide behind FOCUS EQ. The compact power/status header above stays
+        // visible on every destination.
+        if (consoleScreen == ConsoleScreen.DASHBOARD) {
         val isLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -1421,6 +1435,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             } catch (_: Throwable) { null }
         }
+        // v3.8: the EQ workspace (graph, band editor, presets) is its own
+        // destination. It renders only when EQUALIZER is selected.
+        if (consoleScreen == ConsoleScreen.EQUALIZER) {
         // ── v143: EQUALIZER header — title + FOCUS EQ (§32) ──
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             GradientText("EQUALIZER", 16.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
@@ -2054,27 +2071,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         } // tab guard
+        }   // end EQUALIZER destination
 
-        // v143 §31/§32: STUDIO & SYSTEM — every technical section stays one
-        // tap away, but the EQ is the centerpiece. Collapsed by default in
-        // normal mode; fully hidden in FOCUS EQ. Same composables, same state.
-        if (!focusEq) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(50))
-                    .background(T.secondary.copy(alpha = 0.08f))
-                    .clickable { advOpen = !advOpen }
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .semantics { contentDescription = (if (advOpen) "Collapse studio and system sections" else "Expand studio and system sections") }
-            ) {
-                GradientText("STUDIO & SYSTEM", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
-                Spacer(Modifier.weight(1f))
-                Text(if (advOpen) "▾ COLLAPSE" else "▸ EXPAND", fontSize = 10.sp, color = if (advOpen) T.primary else T.secondary)
-            }
-            Spacer(Modifier.height(8.dp))
-            if (advOpen) {
+        // v3.8 console navigation: the technical subsystems each live on their
+        // own destination (PLAYER / STUDIO / SYSTEM) rather than one collapsed
+        // "studio & system" drawer. Same composables, same state, no duplicates.
+        if (consoleScreen == ConsoleScreen.PLAYER) {
         // ── Build #110: VISUALIZER on the main screen — system capture when
         // the device allows it, software-player capture when it doesn't ──
         NeonCard {
@@ -2137,17 +2139,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { hasPerm = it }
             var diagTick by remember { mutableStateOf(0) }
             LaunchedEffect(Unit) { while (true) { delay(700); diagTick++ } }
-            DisposableEffect(Unit) { onDispose { player.stop(); tone.stop() } }
-            // Any change to the curve — drag, preset, startup reapply — reaches the software EQ instantly
-            LaunchedEffect(bandLevels) {
-                dsp.setGains(bandLevels)
-                // Build #119: immediate thread-safe native push for 15/31-band
-                // selections — the 2s service mirror is a safety net only.
-                if (com.neon.eq.dsp.NeonDsp.available && engine.bandCount > 10) {
-                    try { com.neon.eq.dsp.NeonDsp.setGraphicGains(bandLevels) } catch (_: Throwable) { }
-                }
-            }
-            LaunchedEffect(loudness) { dsp.setPreamp(engine.loudnessAppliedMb(loudness) / 100f) }
+            // v3.8: the curve->DSP pushes and the player/tone lifecycle moved to
+            // SCREEN-LEVEL AUDIO WIRING (see below). They are deliberately not
+            // gated by the destination: leaving this tab must never stop
+            // playback or delay an EQ change reaching the engine.
             // Build #107: one-tap pipeline proof + live player status.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(
@@ -2176,7 +2171,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             // Build #115: OUTPUT — Poweramp's method: direct volume control on
             // our own stream, plus explicit device routing when headphones or
             // Bluetooth are connected.
-            var outVol by remember { mutableStateOf(engine.getPlayerVolume()) }
             LaunchedEffect(Unit) { player.setOutVolume(outVol) }
             val outDevices = remember {
                 try {
@@ -2189,7 +2183,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     }
                 } catch (t: Throwable) { emptyList() }
             }
-            var outSel by remember { mutableStateOf(-1) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("OUTPUT", fontSize = 10.sp, color = T.secondary)
                 Spacer(Modifier.width(8.dp))
@@ -2228,8 +2221,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 // Works on every OEM (Funtouch included) with zero grants.
                 Text("Library permission is blocked or ungranted — pick any track directly instead, no permission needed:", fontSize = 10.sp, color = T.secondary, lineHeight = 13.sp)
                 Spacer(Modifier.height(6.dp))
-                var pickedName by remember { mutableStateOf<String?>(null) }
-                var pickedPlaying by remember { mutableStateOf(false) }
                 val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                     if (uri != null) {
                         // Build #112: keep read access across restarts so the
@@ -2268,9 +2259,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 // Build #114: Poweramp-style folder library — zero permission.
                 // Pick the music folder once; the tree grant persists across
                 // restarts, so the list restores on the next launch.
-                var folderTracks by remember { mutableStateOf<List<Pair<String, Uri>>>(emptyList()) }
-                var folderName by remember { mutableStateOf<String?>(null) }
-                var folderScanned by remember { mutableStateOf(false) }
                 val openTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
                     if (uri != null) {
                         try { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {}
@@ -2325,9 +2313,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     colors = ButtonDefaults.buttonColors(containerColor = T.accent)
                 ) { Text("GRANT MUSIC ACCESS (optional)", fontSize = 11.sp) }
             } else {
-                var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
-                var nowUri by remember { mutableStateOf<String?>(null) }
-                var playing by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
                     tracks = try {
                         val proj = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST)
@@ -2394,6 +2379,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }   // end PLAYER destination (visualizer + player)
+        if (consoleScreen == ConsoleScreen.STUDIO) {
         // ── Build #123: DSP STUDIO — master control + visual processing chain ──
         NeonCard {
             GradientText("DSP ENGINE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -2687,6 +2674,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }   // end STUDIO destination (engine + chain)
+        if (consoleScreen == ConsoleScreen.SYSTEM) {
         // ── Build #117: SYSTEM CAPTURE — CAPTURE MODE with honest A/B ──
         NeonCard {
             GradientText("SYSTEM CAPTURE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
@@ -3130,6 +3119,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }   // end SYSTEM destination (capture + signal path)
+        if (consoleScreen == ConsoleScreen.EQUALIZER) {
         // ── EQ PRESETS — the single canonical preset manager ──
         // Consolidated in Build #129: exactly one preset section exists — here.
         // State lives at top level; storage is unchanged (same prefs, same
@@ -3337,6 +3328,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         }
         Spacer(Modifier.height(16.dp))
+        }   // end EQUALIZER destination (preset library)
+        if (consoleScreen == ConsoleScreen.STUDIO) {
         // ── Build #89: PRO FX — noise gate + anti-clip limiter ──
         NeonCard {
             GradientText("PRO FX", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
@@ -3412,6 +3405,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Text("Glass effect changes UI rendering only. It never affects DSP, capture, audio buffers, latency or sample rate. If the device struggles, the glass reduces gracefully while borders and transparency remain.", fontSize = 8.sp, color = T.secondary)
         }
         Spacer(Modifier.height(16.dp))
+        }   // end STUDIO destination (Pro FX + app profiles)
+        if (consoleScreen == ConsoleScreen.SYSTEM) {
         // ── Build #130: ANALYZER — shared state with the SPECTRUM card ──
         NeonCard {
             GradientText("ANALYZER", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -3711,8 +3706,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
 
 
-        }   // v143: studio expanded
-        }   // v143: hidden in FOCUS EQ
+        }   // end SYSTEM destination (diagnostics + settings)
 
         Spacer(Modifier.height(24.dp))
     }
@@ -3777,14 +3771,37 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     }
     LaunchedEffect(Unit) { outputTick++ }   // first snapshot after composition
 
-    Box(modifier = Modifier.fillMaxSize()) {
-    GlassBackground()
-    mainContent()
-    SnackbarHost(
-        hostState = snackbarHost,
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
-    )
-    } // end Box
+    // ── v3.8 SCREEN-LEVEL AUDIO WIRING ──
+    // These effects sit OUTSIDE the destination gates on purpose. Splitting the
+    // console into destinations is a UI change and must not alter audio
+    // behaviour, so the curve->DSP pushes and the player/tone lifecycle stay
+    // attached to the screen — exactly as they were when every section was
+    // composed at once.
+    LaunchedEffect(bandLevels) {
+        dsp.setGains(bandLevels)
+        // Build #119: immediate thread-safe native push for 15/31-band
+        // selections — the 2s service mirror is a safety net only.
+        if (com.neon.eq.dsp.NeonDsp.available && engine.bandCount > 10) {
+            try { com.neon.eq.dsp.NeonDsp.setGraphicGains(bandLevels) } catch (_: Throwable) { }
+        }
+    }
+    LaunchedEffect(loudness) { dsp.setPreamp(engine.loudnessAppliedMb(loudness) / 100f) }
+    // Stop the app's own players only when the SCREEN leaves composition.
+    DisposableEffect(Unit) { onDispose { player.stop(); tone.stop() } }
+
+    // v3.8: the console shell owns the aurora backdrop and the destination
+    // navigation. The same content tree is simply hosted inside it — one
+    // content tree, one destination visible at a time.
+    ConsoleScaffold(
+        screen = consoleScreen,
+        onSelect = { consoleScreen = it }
+    ) {
+        mainContent()
+        SnackbarHost(
+            hostState = snackbarHost,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
+        )
+    } // end ConsoleScaffold
 
     // ── Build #124: SESSION COMPARISON — factual aggregates only ──
     if (showSessionCompare) {
@@ -5224,8 +5241,8 @@ fun GlassChip(label: String, state: Int, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .clip(RoundedCornerShape(50))
-            .background(S.cardDeep.copy(alpha = 0.55f))
-            .border(1.dp, col.copy(alpha = 0.25f), RoundedCornerShape(50))
+            .background(ConsoleTokens.PanelDeep.copy(alpha = 0.62f))
+            .border(1.dp, col.copy(alpha = 0.30f), RoundedCornerShape(50))
             .padding(horizontal = 9.dp, vertical = 4.dp)
             .semantics { contentDescription = label }
     ) {
@@ -5301,23 +5318,14 @@ fun NeonCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // Build #127: PRIMARY GLASS — translucent tonal surface, gradient hairline
-    // border (stronger at the top edge as a highlight), subtle elevation.
-    // Intensity follows the user's glass setting; fully opaque never.
-    val a = glassSurfaceAlpha()
-    val bA = glassBorderAlpha()
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(5.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
-            .background(Brush.verticalGradient(listOf(S.card.copy(alpha = a), S.cardAlt.copy(alpha = a))))
-            .border(
-                1.dp,
-                Brush.verticalGradient(listOf(T.primary.copy(alpha = bA), T.secondary.copy(alpha = bA * 0.55f))),
-                RoundedCornerShape(20.dp)
-            )
-            .padding(12.dp),
+    // v3.8: every card in the console is the ONE Liquid Glass panel. The
+    // geometry, hairline border, inner top highlight and shadow policy live in
+    // the console design system so the whole app stays visually identical
+    // without 200 call sites drifting apart. Glass intensity still applies.
+    GlassPanel(
+        modifier = modifier,
+        tone = S.card,
+        contentPadding = PaddingValues(12.dp),
         content = content
     )
 }
