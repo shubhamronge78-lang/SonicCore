@@ -109,6 +109,9 @@ import com.neon.eq.capture.CaptureEqService
 import com.neon.eq.dsp.NeonDsp
 import com.neon.eq.dsp.DspParams
 import com.neon.eq.dsp.PeqSlot
+import com.neon.eq.ui.ConsoleSection
+import com.neon.eq.ui.ConsoleNavBar
+import com.neon.eq.ui.AppearancePreset
 
 private const val UI_PREFS = "ui_prefs"
 
@@ -156,6 +159,12 @@ class MainActivity : ComponentActivity() {
             appGlassState.value = (
                 getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
                     .getString("glass", "1")?.toIntOrNull() ?: 1).coerceIn(0, 2)
+        } catch (_: Throwable) { }
+        // v3.7: restore background style.
+        try {
+            appBackgroundStyle.value =
+                getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
+                    .getString("bg_style", "glass") ?: "glass"
         } catch (_: Throwable) { }
 
         val perms = mutableListOf(Manifest.permission.MODIFY_AUDIO_SETTINGS, Manifest.permission.RECORD_AUDIO)
@@ -330,15 +339,59 @@ object SurfaceModes {
 @Composable
 fun GlassBackground() {
     val glow = when (appGlassState.value) { 0 -> 0.030f; 2 -> 0.085f; else -> 0.055f }
+    val bg = appBackgroundStyle.value
     Box(modifier = Modifier.fillMaxSize()) {
-        if (appModeState.value == SurfaceModes.DARK) {
-            // extremely subtle atmospheric light fields — never bright, static
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
-                .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow), Color.Transparent))))
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
-                .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow * 0.8f), Color.Transparent))))
-            Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.5f)
-                .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow * 0.6f), Color.Transparent))))
+        when (bg) {
+            "amoled" -> {
+                // AMOLED Pro: pure black, no gradients — maximum contrast, minimum GPU
+            }
+            "crystal" -> {
+                // Crystal Light: bright, airy light fields on a light surface
+                Box(Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.6f)
+                    .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow * 1.4f), Color.Transparent))))
+                Box(Modifier.fillMaxWidth(0.85f).fillMaxHeight(0.5f)
+                    .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow * 1.2f), Color.Transparent))))
+                Box(Modifier.fillMaxWidth(0.75f).fillMaxHeight(0.45f)
+                    .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow), Color.Transparent))))
+            }
+            "aurora" -> {
+                // Aurora: vibrant layered aurora lighting — deep atmospheric
+                Box(Modifier.fillMaxSize()
+                    .background(Brush.verticalGradient(
+                        listOf(S.bg, S.surface.copy(alpha = 0.5f), S.bg)
+                    )))
+                // Primary aurora band — upper left
+                Box(Modifier.fillMaxWidth(0.85f).fillMaxHeight(0.5f)
+                    .background(Brush.radialGradient(
+                        listOf(T.primary.copy(alpha = glow * 2.2f), Color.Transparent)
+                    )))
+                // Secondary aurora band — upper right, offset
+                Box(Modifier.fillMaxWidth(0.75f).fillMaxHeight(0.45f)
+                    .background(Brush.radialGradient(
+                        listOf(T.secondary.copy(alpha = glow * 1.8f), Color.Transparent)
+                    )))
+                // Accent aurora band — lower center
+                Box(Modifier.fillMaxWidth(0.7f).fillMaxHeight(0.4f)
+                    .background(Brush.radialGradient(
+                        listOf(T.accent.copy(alpha = glow * 1.5f), Color.Transparent)
+                    )))
+            }
+            else -> {
+                // Liquid Glass (default): subtle atmospheric light fields — never bright, static
+                if (appModeState.value == SurfaceModes.DARK) {
+                    Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
+                        .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow), Color.Transparent))))
+                    Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
+                        .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow * 0.8f), Color.Transparent))))
+                    Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.5f)
+                        .background(Brush.radialGradient(listOf(T.accent.copy(alpha = glow * 0.6f), Color.Transparent))))
+                } else {
+                    Box(Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.6f)
+                        .background(Brush.radialGradient(listOf(T.primary.copy(alpha = glow * 1.2f), Color.Transparent))))
+                    Box(Modifier.fillMaxWidth(0.85f).fillMaxHeight(0.5f)
+                        .background(Brush.radialGradient(listOf(T.secondary.copy(alpha = glow), Color.Transparent))))
+                }
+            }
         }
     }
 }
@@ -373,6 +426,8 @@ val appModeState = mutableStateOf(SurfaceModes.DARK)
 // Build #127: glass intensity — UI rendering ONLY. Never touches DSP, capture,
 // buffers, latency or sample rate. 0 LOW · 1 MEDIUM (default) · 2 HIGH.
 val appGlassState = mutableStateOf(1)
+// v3.7: background treatment — "glass" · "amoled" · "crystal" · "aurora"
+val appBackgroundStyle = mutableStateOf("glass")
 fun glassSurfaceAlpha(): Float = when (appGlassState.value) { 0 -> 0.96f; 2 -> 0.74f; else -> 0.86f }
 fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.08f; 2 -> 0.22f; else -> 0.14f }
 private val S: SurfacePalette get() = appModeState.value
@@ -418,6 +473,28 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     var renameInput by remember { mutableStateOf("") }
     var renamingFrom by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
+    // v3.7: console navigation — which section is visible
+    var currentSection by remember { mutableStateOf(ConsoleSection.DEFAULT) }
+    // v3.7: appearance preset — curated combination of theme + mode + glass + background
+    var currentAppearance by remember { mutableStateOf(AppearancePreset.DEFAULT) }
+    // v3.7: apply an appearance preset — sets theme + mode + glass + background together
+    fun applyAppearance(preset: AppearancePreset) {
+        currentAppearance = preset
+        appThemeState.value = Themes.byId(preset.themeId)
+        appModeState.value = SurfaceModes.byId(preset.modeId)
+        appGlassState.value = preset.glass
+        appBackgroundStyle.value = preset.background
+        try {
+            val p = context.getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
+            p.edit()
+                .putString("theme", preset.themeId)
+                .putString("mode", preset.modeId)
+                .putString("glass", preset.glass.toString())
+                .putString("bg_style", preset.background)
+                .putString("appearance", preset.id)
+                .apply()
+        } catch (_: Throwable) { }
+    }
     // Settings preferences — read once, then kept in local state
     var startOnBoot by remember { mutableStateOf(engine.isStartOnBoot()) }
     var autoApplyPreset by remember { mutableStateOf(engine.isAutoApplyPreset()) }
@@ -674,6 +751,17 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     val tone = remember { TonePlayer(dsp) }
     var toneOn by remember { mutableStateOf(false) }
 
+    // v3.7: these effects are top-level so they survive tab switches.
+    // Previously inside the PLAYER NeonCard, which would dispose them on tab change.
+    DisposableEffect(Unit) { onDispose { player.stop(); tone.stop() } }
+    LaunchedEffect(bandLevels) {
+        dsp.setGains(bandLevels)
+        if (com.neon.eq.dsp.NeonDsp.available && engine.bandCount > 10) {
+            try { com.neon.eq.dsp.NeonDsp.setGraphicGains(bandLevels) } catch (_: Throwable) { }
+        }
+    }
+    LaunchedEffect(loudness) { dsp.setPreamp(engine.loudnessAppliedMb(loudness) / 100f) }
+
     // Build #132: universal landscape sidebar — ALL five tabs (not just
     // HOME) get Sidebar | Content on landscape/tablet, matching the
     // SonicCore console layout. mainContent is the exact same Column that
@@ -912,6 +1000,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f)) {
+        if (currentSection == ConsoleSection.DASHBOARD) {
         // ── Build #121: STATUS — the professional dashboard header ──
         NeonCard {
             val recentData = CaptureEqService.running &&
@@ -1329,6 +1418,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         Spacer(Modifier.height(16.dp))
 
+        } // end DASHBOARD
+        if (currentSection == ConsoleSection.SIGNAL) {
         // ── Build #121: PERFORMANCE — compact live counters ──
         NeonCard {
             var perfTick by remember { mutableStateOf(0) }
@@ -1421,6 +1512,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             } catch (_: Throwable) { null }
         }
+        } // end SIGNAL (perf+health)
+        if (currentSection == ConsoleSection.EQUALIZER) {
         // ── v143: EQUALIZER header — title + FOCUS EQ (§32) ──
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             GradientText("EQUALIZER", 16.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
@@ -2016,6 +2109,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         Spacer(Modifier.height(16.dp))
 
+        } // end EQUALIZER
+        if (currentSection == ConsoleSection.PROFX) {
         // ── Effect dials — Build #95: back on the main screen in their old
         // spot below the EQ curve (Settings stint lasted v92-v94). ──
         // Build #103: the whole EFFECTS card is replaced by the loudness
@@ -2075,6 +2170,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             }
             Spacer(Modifier.height(8.dp))
             if (advOpen) {
+        } // end PROFX (dials)
+        if (currentSection == ConsoleSection.PLAYER) {
         // ── Build #110: VISUALIZER on the main screen — system capture when
         // the device allows it, software-player capture when it doesn't ──
         NeonCard {
@@ -2137,17 +2234,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { hasPerm = it }
             var diagTick by remember { mutableStateOf(0) }
             LaunchedEffect(Unit) { while (true) { delay(700); diagTick++ } }
-            DisposableEffect(Unit) { onDispose { player.stop(); tone.stop() } }
-            // Any change to the curve — drag, preset, startup reapply — reaches the software EQ instantly
-            LaunchedEffect(bandLevels) {
-                dsp.setGains(bandLevels)
-                // Build #119: immediate thread-safe native push for 15/31-band
-                // selections — the 2s service mirror is a safety net only.
-                if (com.neon.eq.dsp.NeonDsp.available && engine.bandCount > 10) {
-                    try { com.neon.eq.dsp.NeonDsp.setGraphicGains(bandLevels) } catch (_: Throwable) { }
-                }
-            }
-            LaunchedEffect(loudness) { dsp.setPreamp(engine.loudnessAppliedMb(loudness) / 100f) }
             // Build #107: one-tap pipeline proof + live player status.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(
@@ -2394,6 +2480,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        } // end PLAYER
+        if (currentSection == ConsoleSection.DSP) {
         // ── Build #123: DSP STUDIO — master control + visual processing chain ──
         NeonCard {
             GradientText("DSP ENGINE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -2687,6 +2775,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        } // end DSP (studio+chain)
+        if (currentSection == ConsoleSection.CAPTURE) {
         // ── Build #117: SYSTEM CAPTURE — CAPTURE MODE with honest A/B ──
         NeonCard {
             GradientText("SYSTEM CAPTURE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
@@ -2837,6 +2927,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        } // end CAPTURE (system)
+        if (currentSection == ConsoleSection.SESSIONS) {
         // ── Build #121: SESSIONS — local history from the recorded session log ──
         NeonCard {
             GradientText("SESSIONS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
@@ -2926,6 +3018,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        } // end SESSIONS
+        if (currentSection == ConsoleSection.SIGNAL) {
         // ── Build #119: SIGNAL PATH — measured, stage-by-stage, never inferred ──
         NeonCard {
             GradientText("SIGNAL PATH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -3130,6 +3224,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        } // end SIGNAL (path)
+        if (currentSection == ConsoleSection.PRESETS) {
         // ── EQ PRESETS — the single canonical preset manager ──
         // Consolidated in Build #129: exactly one preset section exists — here.
         // State lives at top level; storage is unchanged (same prefs, same
@@ -3337,6 +3433,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         }
         Spacer(Modifier.height(16.dp))
+        } // end PRESETS (eq presets)
+        if (currentSection == ConsoleSection.PROFX) {
         // ── Build #89: PRO FX — noise gate + anti-clip limiter ──
         NeonCard {
             GradientText("PRO FX", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
@@ -3381,6 +3479,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         // ── Per-app profiles ──
 
+        } // end PROFX (noise gate)
+        if (currentSection == ConsoleSection.PRESETS) {
         // ── Build #127: APPEARANCE — glass intensity (UI rendering only) ──
         NeonCard {
             GradientText("APPEARANCE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
@@ -3412,6 +3512,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Text("Glass effect changes UI rendering only. It never affects DSP, capture, audio buffers, latency or sample rate. If the device struggles, the glass reduces gracefully while borders and transparency remain.", fontSize = 8.sp, color = T.secondary)
         }
         Spacer(Modifier.height(16.dp))
+        } // end PRESETS (appearance)
+        if (currentSection == ConsoleSection.DSP) {
         // ── Build #130: ANALYZER — shared state with the SPECTRUM card ──
         NeonCard {
             GradientText("ANALYZER", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -3488,6 +3590,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Text("Same controls as the SPECTRUM card — one shared state, no duplicate settings. The analyzer renders from native DSP snapshots outside the real-time audio callback.", fontSize = 8.sp, color = T.secondary)
         }
         Spacer(Modifier.height(16.dp))
+        } // end DSP (analyzer)
+        if (currentSection == ConsoleSection.PRESETS) {
         // ── Build #130: NOTIFICATIONS — authoritative state machine, informational ──
         NeonCard {
             GradientText("NOTIFICATIONS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
@@ -3495,6 +3599,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             Text("The foreground notification mirrors the measured DSP state machine: DSP ACTIVE, DSP BYPASS, DSP ERROR, CAPTURE BLOCKED, WAITING, AUDIO ERROR — with the actual sample rate, output route and measured level whenever available. SonicCore never invents states; per-channel control lives in Android notification settings.", fontSize = 10.sp, color = T.secondary, lineHeight = 14.sp)
         }
         Spacer(Modifier.height(16.dp))
+        } // end PRESETS (notifications)
+        if (currentSection == ConsoleSection.CAPTURE) {
         // ── Build #123: OUTPUT ROUTE — information, never a fake control ──
         NeonCard {
             GradientText("OUTPUT ROUTE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
@@ -3510,6 +3616,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         Spacer(Modifier.height(16.dp))
 
+        } // end CAPTURE (output route)
+        if (currentSection == ConsoleSection.PRESETS) {
         // ── Build #123: ABOUT ──
         NeonCard {
             GradientText("ABOUT", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
@@ -3526,6 +3634,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         Spacer(Modifier.height(16.dp))
 
+        } // end PRESETS (about)
+        if (currentSection == ConsoleSection.CAPTURE) {
         // ── Build #118: AUDIO PATH — universal, capability-driven, brand-neutral ──
         NeonCard {
             GradientText("AUDIO PATH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
@@ -3714,6 +3824,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }   // v143: studio expanded
         }   // v143: hidden in FOCUS EQ
 
+        } // end CAPTURE (audio path)
         Spacer(Modifier.height(24.dp))
     }
     } }
