@@ -683,6 +683,9 @@ Java_com_neon_eq_dsp_NeonDsp_process(JNIEnv* env, jobject thiz, jshortArray buf,
      * Capture and output buffering happen outside and are never included
      * in this number. Two clock reads per block: negligible. */
     auto _t0 = std::chrono::steady_clock::now();
+    if (buf == NULL || frames <= 0) return;
+    jsize arrayLength = env->GetArrayLength(buf);
+    if (env->ExceptionCheck() || arrayLength < 0 || frames > arrayLength / 2) return;
     jshort* p = (jshort*) env->GetPrimitiveArrayCritical(buf, NULL);
     if (p == NULL) return;
     jniFramesIn += frames;

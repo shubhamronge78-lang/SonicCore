@@ -2,6 +2,9 @@ package com.neon.eq.engine
 
 object Presets {
 
+    private const val MAX_IMPORT_JSON_CHARS = 256 * 1024
+    private const val MAX_IMPORTED_PRESETS = 500
+
     data class Preset(val name: String, val levels: ShortArray)
 
     // Extended preset that includes effect settings (bass, virtualizer, loudness)
@@ -159,10 +162,13 @@ object Presets {
     // an impossible value can never reach the DSP; a broken document yields
     // an empty list (the previous valid configuration is always retained).
     fun importFromJson(json: String): List<CustomPreset> {
+        if (json.length > MAX_IMPORT_JSON_CHARS) return emptyList()
+
         val out = mutableListOf<CustomPreset>()
         try {
             val root = org.json.JSONObject(json)
             val arr = root.optJSONArray("presets") ?: return emptyList()
+            if (arr.length() > MAX_IMPORTED_PRESETS) return emptyList()
             for (i in 0 until arr.length()) {
                 try {
                     val obj = arr.getJSONObject(i)

@@ -5,11 +5,14 @@ import android.media.AudioDeviceInfo
 import android.Manifest
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.border
@@ -40,6 +44,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -61,6 +67,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.SpanStyle
@@ -107,9 +114,41 @@ import androidx.compose.material3.DropdownMenuItem
 import com.neon.eq.capture.AudioCapabilityManager
 import com.neon.eq.capture.AudioPath
 import com.neon.eq.capture.CaptureEqService
+import com.neon.eq.capture.CaptureFlowStatus
 import com.neon.eq.dsp.NeonDsp
 import com.neon.eq.dsp.DspParams
+import com.neon.eq.dsp.MeterLevels
 import com.neon.eq.dsp.PeqSlot
+import com.neon.eq.dsp.computeMeterLevels
+import com.neon.eq.ui.design.SonicCoreTheme
+import com.neon.eq.ui.design.SonicCorePalette
+import com.neon.eq.ui.design.IndicatorStatus
+import com.neon.eq.ui.design.GlassCard
+import com.neon.eq.ui.design.GlassIntensityPreference
+import com.neon.eq.ui.design.LiquidGlassButton
+import com.neon.eq.ui.design.LiquidGlassChoiceChip
+import com.neon.eq.ui.design.LiquidGlassPanel
+import com.neon.eq.ui.design.LiquidGlassSurface
+import com.neon.eq.ui.design.SectionHeader
+import com.neon.eq.ui.design.SonicCoreColors
+import com.neon.eq.ui.home.HomeCaptureStatusCard
+import com.neon.eq.ui.home.HomeEngineCard
+import com.neon.eq.ui.home.HomeHealthCheck
+import com.neon.eq.ui.home.HomeMeterPresentation
+import com.neon.eq.ui.home.HomeNowProcessing
+import com.neon.eq.ui.home.HomeOutputCard
+import com.neon.eq.ui.home.HomePerformanceCard
+import com.neon.eq.ui.home.HomePerformanceTelemetry
+import com.neon.eq.ui.home.HomeQuickDspCard
+import com.neon.eq.ui.home.HomeQuickDspSettings
+import com.neon.eq.ui.home.HomeQuickActions
+import com.neon.eq.ui.home.HomeQuickPresetSection
+import com.neon.eq.ui.home.HomeResponsiveColumns
+import com.neon.eq.ui.home.HomeSpectrumCard
+import com.neon.eq.ui.home.HomeTopBar
+import com.neon.eq.ui.navigation.SonicCoreBottomNavigation
+import com.neon.eq.ui.navigation.SonicCoreDestination
+import com.neon.eq.ui.navigation.SonicCoreScreenHeader
 
 private const val UI_PREFS = "ui_prefs"
 
@@ -156,7 +195,8 @@ class MainActivity : ComponentActivity() {
         try {
             appGlassState.value = (
                 getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
-                    .getString("glass", "1")?.toIntOrNull() ?: 1).coerceIn(0, 2)
+                    .getString(GlassIntensityPreference.KEY, GlassIntensityPreference.DEFAULT_LEVEL.toString())
+                    .let(GlassIntensityPreference::parse))
         } catch (_: Throwable) { }
 
         val perms = mutableListOf(Manifest.permission.MODIFY_AUDIO_SETTINGS, Manifest.permission.RECORD_AUDIO)
@@ -247,35 +287,87 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ── Build #89: app themes ──
-// Three-slot palette: primary (sliders, borders, glow), secondary (gradient
-// partner / dial cores), accent (badges, highlights). appThemeState is read
-// throughout composition — swapping it recomposes the whole UI with the new
-// palette. Selection persists in ui_prefs.
+data class SurfacePalette(
+    val bg: Color,
+    val surface: Color,
+    val card: Color,
+    val cardAlt: Color,
+    val cardDeep: Color,
+    val borderDim: Color,
+    val text: Color,
+    val textSoft: Color
+)
+
+// Theme selection is visual-only and persists through the existing "theme" key.
 data class NeonTheme(
     val id: String,
     val label: String,
     val primary: Color,
     val secondary: Color,
-    val accent: Color
+    val accent: Color,
+    val darkSurfaces: SurfacePalette,
+    val lightSurfaces: SurfacePalette
 )
 
 object Themes {
-    // Build #132: SonicCore default palette — electric cyan primary, violet
-    // secondary, blue (not pink) as the third/supporting accent. Status
-    // colors (green/yellow/red) live separately in StatusColors below so the
-    // brand palette never gets reused to mean "error" or "warning".
-    val CLASSIC = NeonTheme("classic", "SonicCore", Color(0xFF00D9FF), Color(0xFF8B5CF6), Color(0xFF3B82F6))
-    val SYNTHWAVE = NeonTheme("synthwave", "Synthwave", Color(0xFFFF4FD8), Color(0xFF7C4DFF), Color(0xFF00E5FF))
-    val EMBER = NeonTheme("ember", "Ember", Color(0xFFFF9500), Color(0xFFFF3D5A), Color(0xFFFFD54F))
-    val EMERALD = NeonTheme("emerald", "Emerald", Color(0xFF00E676), Color(0xFF00BFA5), Color(0xFFB2FF59))
-    val GLACIER = NeonTheme("glacier", "Glacier", Color(0xFF40C4FF), Color(0xFF5C6BC0), Color(0xFF80D8FF))
-    val ALL = listOf(CLASSIC, SYNTHWAVE, EMBER, EMERALD, GLACIER)
-    fun byId(id: String?): NeonTheme = ALL.firstOrNull { it.id == id } ?: CLASSIC
+    private fun dark(bg: Long, surface: Long, card: Long, deep: Long, border: Long) =
+        SurfacePalette(
+            Color(bg), Color(surface), Color(card), Color(surface), Color(deep), Color(border),
+            Color(0xFFFFFFFF), Color(0xFFD8E0F5)
+        )
+
+    private fun light(tint: Long, border: Long) =
+        SurfacePalette(
+            Color(0xFFF3F5F9), Color(0xFFFCFDFF), Color(0xFFFFFFFF),
+            Color(tint), Color(tint), Color(border), Color(0xFF151927), Color(0xFF41495B)
+        )
+
+    val OBSIDIAN = NeonTheme(
+        "classic", "Obsidian Glass", Color(0xFF00D9FF), Color(0xFFB8C6D8), Color(0xFF8B5CF6),
+        dark(0xFF06080D, 0xFF0C1119, 0xFF121A25, 0xFF1A2633, 0xFF33404E),
+        light(0xFFE9F1F5, 0xFFC9D6DD)
+    )
+    val AURORA = NeonTheme(
+        "aurora", "Aurora", Color(0xFF59D9FF), Color(0xFF8E7CFF), Color(0xFF4EA8FF),
+        dark(0xFF07101C, 0xFF0C1727, 0xFF122238, 0xFF1A2D46, 0xFF29435C),
+        light(0xFFE6F0F8, 0xFFC7D9E9)
+    )
+    val PURPLE_NEBULA = NeonTheme(
+        "synthwave", "Purple Nebula", Color(0xFFDB86FF), Color(0xFF9274FF), Color(0xFFFF71C8),
+        dark(0xFF100919, 0xFF190F25, 0xFF241632, 0xFF30203F, 0xFF493256),
+        light(0xFFF2EAF7, 0xFFE0CCE9)
+    )
+    val ARCTIC = NeonTheme(
+        "glacier", "Arctic Crystal", Color(0xFF62CFFF), Color(0xFF8AB8FF), Color(0xFFB7E8FF),
+        dark(0xFF07111A, 0xFF0C1A25, 0xFF132531, 0xFF1B303E, 0xFF344E5E),
+        light(0xFFE7F1F6, 0xFFC9DFEB)
+    )
+    val EMERALD = NeonTheme(
+        "emerald", "Emerald Studio", Color(0xFF4CE0A2), Color(0xFF27BFA5), Color(0xFFA4E68A),
+        dark(0xFF07120F, 0xFF0D1C17, 0xFF142820, 0xFF1C352A, 0xFF315442),
+        light(0xFFE7F3EC, 0xFFC6E0D0)
+    )
+    val CHAMPAGNE = NeonTheme(
+        "ember", "Champagne Titanium", Color(0xFFE7C990), Color(0xFFC9AE83), Color(0xFFF0DDBA),
+        dark(0xFF12100D, 0xFF1B1814, 0xFF25211B, 0xFF312A20, 0xFF504638),
+        light(0xFFF4EFE5, 0xFFE1D4B9)
+    )
+    val MIDNIGHT = NeonTheme(
+        "midnight", "Midnight AMOLED", Color(0xFF45DFFF), Color(0xFF8BA5BA), Color(0xFF7D91FF),
+        dark(0xFF000000, 0xFF05080D, 0xFF0B1018, 0xFF111923, 0xFF27313D),
+        light(0xFFE8F0F4, 0xFFC8D5DD)
+    )
+    val ADAPTIVE = NeonTheme(
+        "adaptive", "Adaptive", Color(0xFF55CFE1), Color(0xFF8D82E8), Color(0xFF4D9FE8),
+        dark(0xFF08101A, 0xFF0D1724, 0xFF142131, 0xFF1D2C3E, 0xFF304357),
+        light(0xFFEAF1F6, 0xFFCCD9E3)
+    )
+    val ALL = listOf(OBSIDIAN, AURORA, PURPLE_NEBULA, ARCTIC, EMERALD, CHAMPAGNE, MIDNIGHT, ADAPTIVE)
+    fun byId(id: String?): NeonTheme = ALL.firstOrNull { it.id == id } ?: OBSIDIAN
 }
 
-val appThemeState = mutableStateOf(Themes.CLASSIC)
-private val T: NeonTheme get() = appThemeState.value
+val appThemeState = mutableStateOf(Themes.OBSIDIAN)
+internal val T: NeonTheme get() = appThemeState.value
 
 // Build #132: fixed status semantics — independent of the selectable brand
 // palette, so "active/warning/error" always reads the same regardless of
@@ -291,17 +383,6 @@ object StatusColors {
 // Accent themes (NeonTheme) control the neon; this palette controls surfaces
 // and text so the app can run dark (AMOLED, the classic look) or light.
 // Persisted in ui_prefs as "mode"; toggled from the main screen header.
-data class SurfacePalette(
-    val bg: Color,
-    val surface: Color,
-    val card: Color,
-    val cardAlt: Color,
-    val cardDeep: Color,
-    val borderDim: Color,
-    val text: Color,
-    val textSoft: Color
-)
-
 object SurfaceModes {
     // Build #132: SonicCore's background is a layered dark NAVY, not flat
     // AMOLED black — the reference's "professional console" feel comes from
@@ -319,7 +400,16 @@ object SurfaceModes {
         cardDeep = Color(0xFFE4E8F2), borderDim = Color(0xFFC9CEE0),
         text = Color(0xFF151527), textSoft = Color(0xFF3C3C58)
     )
-    fun byId(id: String?): SurfacePalette = if (id == "light") LIGHT else DARK
+    val SYSTEM = SurfacePalette(
+        bg = Color.Transparent, surface = Color.Transparent, card = Color.Transparent,
+        cardAlt = Color.Transparent, cardDeep = Color.Transparent, borderDim = Color.Transparent,
+        text = Color.Transparent, textSoft = Color.Transparent
+    )
+    fun byId(id: String?): SurfacePalette = when (id) {
+        "light" -> LIGHT
+        "dark" -> DARK
+        else -> SYSTEM
+    }
 }
 
 // ── Build #127: GLASS SYSTEM — dark glass + neon audio console ──
@@ -339,7 +429,26 @@ fun GlassBackground() {
         label = "glassDrift"
     )
     Box(modifier = Modifier.fillMaxSize()) {
-        if (appModeState.value == SurfaceModes.DARK) {
+        // .bg + .scrim — full-bleed liquid-glass backdrop behind the panels,
+        // so the frosted glass actually reads through to content.
+        val useDarkBackdrop = appModeState.value == SurfaceModes.DARK ||
+            (appModeState.value == SurfaceModes.SYSTEM && appSystemDarkState.value)
+        if (useDarkBackdrop) {
+            Image(
+                painter = painterResource(R.drawable.glass_bg),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().alpha(0.85f)
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        listOf(S.bg.copy(alpha = 0.35f), S.bg.copy(alpha = 0.70f))
+                    )
+                )
+            )
+        }
+        if (useDarkBackdrop) {
             // drifting atmospheric light fields — never bright, liquid motion
             Box(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.55f)
                 .graphicsLayer { translationX = (drift - 0.5f) * 80f; translationY = (drift - 0.5f) * 40f }
@@ -357,55 +466,53 @@ fun GlassBackground() {
 // Reusable glass status chip — icon + text, never color-only.
 @Composable
 fun StatusChip(label: String, kind: Int, dot: Boolean = true) {
-    // Build #132: semantic status colors — green/amber/red/gray stay fixed
-    // regardless of the selected brand palette (spec §5).
-    val (col, glyph) = when (kind) {
-        0 -> StatusColors.success to "●"   // ACTIVE
-        2 -> StatusColors.error to "⚠"    // ERROR
-        1 -> StatusColors.inactive to "○" // muted / bypass
-        else -> StatusColors.inactive to "·"
+    val (k, glyph) = when (kind) {
+        0 -> GlassChipKind.Active to "●"
+        2 -> GlassChipKind.Error to "⚠"
+        1 -> GlassChipKind.Muted to "○"
+        else -> GlassChipKind.Neutral to "·"
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(Brush.verticalGradient(listOf(
-                S.cardDeep.copy(alpha = 0.60f),
-                S.cardDeep.copy(alpha = 0.48f)
-            )))
-            .border(1.dp, Brush.verticalGradient(listOf(
-                Color.White.copy(alpha = glassSpecularAlpha() * 1.2f),
-                col.copy(alpha = 0.25f)
-            )), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .semantics { contentDescription = label }
-    ) {
-        if (dot) Text(glyph, fontSize = 8.sp, color = col)
-        Text(label, fontSize = 9.sp, color = col,
-            modifier = if (dot) Modifier.padding(start = 4.dp) else Modifier)
-    }
+    LiquidChip(
+        label = label,
+        kind = k,
+        glyph = if (dot) glyph else null,
+        modifier = Modifier.semantics { contentDescription = label }
+    )
 }
 
 val appModeState = mutableStateOf(SurfaceModes.DARK)
+val appSystemDarkState = mutableStateOf(true)
 // Build #127: glass intensity — UI rendering ONLY. Never touches DSP, capture,
 // buffers, latency or sample rate. 0 LOW · 1 MEDIUM (default) · 2 HIGH.
 val appGlassState = mutableStateOf(1)
 fun glassSurfaceAlpha(): Float = when (appGlassState.value) { 0 -> 0.94f; 2 -> 0.66f; else -> 0.78f }
 fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.10f; 2 -> 0.30f; else -> 0.20f }
 fun glassSpecularAlpha(): Float = when (appGlassState.value) { 0 -> 0.06f; 2 -> 0.18f; else -> 0.12f }
-private val S: SurfacePalette get() = appModeState.value
+internal val S: SurfacePalette
+    get() = when {
+        appModeState.value == SurfaceModes.LIGHT -> T.lightSurfaces
+        appModeState.value == SurfaceModes.SYSTEM && !appSystemDarkState.value -> T.lightSurfaces
+        else -> T.darkSurfaces
+    }
 
 @Composable
 fun NeonEQTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = T.primary,
-            secondary = T.secondary,
-            tertiary = T.accent,
+    val systemDark = isSystemInDarkTheme()
+    SideEffect { appSystemDarkState.value = systemDark }
+    SonicCoreTheme(
+        glassLevel = appGlassState.value,
+        palette = SonicCorePalette(
             background = S.bg,
             surface = S.surface,
-            onPrimary = Color.Black,
-            onSurface = S.textSoft
+            elevatedSurface = S.cardDeep,
+            primaryText = S.text,
+            secondaryText = S.textSoft,
+            primary = T.primary,
+            secondary = T.secondary,
+            success = StatusColors.success,
+            warning = StatusColors.warn,
+            error = StatusColors.error,
+            border = S.borderDim
         ),
         content = content
     )
@@ -631,9 +738,22 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     // observer, no second native readback.
     var spBars by remember { mutableStateOf(FloatArray(48)) }
     var spHold by remember { mutableStateOf(FloatArray(48)) }
-    // v143: FOCUS EQ — immersive EQ workspace; STUDIO & SYSTEM collapsed by default.
+    // FOCUS EQ is an EQ-only presentation mode; destination navigation is separate.
     var focusEq by remember { mutableStateOf(false) }
-    var advOpen by remember { mutableStateOf(false) }
+    var activeDestination by rememberSaveable {
+        mutableStateOf(SonicCoreDestination.DASHBOARD)
+    }
+    var secondaryReturnDestination by rememberSaveable {
+        mutableStateOf(SonicCoreDestination.DASHBOARD)
+    }
+    fun openSecondaryDestination(destination: SonicCoreDestination) {
+        secondaryReturnDestination = activeDestination
+        activeDestination = destination
+        focusEq = false
+    }
+    BackHandler(enabled = !activeDestination.isPrimary && !showSettings) {
+        activeDestination = secondaryReturnDestination
+    }
     var spSmoothAmt by remember { mutableStateOf(when (favPrefs.getInt("an_smooth", 1)) { 0 -> 0.35f; 2 -> 0.75f; else -> 0.55f }) }
     var spFrozen by remember { mutableStateOf(false) }
     var presetFavs by remember { mutableStateOf(favPrefs.getStringSet("preset_favs", emptySet<String>()) ?: emptySet()) }
@@ -691,14 +811,15 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     val player = remember { SoftEqPlayer(dsp) }
     val tone = remember { TonePlayer(dsp) }
     var toneOn by remember { mutableStateOf(false) }
+    DisposableEffect(player, tone) {
+        onDispose {
+            player.stop()
+            tone.stop()
+        }
+    }
 
-    // Build #132: universal landscape sidebar — ALL five tabs (not just
-    // HOME) get Sidebar | Content on landscape/tablet, matching the
-    // SonicCore console layout. mainContent is the exact same Column that
-    // always rendered here; only its wrapper changes with orientation.
-    // movableContentOf: when the orientation flips, the whole Column MOVES
-    // between the portrait and landscape parents — every remember{} inside
-    // (selected band, open sheets, scroll position) survives the move.
+    // Keep the selected destination and its Compose state stable across
+    // configuration changes; the destination body is replaced, not stacked.
     // v144 §16: apply a preset by name through the EXISTING atomic apply path
     // (identical to the preset picker APPLY button). Invalid/missing name →
     // false, EQ untouched — never a partial or invalid DSP state.
@@ -732,17 +853,17 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
     val mainContent = remember { movableContentOf {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .background(Color.Transparent)
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize().background(Color.Transparent),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Build #100: limited-mode banner — when the device's audio policy
-        // blocks the EQ engine entirely (Vivo V2553: Error -3), say it plainly
-        // instead of letting the EQ silently look broken. Loudness still
-        // works there; presets still save for other devices.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         var limitedNow by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             while (true) {
@@ -750,6 +871,20 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 delay(2000)
             }
         }
+        if (activeDestination != SonicCoreDestination.DASHBOARD) {
+            SonicCoreScreenHeader(
+                destination = activeDestination,
+                onSettingsClick = { showSettings = true },
+                onBackClick = if (activeDestination.isPrimary) null else {
+                    { activeDestination = secondaryReturnDestination }
+                }
+            )
+        }
+        if (activeDestination == SonicCoreDestination.DASHBOARD) {
+        // Build #100: limited-mode banner — when the device's audio policy
+        // blocks the EQ engine entirely (Vivo V2553: Error -3), say it plainly
+        // instead of letting the EQ silently look broken. Loudness still
+        // works there; presets still save for other devices.
         if (limitedNow) {
             Spacer(Modifier.height(10.dp))
             NeonCard {
@@ -775,710 +910,514 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             }
         }
-        // ── Header with breathing glow ──
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
-            if (showGlow) BreathingGlow(active = enabled)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Build #132: SC monogram + wordmark — the SonicCore identity.
-                    SCMark(26.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(brush = Brush.horizontalGradient(listOf(T.primary, T.secondary)))) {
-                                append("SONICCORE")
-                            }
-                        },
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 3.sp
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    // Build #130: live system state — always visible, all tabs,
-                    // authoritative runtime data only (never a fake state).
-                    val hdrSt = when {
-                        !NeonDsp.available -> "DSP ERROR" to 3
-                        CaptureEqService.running && CaptureEqService.bypass -> "BYPASS" to 1
-                        CaptureEqService.running && CaptureEqService.noEligiblePlayback -> "CAPTURE BLOCKED" to 2
-                        CaptureEqService.running -> "DSP ACTIVE" to 0
-                        android.os.Build.VERSION.SDK_INT >= 29 -> "WAITING" to 1
-                        else -> "DSP READY" to 1
-                    }
-                    GlassChip(hdrSt.first, hdrSt.second, modifier = Modifier.padding(bottom = 2.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .shadow(3.dp, CircleShape)
-                            .background(Brush.radialGradient(listOf(
-                                T.secondary.copy(alpha = 0.20f),
-                                T.secondary.copy(alpha = 0.08f)
-                            )))
-                            .drawBehind {
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0f to Color.White.copy(alpha = 0.15f),
-                                        0.5f to Color.Transparent
-                                    ),
-                                    topLeft = Offset.Zero,
-                                    size = Size(size.width, size.height * 0.5f)
-                                )
-                            }
-                            .border(1.dp, Brush.verticalGradient(listOf(
-                                Color.White.copy(alpha = 0.25f),
-                                T.secondary.copy(alpha = 0.35f)
-                            )), CircleShape)
-                            .clickable { showSettings = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("⚙", fontSize = 16.sp, color = T.secondary)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    // Build #89: light/dark mode toggle on the main screen
-                    val uiCtx = LocalContext.current
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .shadow(3.dp, CircleShape)
-                            .background(Brush.radialGradient(listOf(
-                                T.accent.copy(alpha = 0.20f),
-                                T.accent.copy(alpha = 0.08f)
-                            )))
-                            .drawBehind {
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0f to Color.White.copy(alpha = 0.15f),
-                                        0.5f to Color.Transparent
-                                    ),
-                                    topLeft = Offset.Zero,
-                                    size = Size(size.width, size.height * 0.5f)
-                                )
-                            }
-                            .border(1.dp, Brush.verticalGradient(listOf(
-                                Color.White.copy(alpha = 0.25f),
-                                T.accent.copy(alpha = 0.35f)
-                            )), CircleShape)
-                            .clickable {
-                                val next = if (appModeState.value == SurfaceModes.DARK) SurfaceModes.LIGHT else SurfaceModes.DARK
-                                appModeState.value = next
-                                try {
-                                    uiCtx.getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
-                                        .edit().putString("mode", if (next == SurfaceModes.LIGHT) "light" else "dark").apply()
-                                } catch (_: Throwable) { }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(if (appModeState.value == SurfaceModes.DARK) "☾" else "☀",
-                            fontSize = 15.sp, color = T.accent)
-                    }
+        val homeLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+        var homeIsResumed by remember(homeLifecycleOwner) {
+            mutableStateOf(
+                homeLifecycleOwner.lifecycle.currentState.isAtLeast(
+                    androidx.lifecycle.Lifecycle.State.RESUMED
+                )
+            )
+        }
+        DisposableEffect(homeLifecycleOwner) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> homeIsResumed = true
+                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> homeIsResumed = false
+                    else -> Unit
+                }
+            }
+            homeLifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { homeLifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+        var homeTick by remember { mutableStateOf(0) }
+        LaunchedEffect(activeDestination, homeIsResumed) {
+            if (activeDestination == SonicCoreDestination.DASHBOARD && homeIsResumed) {
+                while (true) {
+                    delay(1000)
+                    homeTick++
                 }
             }
         }
-        Text("Professional Audio Processing", fontSize = 11.sp, color = T.secondary)
-        Text(statusMsg, fontSize = 9.sp, color = T.secondary)
-
-        Spacer(Modifier.height(14.dp))
-
-        // Build #91: FxSound-style big central power button — replaces the
-        // small header Switch as the primary control. Same enable path
-        // (engine.setEnabled + onEnabledToggled), just impossible to miss.
-        Box(contentAlignment = Alignment.Center) {
-            if (showGlow) BreathingGlow(active = enabled)
-            Box(
-                modifier = Modifier
-                    .size(84.dp)
-                    .clip(CircleShape)
-                    .shadow(if (enabled) 12.dp else 4.dp, CircleShape)
-                    .background(
-                        brush = if (enabled)
-                            Brush.radialGradient(
-                                0f to T.primary.copy(alpha = 0.40f),
-                                0.5f to T.primary.copy(alpha = 0.18f),
-                                1f to T.secondary.copy(alpha = 0.08f)
-                            )
-                        else
-                            Brush.radialGradient(
-                                0f to Color.Gray.copy(alpha = 0.16f),
-                                1f to Color.Transparent
-                            )
+        val nowElapsedMs = android.os.SystemClock.elapsedRealtime()
+        val recentCaptureData = CaptureFlowStatus.hasRecentCaptureData(
+            running = CaptureEqService.running,
+            paused = CaptureEqService.paused,
+            framesCaptured = CaptureEqService.framesCaptured,
+            lastDataAtElapsedMs = CaptureEqService.lastDataAt,
+            nowElapsedMs = nowElapsedMs
+        )
+        val hasCurrentSignalPath = CaptureFlowStatus.hasRecentOutputData(
+            running = CaptureEqService.running,
+            paused = CaptureEqService.paused,
+            framesCaptured = CaptureEqService.framesCaptured,
+            framesOutput = CaptureEqService.framesDone,
+            lastDataAtElapsedMs = CaptureEqService.lastDataAt,
+            nowElapsedMs = nowElapsedMs
+        )
+        var meterTick by remember { mutableStateOf(0) }
+        var meterLevels by remember { mutableStateOf(MeterLevels.silent()) }
+        LaunchedEffect(activeDestination, homeIsResumed) {
+            if (activeDestination == SonicCoreDestination.DASHBOARD && homeIsResumed) {
+                while (true) {
+                    delay(120)
+                    meterTick++
+                }
+            }
+        }
+        LaunchedEffect(meterTick, activeDestination, homeIsResumed, hasCurrentSignalPath) {
+            if (
+                activeDestination == SonicCoreDestination.DASHBOARD &&
+                homeIsResumed &&
+                meterTick > 0 &&
+                hasCurrentSignalPath &&
+                NeonDsp.available
+            ) {
+                val values = try {
+                    intArrayOf(
+                        NeonDsp.inLRmsMs(), NeonDsp.inRRmsMs(), NeonDsp.outLRmsMs(), NeonDsp.outRRmsMs(),
+                        NeonDsp.inLPkMs(), NeonDsp.inRPkMs(), NeonDsp.outLPkMs(), NeonDsp.outRPkMs()
                     )
-                    .drawBehind {
-                        // Liquid glass orb — specular highlight at the top
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = if (enabled) 0.25f else 0.08f),
-                                0.35f to Color.White.copy(alpha = if (enabled) 0.06f else 0.02f),
-                                0.5f to Color.Transparent
-                            ),
-                            topLeft = Offset(0f, 0f),
-                            size = Size(size.width, size.height * 0.5f)
-                        )
+                } catch (_: RuntimeException) {
+                    null
+                } catch (_: LinkageError) {
+                    null
+                }
+                meterLevels = computeMeterLevels(values, meterLevels.peaks)
+            } else if (
+                activeDestination != SonicCoreDestination.DASHBOARD ||
+                !homeIsResumed ||
+                !hasCurrentSignalPath
+            ) {
+                meterLevels = MeterLevels.silent()
+            }
+        }
+        val hasMeasuredSignal = hasCurrentSignalPath && meterLevels.hasSignal()
+        val homeMeters = HomeMeterPresentation(
+            levels = meterLevels,
+            hasMeasuredSignal = hasMeasuredSignal,
+            clipCount = if (NeonDsp.available) runCatching { NeonDsp.clipCount() }.getOrDefault(0L) else 0L,
+            outputPeakMs = if (hasMeasuredSignal && NeonDsp.available) {
+                runCatching { NeonDsp.outPeakMs() }.getOrDefault(0)
+            } else null
+        )
+        val homeState = when {
+            !NeonDsp.available || CaptureEqService.lastError != null -> "ERROR"
+            limitedNow || (CaptureEqService.running && CaptureEqService.noEligiblePlayback) -> "LIMITED"
+            CaptureEqService.running && CaptureEqService.paused -> "PAUSED"
+            CaptureEqService.running && CaptureEqService.bypass -> "BYPASS"
+            hasCurrentSignalPath -> "ACTIVE"
+            CaptureEqService.running -> "WAITING"
+            else -> "READY"
+        }
+        val homeStatusKind = when (homeState) {
+            "ACTIVE" -> IndicatorStatus.Active
+            "BYPASS", "PAUSED", "WAITING", "LIMITED" -> IndicatorStatus.Warning
+            "ERROR" -> IndicatorStatus.Error
+            else -> IndicatorStatus.Inactive
+        }
+        val homeStatusDetail = when {
+            !NeonDsp.available -> "Native DSP unavailable · ${NeonDsp.loadError ?: "library load failed"}"
+            CaptureEqService.lastError != null -> "Engine error · ${CaptureEqService.lastError}"
+            limitedNow -> "Limited mode · this device restricts one or more audio effects"
+            CaptureEqService.running && CaptureEqService.noEligiblePlayback ->
+                "Capture is unavailable for the current source application"
+            CaptureEqService.running && CaptureEqService.paused ->
+                "Capture is paused · no live audio is being processed"
+            CaptureEqService.running && CaptureEqService.bypass ->
+                "Capture session is in bypass · DSP processing is not active"
+            hasCurrentSignalPath -> "Captured input and output frames are present · " +
+                CaptureEqService.captureSampleRate + " Hz · stereo"
+            CaptureEqService.running -> "Capture session is running · waiting for live PCM frames"
+            else -> "No capture session · system EQ ${if (enabled) "enabled" else "disabled"}"
+        }
+        val homeParams = remember(homeTick) { DspParams.load(engine) }
+        val homeHealthChecks = listOf(
+            HomeHealthCheck(
+                "CAPTURE",
+                when {
+                    !CaptureEqService.running -> "IDLE"
+                    CaptureEqService.noEligiblePlayback -> "BLOCKED"
+                    recentCaptureData -> "ACTIVE"
+                    else -> "WAITING"
+                },
+                when {
+                    !CaptureEqService.running -> IndicatorStatus.Inactive
+                    CaptureEqService.noEligiblePlayback -> IndicatorStatus.Warning
+                    recentCaptureData -> IndicatorStatus.Active
+                    else -> IndicatorStatus.Warning
+                }
+            ),
+            HomeHealthCheck(
+                "DSP",
+                when {
+                    !NeonDsp.available -> "ERROR"
+                    CaptureEqService.running && CaptureEqService.bypass -> "BYPASS"
+                    hasCurrentSignalPath -> "ACTIVE"
+                    CaptureEqService.running -> "WAITING"
+                    else -> "READY"
+                },
+                when {
+                    !NeonDsp.available -> IndicatorStatus.Error
+                    CaptureEqService.running && CaptureEqService.bypass -> IndicatorStatus.Warning
+                    hasCurrentSignalPath -> IndicatorStatus.Active
+                    CaptureEqService.running -> IndicatorStatus.Warning
+                    else -> IndicatorStatus.Inactive
+                }
+            ),
+            HomeHealthCheck(
+                "OUTPUT",
+                when {
+                    hasCurrentSignalPath -> "ACTIVE"
+                    CaptureEqService.running -> "WAITING"
+                    else -> "IDLE"
+                },
+                when {
+                    hasCurrentSignalPath -> IndicatorStatus.Active
+                    CaptureEqService.running -> IndicatorStatus.Warning
+                    else -> IndicatorStatus.Inactive
+                }
+            ),
+            HomeHealthCheck(
+                "BUFFER",
+                when {
+                    CaptureEqService.underruns > 0 -> "${CaptureEqService.underruns} UNDERRUNS"
+                    CaptureEqService.running -> "OK"
+                    else -> "IDLE"
+                },
+                when {
+                    CaptureEqService.underruns > 0 -> IndicatorStatus.Warning
+                    CaptureEqService.running -> IndicatorStatus.Active
+                    else -> IndicatorStatus.Inactive
+                }
+            ),
+            HomeHealthCheck(
+                "ROUTE",
+                when {
+                    CaptureEqService.lastError?.startsWith("OUTPUT_ROUTE_CHANGED") == true -> "REBUILDING"
+                    outputUi.activeKey != null -> "SET"
+                    else -> "UNKNOWN"
+                },
+                when {
+                    CaptureEqService.lastError?.startsWith("OUTPUT_ROUTE_CHANGED") == true -> IndicatorStatus.Warning
+                    outputUi.activeKey != null -> IndicatorStatus.Active
+                    else -> IndicatorStatus.Inactive
+                }
+            )
+        )
+        val homeTelemetry = HomePerformanceTelemetry(
+            cpuPercent = if (CaptureEqService.running && recentCaptureData && CaptureEqService.dspLoadPct.isFinite())
+                CaptureEqService.dspLoadPct else null,
+            loopMs = CaptureEqService.loopMs.takeIf { CaptureEqService.running && it > 0.0 && it.isFinite() },
+            latencyMs = CaptureEqService.totalLatencyMs.takeIf { CaptureEqService.running && it > 0.0 && it.isFinite() },
+            underruns = CaptureEqService.underruns.toLong().takeIf { CaptureEqService.running },
+            clips = if (NeonDsp.available) runCatching { NeonDsp.clipCount() }.getOrNull() else null,
+            captureFrames = CaptureEqService.framesCaptured.takeIf { CaptureEqService.running || it > 0L },
+            outputFrames = CaptureEqService.framesDone.takeIf { CaptureEqService.running || it > 0L },
+            nanEvents = if (NeonDsp.available) runCatching { NeonDsp.nanCount() }.getOrNull() else null,
+            sessionSeconds = if (CaptureEqService.running && CaptureEqService.sessionStartedAt > 0L)
+                (android.os.SystemClock.elapsedRealtime() - CaptureEqService.sessionStartedAt) / 1000L else null,
+            routeChanges = CaptureEqService.sessionRouteChanges.toLong().takeIf { CaptureEqService.running },
+            bufferChanges = CaptureEqService.sessionBufferChanges.toLong().takeIf { CaptureEqService.running },
+            healthLabel = homeState,
+            healthKind = homeStatusKind,
+            healthDetail = when {
+                CaptureEqService.lastError != null -> CaptureEqService.lastError
+                CaptureEqService.running && CaptureEqService.noEligiblePlayback ->
+                    "The source application does not permit playback capture."
+                CaptureEqService.running && !recentCaptureData -> "No recent capture frames are reported."
+                !NeonDsp.available -> NeonDsp.loadError
+                else -> null
+            },
+            healthChecks = homeHealthChecks
+        )
+        val activeRoute = outputUi.routes.firstOrNull { it.key == outputUi.activeKey }
+        val outputStatus = when {
+            !NeonDsp.available || CaptureEqService.lastError?.startsWith("OUTPUT_ROUTE_CHANGED") == true -> "ERROR"
+            CaptureEqService.running && CaptureEqService.noEligiblePlayback -> "LIMITED"
+            CaptureEqService.running && CaptureEqService.bypass -> "BYPASS"
+            hasCurrentSignalPath -> "ACTIVE"
+            CaptureEqService.running -> "WAITING"
+            else -> "STANDBY"
+        }
+        val outputDetail = activeRoute?.let { route ->
+            buildList {
+                add(OutputContract.categoryDetail(route.category))
+                if (route.channels > 0) add("${route.channels} ch")
+                if (route.maxRate > 0) add("up to ${route.maxRate / 1000} kHz")
+            }.joinToString(" · ")
+        }
+
+        SonicCoreTheme {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                val uiContext = LocalContext.current
+                HomeTopBar(
+                    status = homeState,
+                    statusDetail = homeStatusDetail,
+                    statusKind = homeStatusKind,
+                    route = outputUi.fallbackNote
+                        ?.takeUnless { it == outputUi.activeName }
+                        ?.let { "$it · ${outputUi.activeName}" }
+                        ?: outputUi.activeName,
+                    onRouteClick = { showOutputStudio = true },
+                    onSettingsClick = { showSettings = true },
+                    modeLabel = when (appModeState.value) {
+                        SurfaceModes.DARK -> "☾"
+                        SurfaceModes.LIGHT -> "☀"
+                        else -> "◐"
+                    },
+                    onModeClick = {
+                        val next = if (appModeState.value != SurfaceModes.LIGHT) SurfaceModes.LIGHT else SurfaceModes.DARK
+                        appModeState.value = next
+                        try {
+                            uiContext.getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
+                                .edit().putString("mode", if (next == SurfaceModes.LIGHT) "light" else "dark").apply()
+                        } catch (_: Throwable) { }
                     }
-                    .border(2.dp, Brush.verticalGradient(listOf(
-                        Color.White.copy(alpha = if (enabled) 0.40f else 0.12f),
-                        (if (enabled) T.primary else Color.Gray).copy(alpha = if (enabled) 0.50f else 0.25f),
-                        (if (enabled) T.secondary else Color.Gray).copy(alpha = if (enabled) 0.20f else 0.10f)
-                    )), CircleShape)
-                    .clickable {
+                )
+                HomeEngineCard(
+                    enabled = enabled,
+                    stateLabel = homeState,
+                    isSignalRecent = hasCurrentSignalPath,
+                    cpuPercent = homeTelemetry.cpuPercent,
+                    latencyMs = homeTelemetry.latencyMs,
+                    meters = homeMeters,
+                    onPowerClick = {
                         val next = !enabled
                         enabled = next
                         engine.setEnabled(next)
                         if (context is MainActivity) context.onEnabledToggled(next)
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("⏻", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (enabled) T.primary else Color.Gray)
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #127: glass status chips — honest, icon + text ──
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val dsState = when {
-                !NeonDsp.available -> "DSP ERROR"
-                CaptureEqService.bypass -> "DSP BYPASS"
-                CaptureEqService.running -> "DSP ACTIVE"
-                SoftwareEq.lastEngineLabel?.startsWith("KOTLIN") == true -> "KOTLIN FALLBACK"
-                else -> "STANDBY"
-            }
-            StatusChip(dsState, if (dsState == "DSP ACTIVE") 0 else if (dsState == "DSP ERROR" || dsState == "KOTLIN FALLBACK") 2 else 1)
-            Spacer(Modifier.width(6.dp))
-            if (CaptureEqService.running) {
-                StatusChip("CAPTURE ACTIVE", 0)
-                Spacer(Modifier.width(6.dp))
-            } else if (android.os.Build.VERSION.SDK_INT >= 29) {
-                // capture API exists (Android 10+): honest waiting state
-                StatusChip("WAITING FOR PLAYBACK", 1)
-                Spacer(Modifier.width(6.dp))
-            }
-            StatusChip((CaptureEqService.captureSampleRate / 1000).toString() + " kHz", 3, dot = false)
-        }
-        Spacer(Modifier.height(6.dp))
-        // v144 §28: QUICK OUTPUT SWITCHER — current route always visible
-        val quickRoute = outputUi.activeName
-        val quickNote = outputUi.fallbackNote
-        Row(verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(50))
-                .background(Brush.horizontalGradient(listOf(
-                    T.primary.copy(alpha = 0.12f),
-                    T.secondary.copy(alpha = 0.06f)
-                )))
-                .border(1.dp, Brush.verticalGradient(listOf(
-                    Color.White.copy(alpha = glassSpecularAlpha()),
-                    T.primary.copy(alpha = 0.12f)
-                )), RoundedCornerShape(50))
-                .clickable { showOutputStudio = true }
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-                .semantics { contentDescription = "Output: " + quickRoute + " — opens Output Studio" }) {
-            Text("OUTPUT", fontSize = 10.sp, color = T.secondary, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(8.dp))
-            Text(if (quickNote != null) quickNote + " · " + quickRoute else quickRoute,
-                fontSize = 11.sp, color = if (quickNote != null) T.accent else T.primary, maxLines = 1, modifier = Modifier.weight(1f))
-            Text("▾", fontSize = 11.sp, color = T.primary)
-        }
-        Spacer(Modifier.height(6.dp))
-        // Build #124: landscape audio console — two-column workspace,
-        // never a stretched portrait layout
-        // v143 §32: FOCUS EQ hides the technical dashboard; the compact
-        // power/status header above always stays.
-        if (!focusEq) {
-        val isLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        if (isLandscape) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.weight(1f)) {
-        // ── Build #121: STATUS — the professional dashboard header ──
-        NeonCard {
-            val recentData = CaptureEqService.running &&
-                (android.os.SystemClock.elapsedRealtime() - CaptureEqService.lastDataAt) < 2500L
-            val dspChip = when {
-                !NeonDsp.available -> "DSP ERROR ✗"
-                CaptureEqService.running && CaptureEqService.bypass -> "DSP BYPASS ○"
-                SoftwareEq.lastEngineLabel?.startsWith("KOTLIN") == true -> "DSP FALLBACK !"
-                CaptureEqService.running && !CaptureEqService.bypass -> "DSP ACTIVE ✓"
-                else -> "DSP READY ✓"
-            }
-            val dspColor = when {
-                !NeonDsp.available -> T.accent
-                CaptureEqService.running && !CaptureEqService.bypass -> T.primary
-                else -> T.secondary
-            }
-            // Build #130: hero status — Display typography, glyph + text
-            Text(dspChip, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = dspColor)
-            val capLine = when {
-                !CaptureEqService.running -> "READY — no capture session running"
-                CaptureEqService.noEligiblePlayback -> "CAPTURE BLOCKED — the source application does not permit playback capture"
-                !recentData -> "WAITING FOR PLAYBACK — play audio in another app"
-                else -> "CAPTURE ACTIVE · " + CaptureEqService.captureSampleRate + " Hz · Stereo"
-            }
-            Text(capLine, fontSize = 11.sp, color = if (CaptureEqService.running && recentData && !CaptureEqService.noEligiblePlayback) T.primary else T.secondary)
-            if (SoftwareEq.lastEngineLabel != null) {
-                Text("PLAYER ENGINE: " + SoftwareEq.lastEngineLabel, fontSize = 9.sp, color = T.secondary)
-            }
-            Spacer(Modifier.height(4.dp))
-            TechValue(
-                AudioCapabilityManager.outputDeviceLine(context) + " · latency ~" + "%.0f".format(CaptureEqService.totalLatencyMs) + " ms · buffer " + CaptureEqService.bufferMode +
-                    (CaptureEqService.lastBufferChange?.let { " (auto-changed " + it + ")" } ?: ""),
-                fontSize = 10.sp
-            )
-            if (CaptureEqService.lastError != null) {
-                Text("⚠ " + CaptureEqService.lastError!!, fontSize = 9.sp, color = T.accent)
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #123: QUICK ACTIONS ──
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (CaptureEqService.bypass) "DSP ○" else "DSP ●", fontSize = 10.sp,
-                color = if (CaptureEqService.bypass) T.accent else T.primary,
-                modifier = Modifier.clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.12f))
-                    .clickable { CaptureEqService.bypass = !CaptureEqService.bypass }
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                    .semantics { contentDescription = "Toggle DSP bypass" })
-            Text("A/B", fontSize = 10.sp, color = T.secondary,
-                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.secondary.copy(alpha = 0.12f))
-                    .clickable { CaptureEqService.bypass = !CaptureEqService.bypass }
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                    .semantics { contentDescription = "Toggle A/B bypass" })
-            Text("RESET", fontSize = 10.sp, color = T.accent,
-                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.accent.copy(alpha = 0.12f))
-                    .clickable { showResetDialog = true }
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                    .semantics { contentDescription = "Open reset confirmation" })
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #123: NOW PROCESSING — technical status, no source metadata ──
-        NeonCard {
-            GradientText("NOW PROCESSING", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
-            Spacer(Modifier.height(4.dp))
-            val nowIn = if (NeonDsp.available) runCatching { NeonDsp.inRmsMs() }.getOrDefault(0) else 0
-            val nowOut = if (NeonDsp.available) runCatching { NeonDsp.outRmsMs() }.getOrDefault(0) else 0
-            fun dbS(ms: Int): String = if (ms > 0) "%.1f dB".format(20 * Math.log10(ms / 1000.0)) else "-∞"
-            Text(
-                (if (CaptureEqService.running) "Captured playback · " + CaptureEqService.captureSampleRate + " Hz · Stereo" else "Player / idle") +
-                    "\n" + (if (CaptureEqService.bypass) "DSP BYPASS" else "DSP ACTIVE") +
-                    " · Input " + dbS(nowIn) + " · Output " + dbS(nowOut),
-                fontSize = 11.sp, color = T.primary, lineHeight = 15.sp
-            )
-            Text("Technical status of SonicCore's own pipeline. SonicCore does not read or control another app's media session.", fontSize = 8.sp, color = T.secondary)
-        }
-        Spacer(Modifier.height(8.dp))
-        // Build #124: honest, expandable capture explanation
-        var capExpOpen by remember { mutableStateOf(false) }
-        Text(if (capExpOpen) "HOW CAPTURE WORKS ▴" else "HOW CAPTURE WORKS ▾", fontSize = 10.sp, color = T.accent,
-            modifier = Modifier.clip(RoundedCornerShape(50)).background(T.accent.copy(alpha = 0.10f))
-                .clickable { capExpOpen = !capExpOpen }.padding(horizontal = 10.dp, vertical = 5.dp)
-                .semantics { contentDescription = "Expand capture explanation" })
-        if (capExpOpen) {
-            Text(
-                "SonicCore captures eligible Android playback, processes the captured PCM, and sends the processed copy to its own AudioTrack.\nAndroid may also continue playing the source application's original output.",
-                fontSize = 9.sp, color = T.secondary, lineHeight = 13.sp
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #123: quick preset strip on the home dashboard ──
-        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(com.neon.eq.engine.Presets.BUILTIN_QUICK.size) { qi ->
-                val (qname, _) = com.neon.eq.engine.Presets.BUILTIN_QUICK[qi]
-                Text(
-                    qname,
-                    fontSize = 10.sp,
-                    color = if (selectedPreset == qname) T.primary else T.secondary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background((if (selectedPreset == qname) T.primary else T.secondary).copy(alpha = 0.12f))
-                        .clickable {
-                            pushUndo(true, "Preset: " + qname)
-                            markRecent(qname)
-                            val lv = com.neon.eq.engine.Presets.builtinForCount(qname, bandCount)
-                            animateLevelsTo(FloatArray(31) { i -> (lv.getOrNull(i)?.toInt() ?: 0).toFloat() })
-                            selectedPreset = qname
-                            engine.setSelectedPresetName(qname)
-                            engine.applyFullState(ShortArray(31) { i -> lv.getOrNull(i) ?: 0 }, bassBoost, virtualizer, loudness, smooth = true)
-                            Toast.makeText(context, "Preset applied: " + qname, Toast.LENGTH_SHORT).show()
-                        }
-                        .semantics { contentDescription = "Apply preset " + qname }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                    }
                 )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
+                HomeNowProcessing(
+                    preset = selectedPreset,
+                    eqEnabled = enabled,
+                    preampDb = homeParams.preamp,
+                    bassDb = homeParams.bass,
+                    trebleDb = homeParams.treble,
+                    stereoWidth = homeParams.width,
+                    compressorEnabled = homeParams.compOn,
+                    limiterEnabled = homeParams.limiterOn
+                )
 
-        // ── Build #121: METERS — measured L/R input + output, dBFS, peak hold ──
-        NeonCard {
-            GradientText("METERS", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
-            Spacer(Modifier.height(4.dp))
-            Text("Measured from the native DSP path. Not a claim about what you physically hear.", fontSize = 8.sp, color = T.secondary)
-            Spacer(Modifier.height(6.dp))
-            var mTick by remember { mutableStateOf(0) }
-            LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(120); mTick++ } }
-            var mPeak by remember { mutableStateOf(FloatArray(8)) }
-            var mRms by remember { mutableStateOf(FloatArray(4)) }
-            var mDb by remember { mutableStateOf(FloatArray(4)) }
-            fun msToDb(ms: Int): Float = if (ms > 0) (20.0 * Math.log10(ms / 1000.0)).toFloat() else -60f
-            fun norm(db: Float): Float = ((db + 60f) / 60f).coerceIn(0f, 1f)
-            LaunchedEffect(mTick) {
-                if (mTick > 0 && NeonDsp.available) {
-                    val v = intArrayOf(
-                        NeonDsp.inLRmsMs(), NeonDsp.inRRmsMs(), NeonDsp.outLRmsMs(), NeonDsp.outRRmsMs(),
-                        NeonDsp.inLPkMs(), NeonDsp.inRPkMs(), NeonDsp.outLPkMs(), NeonDsp.outRPkMs()
+                if (!focusEq) {
+                    val isLandscape = LocalConfiguration.current.orientation ==
+                        android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                    HomeResponsiveColumns(
+                        landscape = isLandscape,
+                        primary = {
+                            HomeCaptureStatusCard(hasRecentPcmData = recentCaptureData)
+
+                            val availablePresetNames = remember(customPresets) {
+                                (Presets.presets.map { it.name } + customPresets.map { it.name }).toSet()
+                            }
+                            HomeQuickPresetSection(
+                                currentPreset = selectedPreset,
+                                favorites = presetFavs.filter { it in availablePresetNames }.sorted(),
+                                recent = presetRecent.filter { it in availablePresetNames },
+                                quickPresets = Presets.BUILTIN_QUICK.map { it.first },
+                                onApply = { name ->
+                                    if (tryApplyPresetByName(name)) {
+                                        Toast.makeText(context, "Preset applied: $name", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+
+                            var spTick by remember { mutableStateOf(0) }
+                            var spPost by remember { mutableStateOf(false) }
+                            var spChan by remember { mutableStateOf(0) }
+                            LaunchedEffect(spFps, homeIsResumed) {
+                                if (!homeIsResumed) return@LaunchedEffect
+                                while (true) {
+                                    delay(1000L / spFps.coerceAtLeast(5))
+                                    spTick++
+                                }
+                            }
+                            val spActive = NeonDsp.available && runCatching {
+                                NeonDsp.inRmsMs() > 0 || NeonDsp.outRmsMs() > 0
+                            }.getOrDefault(false)
+                            LaunchedEffect(spTick) {
+                                if (spTick > 0 && NeonDsp.available && spActive &&
+                                    hasCurrentSignalPath && !spFrozen
+                                ) {
+                                    val currentBins = FloatArray(48)
+                                    try { NeonDsp.spectrum(currentBins, (if (spPost) 3 else 0) + spChan) }
+                                    catch (_: Throwable) { }
+                                    val nextBars = spBars.copyOf()
+                                    for (i in 0 until 48) {
+                                        nextBars[i] = nextBars[i] * (1f - spSmoothAmt) + currentBins[i] * spSmoothAmt
+                                    }
+                                    spBars = nextBars
+                                    val nextHold = spHold.copyOf()
+                                    val decay = when (spHoldMode) { 1 -> 0.94f; 3 -> 0.992f; 5 -> 0.997f; else -> 1f }
+                                    for (i in 0 until 48) {
+                                        nextHold[i] = if (spHoldMode == 0) nextBars[i]
+                                        else maxOf(nextHold[i] * decay, nextBars[i])
+                                    }
+                                    spHold = nextHold
+                                }
+                            }
+                            HomeSpectrumCard(
+                                bins = spBars,
+                                peaks = spHold,
+                                source = !spPost,
+                                onSourceChange = { spPost = !it },
+                                channel = spChan,
+                                onChannelChange = { spChan = it },
+                                smoothing = spSmoothAmt,
+                                onSmoothingChange = { spSmoothAmt = it },
+                                peakHoldSeconds = spHoldMode,
+                                onPeakHoldChange = { spHoldMode = it },
+                                frozen = spFrozen,
+                                onFrozenChange = { spFrozen = it },
+                                fps = spFps,
+                                onFpsChange = { spFps = it },
+                                hasSignal = spActive && hasCurrentSignalPath
+                            )
+                        },
+                        secondary = {
+                            HomeQuickActions(
+                                onEq = {
+                                    focusEq = false
+                                    activeDestination = SonicCoreDestination.EQUALIZER
+                                },
+                                onDsp = { CaptureEqService.bypass = !CaptureEqService.bypass },
+                                onAb = { CaptureEqService.bypass = !CaptureEqService.bypass },
+                                onReset = { showResetDialog = true },
+                                onDiagnostics = {
+                                    try {
+                                        val file = File(context.cacheDir, "neoneq_sessions.txt")
+                                        file.writeText(AudioCapabilityManager.exportSessions(context))
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            context.packageName + ".fileprovider",
+                                            file
+                                        )
+                                        context.startActivity(Intent.createChooser(
+                                            Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            },
+                                            "Share session diagnostics"
+                                        ))
+                                    } catch (t: Throwable) {
+                                        Toast.makeText(
+                                            context,
+                                            "Diagnostics export failed: ${t.message ?: t.javaClass.simpleName}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            )
+                            HomeOutputCard(
+                                routeName = outputUi.activeName,
+                                routeDetail = outputDetail,
+                                outputState = outputStatus,
+                                sampleRate = CaptureEqService.captureSampleRate.takeIf {
+                                    CaptureEqService.running && it > 0
+                                },
+                                bufferMode = CaptureEqService.bufferMode,
+                                bufferMs = CaptureEqService.captureBufferMs.takeIf {
+                                    CaptureEqService.running && it > 0.0
+                                },
+                                latencyMs = homeTelemetry.latencyMs,
+                                latencyBreakdown = if (CaptureEqService.running && homeTelemetry.latencyMs != null) {
+                                    "Estimated stages · capture %.1f ms · DSP %.1f ms · output %.1f ms".format(
+                                        CaptureEqService.capLatencyMs,
+                                        CaptureEqService.dspMs,
+                                        CaptureEqService.outLatencyMs
+                                    )
+                                } else null,
+                                routeNote = outputUi.fallbackNote?.takeUnless { it == outputUi.activeName }
+                                    ?: CaptureEqService.routeNote
+                                    ?: CaptureEqService.oldRouteLine,
+                                onOpenOutput = { showOutputStudio = true }
+                            )
+                            var qcBase by remember { mutableStateOf<DspParams?>(null) }
+                            var qcEqBands by remember { mutableStateOf<FloatArray?>(null) }
+                            var qcSettings by remember { mutableStateOf<HomeQuickDspSettings?>(null) }
+                            var qcDspEnabled by remember { mutableStateOf(true) }
+                            HomeQuickDspCard(
+                                settings = qcSettings,
+                                dspEnabled = qcDspEnabled,
+                                onDspEnabledChange = { isEnabled ->
+                                    qcDspEnabled = isEnabled
+                                    CaptureEqService.bypass = !isEnabled
+                                },
+                                onExpandedChange = { expanded ->
+                                    if (expanded) {
+                                        qcSettings = HomeQuickDspSettings(
+                                            eqEnabled = true,
+                                            bassEnabled = true,
+                                            trebleEnabled = true,
+                                            stereoEnabled = true,
+                                            limiterEnabled = true
+                                        )
+                                        qcDspEnabled = true
+                                    } else {
+                                        qcSettings = null
+                                        qcBase = null
+                                        qcEqBands = null
+                                    }
+                                },
+                                onProcessingSettingsChange = { settings ->
+                                    qcSettings = settings
+                                    val base = qcBase ?: DspParams.load(engine).also { qcBase = it }
+                                    val params = DspParams()
+                                    params.preamp = base.preamp
+                                    params.bass = if (settings.bassEnabled) base.bass else 0f
+                                    params.treble = if (settings.trebleEnabled) base.treble else 0f
+                                    params.width = if (settings.stereoEnabled) base.width else 1f
+                                    params.balance = base.balance
+                                    params.mono = base.mono
+                                    params.swap = base.swap
+                                    params.compOn = base.compOn
+                                    params.compThresh = base.compThresh
+                                    params.limiterOn = settings.limiterEnabled
+                                    params.limThresh = base.limThresh
+                                    params.slots = if (settings.eqEnabled) base.slots else List(8) { PeqSlot() }
+                                    params.applyTo(NeonDsp)
+                                    if (!settings.eqEnabled) {
+                                        if (qcEqBands == null) qcEqBands = bandLevels.copyOf()
+                                        NeonDsp.setGraphicGains(FloatArray(engine.bandCount) { 0f })
+                                    } else if (qcEqBands != null) {
+                                        NeonDsp.setGraphicGains(qcEqBands!!)
+                                        qcEqBands = null
+                                    }
+                                }
+                            )
+                            HomePerformanceCard(homeTelemetry)
+                        }
                     )
-                    mDb = FloatArray(4) { i -> msToDb(v[i]) }
-                    val rms = FloatArray(4) { i -> norm(msToDb(v[i])) }
-                    mRms = rms
-                    val pk = FloatArray(8) { i ->
-                        val cur = if (i < 4) rms[i] else norm(msToDb(v[i + 4]))
-                        maxOf(mPeak[i] - 0.012f, cur)
-                    }
-                    mPeak = pk
                 }
             }
-            val labels = listOf("INPUT L", "INPUT R", "OUTPUT L", "OUTPUT R")
-            val clip = (if (NeonDsp.available) runCatching { NeonDsp.clipCount() }.getOrDefault(0L) else 0L) > 0
-            Column {
-                labels.forEachIndexed { i, label ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
-                        Text(label, fontSize = 9.sp, color = T.secondary, modifier = Modifier.width(64.dp))
-                        Canvas(modifier = Modifier.weight(1f).height(12.dp).semantics { contentDescription = label + " level" }) {
-                            val w = size.width
-                            val h = size.height
-                            drawRoundRect(color = T.secondary.copy(alpha = 0.15f), size = androidx.compose.ui.geometry.Size(w, h), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f))
-                            if (mRms[i] > 0.001f) {
-                                drawRoundRect(color = if (i < 2) T.primary else T.accent, size = androidx.compose.ui.geometry.Size(w * mRms[i], h), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f))
-                            }
-                            val px = w * mPeak[i + 4]   // peaks live in slots 4..7, RMS in 0..3
-                            drawLine(color = Color.White.copy(alpha = 0.8f), start = androidx.compose.ui.geometry.Offset(px, 0f), end = androidx.compose.ui.geometry.Offset(px, h), strokeWidth = 2f)
-                            if (mRms[i] > 0.999f) {
-                                drawLine(color = T.accent, start = androidx.compose.ui.geometry.Offset(w - 3f, 0f), end = androidx.compose.ui.geometry.Offset(w - 3f, h), strokeWidth = 3f)
-                            }
-                        }
-                        Text(
-                            (if (mDb[i] <= -60f) "-∞" else "%.1f dB".format(mDb[i])),
-                            fontSize = 9.sp, color = T.secondary, modifier = Modifier.width(62.dp), textAlign = TextAlign.End
-                        )
-                    }
-                }
-            }
-            if (clip) {
-                Text("⚠ CLIPPING DETECTED — output peak reached 0 dBFS. Consider reducing Preamp or EQ gain. Settings are never changed automatically.", fontSize = 9.sp, color = T.accent)
-            }
-            // Build #123: measured gain headroom from the output peak
-            val outPkMsNow = if (NeonDsp.available) runCatching { NeonDsp.outPeakMs() }.getOrDefault(0) else 0
-            val headDb = if (outPkMsNow > 0) (20.0 * Math.log10(outPkMsNow / 1000.0)) else -60.0
+        }
+
+        }
+
+        if (activeDestination == SonicCoreDestination.EQUALIZER) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
             Text(
-                "GAIN HEADROOM: " + (when {
-                    headDb > -3.0 -> "LOW"
-                    headDb > -8.0 -> "MODERATE"
-                    else -> "GOOD"
-                }) + " (output peak " + (if (outPkMsNow > 0) "%.1f dBFS".format(headDb) else "silent") + ") — measured, not a loudness prediction.",
-                fontSize = 9.sp, color = if (headDb > -3.0) T.accent else T.secondary
+                "SESSION HISTORY  ›",
+                fontSize = 10.sp,
+                color = T.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(T.accent.copy(alpha = 0.12f))
+                    .clickable {
+                        secondaryReturnDestination = SonicCoreDestination.EQUALIZER
+                        activeDestination = SonicCoreDestination.SESSIONS
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .semantics { contentDescription = "Open saved session history" }
             )
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #121: SPECTRUM — real-time FFT of the live signal ──
-        NeonCard {
-            GradientText("SPECTRUM", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
-            Spacer(Modifier.height(4.dp))
-            var spTick by remember { mutableStateOf(0) }
-            var spPost by remember { mutableStateOf(false) }
-            var spChan by remember { mutableStateOf(0) }
-            // Build #136: Phase-14 FPS tiers — full user rate while the app is
-            // RESUMED, 8 FPS when backgrounded (the activity keeps composing
-            // off-screen; on the Redmi 10C that CPU is needed elsewhere).
-            // Capture + DSP run in the service and are NEVER throttled here.
-            var spForeground by remember { mutableStateOf(true) }
-            val spLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-            androidx.compose.runtime.DisposableEffect(spLifecycleOwner) {
-                val obs = androidx.lifecycle.LifecycleEventObserver { _, ev ->
-                    spForeground = ev == androidx.lifecycle.Lifecycle.Event.ON_RESUME
-                }
-                spLifecycleOwner.lifecycle.addObserver(obs)
-                onDispose { spLifecycleOwner.lifecycle.removeObserver(obs) }
-            }
-            LaunchedEffect(spFps, spForeground) { while (true) { kotlinx.coroutines.delay(1000L / (if (spForeground) spFps.coerceAtLeast(5) else 8)); spTick++ } }
-            val spActive = NeonDsp.available && runCatching { NeonDsp.inRmsMs() > 0 || NeonDsp.outRmsMs() > 0 }.getOrDefault(false)
-            LaunchedEffect(spTick) {
-                // Build #124: FREEZE stops visualization updates only —
-                // capture and DSP keep running untouched.
-                if (spTick > 0 && NeonDsp.available && spActive && !spFrozen) {
-                    val cur = FloatArray(48)
-                    try { NeonDsp.spectrum(cur, (if (spPost) 3 else 0) + spChan) } catch (_: Throwable) { }
-                    val nb = spBars.copyOf()
-                    for (i in 0 until 48) nb[i] = nb[i] * (1f - spSmoothAmt) + cur[i] * spSmoothAmt
-                    spBars = nb
-                    val nh = spHold.copyOf()
-                    val decay = when (spHoldMode) { 1 -> 0.94f; 3 -> 0.992f; 5 -> 0.997f; else -> 1f }
-                    for (i in 0 until 48) nh[i] = if (spHoldMode == 0) nb[i] else maxOf(nh[i] * decay, nb[i])
-                    spHold = nh
-                }
-            }
-            Canvas(modifier = Modifier.fillMaxWidth().height(110.dp).semantics { contentDescription = "Spectrum analyzer, 20 hertz to 20 kilohertz" }) {
-                val w = size.width
-                val h = size.height
-                val topPad = 6f
-                val barW = w / 48f
-                for (g in 1..3) {
-                    val y = topPad + (h - topPad) * g / 4f
-                    drawLine(color = T.secondary.copy(alpha = 0.15f), start = androidx.compose.ui.geometry.Offset(0f, y), end = androidx.compose.ui.geometry.Offset(w, y), strokeWidth = 1f)
-                }
-                for (i in 0 until 48) {
-                    val bh = (h - topPad) * spBars[i]
-                    if (bh > 1f) {
-                        drawRoundRect(
-                            color = T.primary.copy(alpha = 0.9f),
-                            topLeft = androidx.compose.ui.geometry.Offset(i * barW + 1f, h - bh),
-                            size = androidx.compose.ui.geometry.Size(barW - 2f, bh),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
-                        )
-                    }
-                    if (spHoldMode > 0 && spHold[i] > 0.02f) {
-                        val y = h - (h - topPad) * spHold[i]
-                        drawLine(color = T.accent, start = androidx.compose.ui.geometry.Offset(i * barW + 1f, y), end = androidx.compose.ui.geometry.Offset((i + 1) * barW - 1f, y), strokeWidth = 1.5f)
-                    }
-                }
-            }
-            if (!spActive) {
-                Text("no signal — play audio to see the spectrum", fontSize = 9.sp, color = T.secondary)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (spPost) "PROCESSED" else "SOURCE", fontSize = 9.sp, color = if (spPost) T.accent else T.primary,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background((if (spPost) T.accent else T.primary).copy(alpha = 0.12f))
-                        .clickable { spPost = !spPost }.padding(horizontal = 8.dp, vertical = 3.dp)
-                        .semantics { contentDescription = if (spPost) "Show processed spectrum" else "Show source spectrum" })
-                Spacer(Modifier.width(6.dp))
-                Text("L+R", fontSize = 9.sp, color = if (spChan == 0) T.primary else T.secondary,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background((if (spChan == 0) T.primary else T.secondary).copy(alpha = 0.12f))
-                        .clickable { spChan = 0 }.padding(horizontal = 8.dp, vertical = 3.dp))
-                Text("L", fontSize = 9.sp, color = if (spChan == 1) T.primary else T.secondary,
-                    modifier = Modifier.padding(start = 4.dp).clip(RoundedCornerShape(50)).background((if (spChan == 1) T.primary else T.secondary).copy(alpha = 0.12f))
-                        .clickable { spChan = 1 }.padding(horizontal = 8.dp, vertical = 3.dp))
-                Text("R", fontSize = 9.sp, color = if (spChan == 2) T.primary else T.secondary,
-                    modifier = Modifier.padding(start = 4.dp).clip(RoundedCornerShape(50)).background((if (spChan == 2) T.primary else T.secondary).copy(alpha = 0.12f))
-                        .clickable { spChan = 2 }.padding(horizontal = 8.dp, vertical = 3.dp))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("SMOOTHING", fontSize = 9.sp, color = T.secondary)
-                Slider(
-                    value = spSmoothAmt,
-                    onValueChange = { spSmoothAmt = it },
-                    valueRange = 0.2f..0.9f,
-                    modifier = Modifier.weight(1f).padding(start = 8.dp, end = 8.dp).height(24.dp),
-                    colors = SliderDefaults.colors(thumbColor = T.primary, activeTrackColor = T.primary)
-                )
-                Text(if (spFrozen) "FROZEN" else "", fontSize = 9.sp, color = T.accent)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("PEAK HOLD", fontSize = 9.sp, color = T.secondary)
-                listOf(0 to "OFF", 1 to "1s", 3 to "3s", 5 to "5s").forEach { (hm, hl) ->
-                    Text(hl, fontSize = 9.sp, color = if (spHoldMode == hm) T.accent else T.secondary,
-                        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background((if (spHoldMode == hm) T.accent else T.secondary).copy(alpha = 0.12f))
-                            .clickable { spHoldMode = hm }.padding(horizontal = 7.dp, vertical = 3.dp)
-                            .semantics { contentDescription = "Peak hold " + hl })
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(if (spFrozen) "RESUME" else "FREEZE", fontSize = 9.sp, color = if (spFrozen) T.accent else T.primary,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background((if (spFrozen) T.accent else T.primary).copy(alpha = 0.12f))
-                        .clickable { spFrozen = !spFrozen }.padding(horizontal = 8.dp, vertical = 3.dp)
-                        .semantics { contentDescription = if (spFrozen) "Resume analyzer" else "Freeze analyzer — visualization only, audio continues" })
-                Spacer(Modifier.width(6.dp))
-                listOf(30, 15, 8).forEach { f ->
-                    Text("$f", fontSize = 9.sp, color = if (spFps == f) T.primary else T.secondary,
-                        modifier = Modifier.padding(start = 4.dp).clip(RoundedCornerShape(50)).background((if (spFps == f) T.primary else T.secondary).copy(alpha = 0.12f))
-                            .clickable { spFps = f }.padding(horizontal = 6.dp, vertical = 3.dp)
-                            .semantics { contentDescription = "Analyzer " + f + " frames per second" })
-                }
-                Text("fps", fontSize = 8.sp, color = T.secondary)
-            }
-            Text(
-                (if (spPost) "OUTPUT SPECTRUM = processed PCM (post-DSP)" else "INPUT SPECTRUM = captured PCM (pre-DSP)") +
-                    " · 20 Hz – 20 kHz log · not the final physical speaker signal",
-                fontSize = 8.sp, color = T.secondary
-            )
-            if (spFrozen) Text("ANALYZER FROZEN — visualization only. Capture and DSP continue normally.", fontSize = 8.sp, color = T.accent)
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #121: OUTPUT — route, format, latency, buffer at a glance ──
-        NeonCard {
-            GradientText("OUTPUT", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
-            Spacer(Modifier.height(4.dp))
-            val routeIcon = when {
-                AudioCapabilityManager.btConnected(context) -> "◉ Bluetooth"
-                AudioCapabilityManager.usbConnected(context) -> "▤ USB Audio"
-                AudioCapabilityManager.wiredConnected(context) -> "♪ Wired Headphones"
-                else -> "▷ Phone Speaker"
-            }
-            Text(routeIcon, fontSize = 13.sp, color = T.primary)
-            Text(
-                AudioCapabilityManager.suggestedSampleRate(context).toString() + " Hz · " + AudioCapabilityManager.channelsLine() +
-                    " · buffer " + CaptureEqService.bufferMode + " · " + "%.0f".format(CaptureEqService.captureBufferMs) + " ms",
-                fontSize = 10.sp, color = T.secondary
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "LATENCY (estimated)\n" +
-                "  capture      " + "%.1f".format(CaptureEqService.capLatencyMs) + " ms\n" +
-                "  dsp          " + "%.1f".format(CaptureEqService.dspMs) + " ms\n" +
-                "  output       " + "%.1f".format(CaptureEqService.outLatencyMs) + " ms\n" +
-                "  pipeline     ~" + "%.0f".format(CaptureEqService.totalLatencyMs) + " ms",
-                fontSize = 10.sp, color = T.secondary, lineHeight = 14.sp
-            )
-            Text("Estimates from buffer sizes and measured processing time — Android provides no exact end-to-end latency API.", fontSize = 8.sp, color = T.secondary)
-            if (CaptureEqService.oldRouteLine != null) {
-                Text("ROUTE CHANGED: " + CaptureEqService.oldRouteLine + " → " + AudioCapabilityManager.outputDeviceLine(context), fontSize = 9.sp, color = T.accent)
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        }
-            Column(modifier = Modifier.weight(1f)) {
-        // ── Build #121: QUICK DSP — collapsible atomic toggles (same engine, no parallel pipelines) ──
-        NeonCard {
-            var qcOpen by remember { mutableStateOf(false) }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { qcOpen = !qcOpen }) {
-                GradientText("QUICK DSP", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
-                Spacer(Modifier.weight(1f))
-                Text(if (qcOpen) "▲" else "▼", fontSize = 10.sp, color = T.secondary)
-            }
-            if (qcOpen) {
-                Spacer(Modifier.height(4.dp))
-                Text("Toggles map to the same native chain through atomic commits. A toggle stores your current value and restores it exactly.", fontSize = 8.sp, color = T.secondary)
-                Spacer(Modifier.height(6.dp))
-                var qcBase by remember { mutableStateOf<DspParams?>(null) }
-                var qcEqBands by remember { mutableStateOf<FloatArray?>(null) }
-                var qcDspOn by remember { mutableStateOf(true) }
-                var qcEqOn by remember { mutableStateOf(true) }
-                var qcBassOn by remember { mutableStateOf(true) }
-                var qcTrebleOn by remember { mutableStateOf(true) }
-                var qcStereoOn by remember { mutableStateOf(true) }
-                var qcLimOn by remember { mutableStateOf(true) }
-                fun qcPush() {
-                    val base = qcBase ?: DspParams.load(engine).also { qcBase = it }
-                    val p = DspParams()
-                    p.preamp = base.preamp
-                    p.bass = if (qcBassOn) base.bass else 0f
-                    p.treble = if (qcTrebleOn) base.treble else 0f
-                    p.width = if (qcStereoOn) base.width else 1f
-                    p.balance = base.balance
-                    p.mono = base.mono
-                    p.swap = base.swap
-                    p.compOn = base.compOn
-                    p.compThresh = base.compThresh
-                    p.limiterOn = qcLimOn
-                    p.limThresh = base.limThresh
-                    p.slots = if (qcEqOn) base.slots else List(8) { PeqSlot() }
-                    p.applyTo(NeonDsp)
-                    if (!qcEqOn) {
-                        if (qcEqBands == null) qcEqBands = bandLevels.copyOf()
-                        NeonDsp.setGraphicGains(FloatArray(engine.bandCount) { 0f })
-                    } else if (qcEqBands != null) {
-                        NeonDsp.setGraphicGains(qcEqBands!!)
-                        qcEqBands = null
-                    }
-                }
-                Row {
-                    Text(if (qcDspOn) "DSP ✓ ON" else "DSP ○ OFF (capture bypass)", fontSize = 10.sp, color = if (qcDspOn) T.primary else T.accent,
-                        modifier = Modifier.clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.10f)).clickable { qcDspOn = !qcDspOn; CaptureEqService.bypass = !qcDspOn }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle DSP" })
-                    Text(if (qcEqOn) "EQ ✓" else "EQ ✗", fontSize = 10.sp, color = if (qcEqOn) T.primary else T.accent,
-                        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.10f)).clickable { qcEqOn = !qcEqOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle EQ" })
-                    Text(if (qcBassOn) "BASS ✓" else "BASS ✗", fontSize = 10.sp, color = if (qcBassOn) T.primary else T.accent,
-                        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.10f)).clickable { qcBassOn = !qcBassOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle bass" })
-                }
-                Row(modifier = Modifier.padding(top = 4.dp)) {
-                    Text(if (qcTrebleOn) "TREBLE ✓" else "TREBLE ✗", fontSize = 10.sp, color = if (qcTrebleOn) T.primary else T.accent,
-                        modifier = Modifier.clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.10f)).clickable { qcTrebleOn = !qcTrebleOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle treble" })
-                    Text(if (qcStereoOn) "STEREO ✓" else "STEREO ✗", fontSize = 10.sp, color = if (qcStereoOn) T.primary else T.accent,
-                        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.10f)).clickable { qcStereoOn = !qcStereoOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle stereo width" })
-                    Text(if (qcLimOn) ("LIMITER ✓" + (if (NeonDsp.available) runCatching { if (NeonDsp.limiterActive()) " · GR -" + (NeonDsp.limiterGrMs() / 10.0) + "dB" else "" }.getOrDefault("") else "")) else "LIMITER ✗", fontSize = 10.sp, color = if (qcLimOn) T.primary else T.accent,
-                        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background(T.accent.copy(alpha = 0.10f)).clickable { qcLimOn = !qcLimOn; qcPush() }.padding(horizontal = 10.dp, vertical = 5.dp).semantics { contentDescription = "Toggle limiter" })
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #121: PERFORMANCE — compact live counters ──
-        NeonCard {
-            var perfTick by remember { mutableStateOf(0) }
-            LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); perfTick++ } }
-            GradientText("PERFORMANCE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
-            Spacer(Modifier.height(4.dp))
-            val clipN = if (NeonDsp.available) runCatching { NeonDsp.clipCount() }.getOrDefault(0L) else 0L
-            val nanN = if (NeonDsp.available) runCatching { NeonDsp.nanCount() }.getOrDefault(0L) else 0L
-            val sessSec = if (CaptureEqService.running && CaptureEqService.sessionStartedAt > 0)
-                (android.os.SystemClock.elapsedRealtime() - CaptureEqService.sessionStartedAt) / 1000 else 0L
-            val framesIn = CaptureEqService.framesCaptured
-            val framesOut = CaptureEqService.framesDone
-            Text(
-                "DSP CPU " + "%.1f".format(CaptureEqService.dspLoadPct) + "% · loop " + "%.1f".format(CaptureEqService.loopMs) + " ms · session " + sessSec + "s\n" +
-                "frames in " + framesIn + " · out " + framesOut + "\n" +
-                "underruns " + CaptureEqService.underruns + " · clips " + clipN + " · NaN events " + nanN + "\n" +
-                "route changes " + CaptureEqService.sessionRouteChanges + " · buffer changes " + CaptureEqService.sessionBufferChanges,
-                fontSize = 10.sp, color = T.secondary, lineHeight = 14.sp
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // ── Build #121: AUDIO HEALTH — plain-language pass/fail, error codes in details ──
-        NeonCard {
-            GradientText("AUDIO HEALTH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
-            Spacer(Modifier.height(4.dp))
-            var healthDetail by remember { mutableStateOf(false) }
-            val recentData = CaptureEqService.running &&
-                (android.os.SystemClock.elapsedRealtime() - CaptureEqService.lastDataAt) < 2500L
-            val hCap = when {
-                !CaptureEqService.running -> "—"
-                CaptureEqService.noEligiblePlayback -> "⚠ CAPTURE — source application does not permit capture"
-                recentData -> "✓ CAPTURE"
-                else -> "○ CAPTURE — waiting"
-            }
-            val hDsp = when {
-                !NeonDsp.available -> "✗ DSP — native library unavailable"
-                CaptureEqService.bypass -> "○ DSP — bypassed (A/B or quick toggle)"
-                CaptureEqService.running && recentData -> "✓ DSP"
-                else -> "✓ DSP — ready"
-            }
-            val hOut = if (CaptureEqService.framesDone > 0) "✓ OUTPUT" else "— OUTPUT"
-            val hBuf = if (CaptureEqService.underruns > 0) "⚠ BUFFER — " + CaptureEqService.underruns + " underruns" else "✓ BUFFER"
-            val hRoute = if (CaptureEqService.lastError?.startsWith("OUTPUT_ROUTE_CHANGED") == true) "⚠ ROUTE — rebuilding" else "✓ ROUTE"
-            Text(hCap + "\n" + hDsp + "\n" + hOut + "\n" + hBuf + "\n" + hRoute, fontSize = 11.sp, color = T.secondary, lineHeight = 16.sp)
-            if (CaptureEqService.lastError != null) {
-                Text(
-                    if (healthDetail) "VIEW DETAILS ▲" else "VIEW DETAILS ▼",
-                    fontSize = 10.sp, color = T.accent,
-                    modifier = Modifier.clickable { healthDetail = !healthDetail }.padding(vertical = 2.dp)
-                )
-                if (healthDetail) {
-                    Text("Error layer: " + CaptureEqService.lastError, fontSize = 9.sp, color = T.accent)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        } // tab guard
-
-        } // landscape columns
-            } // landscape row
-        }   // v143: dashboard hidden in FOCUS EQ
-
-
         var editBand by remember { mutableStateOf(-1) }
         var selBand by remember { mutableStateOf(-1) }
         var eqScaleMode by remember { mutableStateOf(0) } // 0 AUTO · 6 · 12 · 18
@@ -1506,7 +1445,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         // ── v143: EQUALIZER header — title + FOCUS EQ (§32) ──
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            GradientText("EQUALIZER", 16.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
             Spacer(Modifier.weight(1f))
             Text(
                 if (focusEq) "✕ EXIT FOCUS" else "◎ FOCUS EQ", fontSize = 10.sp,
@@ -1888,7 +1826,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // ── Build #126: numeric gain entry — validated + clamped, never invalid to DSP ──
         if (gainEditBand >= 0 && gainEditBand < bandCount) {
             AlertDialog(
-                containerColor = S.card.copy(alpha = 0.94f),
+                containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
                 shape = RoundedCornerShape(24.dp),
                 onDismissRequest = { gainEditBand = -1 },
                 title = { Text("BAND " + (gainEditBand + 1) + " GAIN", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -1935,7 +1873,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         // ── Build #126: RESET ALL EQ — EQ section only, one undo entry ──
         if (showResetEqDialog) {
             AlertDialog(
-                containerColor = S.card.copy(alpha = 0.94f),
+                containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
                 shape = RoundedCornerShape(24.dp),
                 onDismissRequest = { showResetEqDialog = false },
                 title = { Text("RESET EQ?", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -2031,7 +1969,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         if (editBand >= 0 && editBand < bandCount) {
             val info = bandList.getOrNull(editBand)
             AlertDialog(
-                containerColor = S.card.copy(alpha = 0.94f),
+                containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
                 shape = RoundedCornerShape(24.dp),
                 onDismissRequest = { editBand = -1 },
                 title = { Text("BAND " + (editBand + 1), color = T.primary, fontWeight = FontWeight.Bold) },
@@ -2137,34 +2075,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
         } // tab guard
+        }
 
-        // v143 §31/§32: STUDIO & SYSTEM — every technical section stays one
-        // tap away, but the EQ is the centerpiece. Collapsed by default in
-        // normal mode; fully hidden in FOCUS EQ. Same composables, same state.
-        if (!focusEq) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(50))
-                    .background(Brush.horizontalGradient(listOf(
-                        T.secondary.copy(alpha = 0.10f),
-                        T.primary.copy(alpha = 0.05f)
-                    )))
-                    .border(1.dp, Brush.verticalGradient(listOf(
-                        Color.White.copy(alpha = glassSpecularAlpha() * 0.8f),
-                        T.secondary.copy(alpha = 0.10f)
-                    )), RoundedCornerShape(50))
-                    .clickable { advOpen = !advOpen }
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .semantics { contentDescription = (if (advOpen) "Collapse studio and system sections" else "Expand studio and system sections") }
-            ) {
-                GradientText("STUDIO & SYSTEM", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
-                Spacer(Modifier.weight(1f))
-                Text(if (advOpen) "▾ COLLAPSE" else "▸ EXPAND", fontSize = 10.sp, color = if (advOpen) T.primary else T.secondary)
-            }
-            Spacer(Modifier.height(8.dp))
-            if (advOpen) {
+        if (activeDestination != SonicCoreDestination.DASHBOARD &&
+            activeDestination != SonicCoreDestination.EQUALIZER
+        ) {
+        if (activeDestination == SonicCoreDestination.PLAYER) {
         // ── Build #110: VISUALIZER on the main screen — system capture when
         // the device allows it, software-player capture when it doesn't ──
         NeonCard {
@@ -2227,7 +2143,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { hasPerm = it }
             var diagTick by remember { mutableStateOf(0) }
             LaunchedEffect(Unit) { while (true) { delay(700); diagTick++ } }
-            DisposableEffect(Unit) { onDispose { player.stop(); tone.stop() } }
             // Any change to the curve — drag, preset, startup reapply — reaches the software EQ instantly
             LaunchedEffect(bandLevels) {
                 dsp.setGains(bandLevels)
@@ -2484,6 +2399,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }
+
+        if (activeDestination == SonicCoreDestination.DSP_FX) {
         // ── Build #123: DSP STUDIO — master control + visual processing chain ──
         NeonCard {
             GradientText("DSP ENGINE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -2493,6 +2411,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 !NeonDsp.available -> "⚠ DSP ERROR"
                 SoftwareEq.lastEngineLabel?.startsWith("KOTLIN") == true -> "! KOTLIN FALLBACK"
                 CaptureEqService.bypass -> "○ DSP BYPASS"
+                !CaptureEqService.running -> "○ DSP READY"
+                CaptureEqService.framesCaptured <= 0L ||
+                    CaptureEqService.framesDone <= 0L ||
+                    SystemClock.elapsedRealtime() - CaptureEqService.lastDataAt >= 2500L ->
+                    "○ DSP WAITING"
                 else -> "● DSP ACTIVE"
             }
             val masterColor = when (masterState) {
@@ -2636,7 +2559,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     } catch (_: Throwable) { }
                 }
                 AlertDialog(
-                    containerColor = S.card.copy(alpha = 0.94f),
+                    containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
                     shape = RoundedCornerShape(24.dp),
                     onDismissRequest = { stEdit = null },
                     title = { Text(stName, color = T.primary, fontWeight = FontWeight.Bold) },
@@ -2777,6 +2700,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }
+
+        if (activeDestination == SonicCoreDestination.SYSTEM_CAPTURE) {
         // ── Build #117: SYSTEM CAPTURE — CAPTURE MODE with honest A/B ──
         NeonCard {
             GradientText("SYSTEM CAPTURE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
@@ -2796,11 +2722,35 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             var capTick by remember { mutableStateOf(0) }
             LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(700); capTick++ } }
             val capCtx = LocalContext.current
+            val capNowElapsedMs = android.os.SystemClock.elapsedRealtime()
+            val hasLiveCaptureFrames = CaptureFlowStatus.hasRecentCaptureData(
+                running = CaptureEqService.running,
+                paused = CaptureEqService.paused,
+                framesCaptured = CaptureEqService.framesCaptured,
+                lastDataAtElapsedMs = CaptureEqService.lastDataAt,
+                nowElapsedMs = capNowElapsedMs
+            )
+            val hasLiveOutputFrames = CaptureFlowStatus.hasRecentOutputData(
+                running = CaptureEqService.running,
+                paused = CaptureEqService.paused,
+                framesCaptured = CaptureEqService.framesCaptured,
+                framesOutput = CaptureEqService.framesDone,
+                lastDataAtElapsedMs = CaptureEqService.lastDataAt,
+                nowElapsedMs = capNowElapsedMs
+            )
+            val captureStatusLabel = when {
+                !CaptureEqService.running -> "OFF"
+                CaptureEqService.paused -> "PAUSED"
+                CaptureEqService.noEligiblePlayback -> "WAITING · NO ELIGIBLE PLAYBACK"
+                hasLiveOutputFrames -> if (CaptureEqService.bypass) "LIVE · BYPASS" else "LIVE · DSP"
+                hasLiveCaptureFrames -> "WAITING FOR OUTPUT FRAMES"
+                else -> "WAITING FOR PCM"
+            }
             // A/B + counters
             val clipC = if (NeonDsp.available) runCatching { NeonDsp.clipCount() }.getOrDefault(0L) else 0L
             val nanC = if (NeonDsp.available) runCatching { NeonDsp.nanCount() }.getOrDefault(0L) else 0L
             Text(
-                "capture: " + (if (CaptureEqService.running) (if (CaptureEqService.paused) "PAUSED" else "ACTIVE") else "off") +
+                "capture: " + captureStatusLabel +
                     (if (capTick < 0) "" else "") +
                     " | frames: in " + CaptureEqService.framesCaptured + " · out " + CaptureEqService.framesDone +
                     " | underruns: " + CaptureEqService.underruns +
@@ -2828,7 +2778,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                     onClick = { CaptureEqService.bypass = false },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (!CaptureEqService.bypass) T.primary else T.accent)
-                ) { Text("B · DSP ACTIVE", fontSize = 9.sp) }
+                ) { Text("B · DSP ENABLED", fontSize = 9.sp) }
                 Button(
                     onClick = { CaptureEqService.bypass = true },
                     colors = ButtonDefaults.buttonColors(
@@ -2837,8 +2787,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 ) { Text("A · BYPASS", fontSize = 9.sp) }
             }
             Text(
-                if (CaptureEqService.bypass) "RAW CAPTURE PATH — AudioPlaybackCapture → AudioRecord → AudioTrack. SonicCore DSP bypass — Android/OEM processing is unaffected."
-                else "PROCESSED CAPTURE PATH — AudioPlaybackCapture → AudioRecord → NeonDspEngine → AudioTrack.",
+                if (CaptureEqService.bypass) "RAW CAPTURE PATH CONFIGURED — AudioPlaybackCapture → AudioRecord → AudioTrack. SonicCore DSP bypass — Android/OEM processing is unaffected."
+                else if (hasLiveOutputFrames) "PROCESSED CAPTURE PATH LIVE — AudioPlaybackCapture → AudioRecord → NeonDspEngine → AudioTrack."
+                else "PROCESSED CAPTURE PATH CONFIGURED — live processing is reported only after captured PCM and accepted output frames are present.",
                 fontSize = 9.sp, color = T.accent, lineHeight = 12.sp
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2927,6 +2878,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }
+
+        if (activeDestination == SonicCoreDestination.SESSIONS) {
         // ── Build #121: SESSIONS — local history from the recorded session log ──
         NeonCard {
             GradientText("SESSIONS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
@@ -3016,6 +2970,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }
+
+        if (activeDestination == SonicCoreDestination.SIGNAL_PATH) {
         // ── Build #119: SIGNAL PATH — measured, stage-by-stage, never inferred ──
         NeonCard {
             GradientText("SIGNAL PATH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -3129,9 +3086,21 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             val inPkDb = if (NeonDsp.available && NeonDsp.inPeakMs() > 0) "%.1f dB".format(20 * kotlin.math.log10(NeonDsp.inPeakMs() / 1000.0)) else "-inf"
             val outRmsDb = if (NeonDsp.available && NeonDsp.outRmsMs() > 0) "%.1f dB".format(20 * kotlin.math.log10(NeonDsp.outRmsMs() / 1000.0)) else "-inf"
             val outPkDb = if (NeonDsp.available && NeonDsp.outPeakMs() > 0) "%.1f dB".format(20 * kotlin.math.log10(NeonDsp.outPeakMs() / 1000.0)) else "-inf"
+            val hasLiveDiagnosticOutput = CaptureFlowStatus.hasRecentOutputData(
+                running = CaptureEqService.running,
+                paused = CaptureEqService.paused,
+                framesCaptured = CaptureEqService.framesCaptured,
+                framesOutput = CaptureEqService.framesDone,
+                lastDataAtElapsedMs = CaptureEqService.lastDataAt,
+                nowElapsedMs = android.os.SystemClock.elapsedRealtime()
+            )
             Text(
-                "A/B METERS (measured, same captured input): A · BYPASS output RMS " + outRmsDb + " (in RAW mode) | B · DSP ACTIVE output RMS " + outRmsDb + " (in PROCESSED mode)" +
-                    " | INPUT RMS " + inRmsDb + " · PEAK " + inPkDb + " | OUTPUT PEAK " + outPkDb,
+                if (hasLiveDiagnosticOutput) {
+                    "LIVE METERS (current selection: " + (if (CaptureEqService.bypass) "BYPASS" else "DSP") + "): INPUT RMS " + inRmsDb + " · PEAK " + inPkDb +
+                        " | OUTPUT RMS " + outRmsDb + " · PEAK " + outPkDb
+                } else {
+                    "LIVE METERS: waiting for recent captured PCM and accepted output frames; no separate A/B meter history is recorded."
+                },
                 fontSize = 10.sp, color = T.secondary
             )
             Text("Switch A/B mid-capture — the input is the same captured stream; safe maximum output gain 150% + limiter enforced.", fontSize = 9.sp, color = T.secondary)
@@ -3220,6 +3189,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
 
 
+        }
+
+        if (activeDestination == SonicCoreDestination.SESSIONS) {
         // ── EQ PRESETS — the single canonical preset manager ──
         // Consolidated in Build #129: exactly one preset section exists — here.
         // State lives at top level; storage is unchanged (same prefs, same
@@ -3427,7 +3399,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         }
         Spacer(Modifier.height(16.dp))
-        // ── Build #89: PRO FX — noise gate + anti-clip limiter ──
+        }
+
+        if (activeDestination == SonicCoreDestination.PRO_FX) {
+        // Pro FX uses the existing effect state and engine callbacks.
         NeonCard {
             GradientText("PRO FX", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
             Spacer(Modifier.height(6.dp))
@@ -3467,40 +3442,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // ── Per-app profiles ──
-
-        // ── Build #127: APPEARANCE — glass intensity (UI rendering only) ──
-        NeonCard {
-            GradientText("APPEARANCE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
-            Spacer(Modifier.height(6.dp))
-            Text("GLASS EFFECT", fontSize = 10.sp, color = T.secondary)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                listOf("LOW" to 0, "MEDIUM" to 1, "HIGH" to 2).forEach { (gl, gv) ->
-                    Text(
-                        gl, fontSize = 10.sp,
-                        color = if (appGlassState.value == gv) T.primary else T.secondary,
-                        modifier = Modifier
-                            .padding(start = if (gv > 0) 6.dp else 0.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background((if (appGlassState.value == gv) T.primary else T.secondary).copy(alpha = 0.12f))
-                            .clickable {
-                                appGlassState.value = gv
-                                try {
-                                    context.getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
-                                        .edit().putString("glass", gv.toString()).apply()
-                                } catch (_: Throwable) { }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                            .semantics { contentDescription = "Glass effect " + gl }
-                    )
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            Text("Glass effect changes UI rendering only. It never affects DSP, capture, audio buffers, latency or sample rate. If the device struggles, the glass reduces gracefully while borders and transparency remain.", fontSize = 8.sp, color = T.secondary)
         }
+
+        if (activeDestination == SonicCoreDestination.SIGNAL_PATH) {
         Spacer(Modifier.height(16.dp))
         // ── Build #130: ANALYZER — shared state with the SPECTRUM card ──
         NeonCard {
@@ -3625,6 +3569,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1000); pathTick++ } }
             var compatReport by remember { mutableStateOf<String?>(null) }
             val clipC2 = if (NeonDsp.available) runCatching { NeonDsp.clipCount() }.getOrDefault(0L) else 0L
+            val measuredAudioFlow = CaptureEqService.running &&
+                CaptureEqService.framesCaptured > 0L &&
+                CaptureEqService.framesDone > 0L &&
+                CaptureEqService.lastDataAt > 0L &&
+                SystemClock.elapsedRealtime() - CaptureEqService.lastDataAt < 2500L
             Text(
                 "DEVICE: " + AudioCapabilityManager.osLine() + "\n" +
                 "MANUFACTURER: " + AudioCapabilityManager.manufacturer() + " · MODEL: " + AudioCapabilityManager.model() + "\n" +
@@ -3632,8 +3581,18 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 "CAPTURE: " + (if (AudioCapabilityManager.playbackCapture().toString() == "SUPPORTED") "SUPPORTED" else "UNSUPPORTED") + "\n" +
                 "MEDIA PROJECTION: " + (if (CaptureEqService.running) "GRANTED" else "NOT REQUESTED") + "\n" +
                 "SOURCE PLAYBACK: " + (if (!CaptureEqService.running) "—" else if (CaptureEqService.noEligiblePlayback) "NOT DETECTED (source app may block capture)" else "DETECTED") + "\n" +
-                "DSP: " + (if (CaptureEqService.running) "ACTIVE · " + CaptureEqService.captureSampleRate + "Hz" else if (NeonDsp.available) "READY" else "ERROR") + "\n" +
-                "OUTPUT: " + (if (CaptureEqService.running && !CaptureEqService.noEligiblePlayback) "ACTIVE" else if (CaptureEqService.running) "WAITING" else "INACTIVE") + "\n" +
+                "DSP: " + when {
+                    !NeonDsp.available -> "ERROR"
+                    !CaptureEqService.running -> "READY"
+                    CaptureEqService.bypass -> "BYPASSED (RAW PATH)"
+                    measuredAudioFlow -> "ACTIVE · " + CaptureEqService.captureSampleRate + "Hz"
+                    else -> "WAITING FOR FRAMES"
+                } + "\n" +
+                "OUTPUT: " + when {
+                    !CaptureEqService.running -> "INACTIVE"
+                    measuredAudioFlow -> "ACTIVE"
+                    else -> "WAITING FOR FRAMES"
+                } + "\n" +
                 "OUTPUT DEVICE: " + AudioCapabilityManager.outputDeviceLine(apCtx) + "\n" +
                 "SAMPLE RATE: " + (if (CaptureEqService.running) CaptureEqService.captureSampleRate.toString() + "Hz in / " + CaptureEqService.captureSampleRate + "Hz out (same rate, no resampling)" else AudioCapabilityManager.suggestedSampleRate(apCtx).toString() + "Hz (detected)") + "\n" +
                 "CHANNELS: " + AudioCapabilityManager.channelsLine() + "\n" +
@@ -3737,6 +3696,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
 
 
+        }
+
+        if (activeDestination == SonicCoreDestination.SESSIONS) {
         NeonCard {
             GradientText("APP PROFILES", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(6.dp))
@@ -3800,11 +3762,48 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             }
         }
 
+        if (activeDestination == SonicCoreDestination.DIAGNOSTICS) {
+            com.neon.eq.diagnostics.DeviceDiagnosticsScreen()
+        }
 
-        }   // v143: studio expanded
-        }   // v143: hidden in FOCUS EQ
+        if (activeDestination == SonicCoreDestination.CAPABILITIES) {
+            com.neon.eq.capabilities.CapabilityRegistryScreen()
+        }
+
+        if (activeDestination == SonicCoreDestination.DEVICE_TOOLS) {
+            com.neon.eq.tools.DeviceToolsScreen()
+        }
+
+        if (activeDestination == SonicCoreDestination.APP_MANAGER) {
+            com.neon.eq.apps.AppManagerScreen(
+                currentlyPlayingPackage = playingApp,
+                perAppProfiles = appProfiles,
+                onAssignProfile = { pkg, presetName ->
+                    engine.setAppProfile(pkg, presetName)
+                    appProfiles = engine.listAppProfiles()
+                },
+                onRemoveProfile = { pkg ->
+                    engine.setAppProfile(pkg, null)
+                    appProfiles = engine.listAppProfiles()
+                }
+            )
+        }
+
 
         Spacer(Modifier.height(24.dp))
+        }
+        }
+        }
+        SonicCoreBottomNavigation(
+            selected = activeDestination,
+            onSelect = {
+                if (!it.isPrimary) secondaryReturnDestination = activeDestination
+                activeDestination = it
+                focusEq = false
+            },
+            landscape = LocalConfiguration.current.orientation ==
+                android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        )
     }
     } }
     // v144 §11: live route monitoring — public AudioDeviceCallback, registered
@@ -3867,19 +3866,27 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     }
     LaunchedEffect(Unit) { outputTick++ }   // first snapshot after composition
 
-    Box(modifier = Modifier.fillMaxSize()) {
-    GlassBackground()
-    mainContent()
-    SnackbarHost(
-        hostState = snackbarHost,
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
-    )
-    } // end Box
+    SonicCoreTheme(glassLevel = appGlassState.value) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            GlassBackground()
+            mainContent()
+            SnackbarHost(
+                hostState = snackbarHost,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(
+                        bottom = if (LocalConfiguration.current.orientation ==
+                            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                        ) 58.dp else 112.dp
+                    )
+            )
+        }
+    }
 
     // ── Build #124: SESSION COMPARISON — factual aggregates only ──
     if (showSessionCompare) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showSessionCompare = false },
             title = { Text("SESSION COMPARISON", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -3951,7 +3958,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 val changedBands = (0 until bandCount).count { cur[it] != tgt[it] }
                 val nz = tgt.filter { it != 0 }
                 AlertDialog(
-                    containerColor = S.card.copy(alpha = 0.94f),
+                    containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
                     shape = RoundedCornerShape(24.dp),
                     onDismissRequest = { previewPresetName = null },
                     title = { Text(pname, color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4073,6 +4080,19 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     // ══════════════ v144: OUTPUT STUDIO ══════════════
     GlassBottomSheet(visible = showOutputStudio, onDismiss = { showOutputStudio = false }) {
         GradientText("OUTPUT STUDIO", 13.sp, Brush.horizontalGradient(listOf(T.secondary, T.primary)))
+        // .img — Output Studio visual (16:9, rounded, hairline edge)
+        Image(
+            painter = painterResource(R.drawable.glass_output),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, glassEdgeTop(), RoundedCornerShape(16.dp))
+        )
+        Spacer(Modifier.height(10.dp))
+
         Text("Choose where SonicCore sends processed audio", fontSize = 9.sp, color = T.secondary)
         Spacer(Modifier.height(8.dp))
         val octx = context
@@ -4322,7 +4342,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     // v144 §15: nickname editor — local display name only, never the system name
     if (nicknameEditKey != null) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { nicknameEditKey = null },
             title = { Text("Nickname", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4370,7 +4390,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             if (loudness != target.loudness) cmpRows.add("Loudness     " + loudness + "  →  " + target.loudness)
         }
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showCompareDialog = false },
             title = { Text("CURRENT vs " + (target?.name ?: "FLAT"), color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4409,7 +4429,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         var impPhase by remember { mutableStateOf(0) }
         var impPreview by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showImportPreset = false; impPhase = 0; impPreview = null },
             title = { Text(if (impPhase == 0) "Import preset" else "IMPORT PRESET", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4521,7 +4541,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             "IMPORTANT" to "Android may continue playing the original source audio. SonicCore processes the audio it captures through its own pipeline and cannot mute or replace the source app."
         )
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showGuide = false },
             title = { Text(guidePages[guidePage].first, color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4552,7 +4572,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     // before any change; CANCEL preserves everything untouched. ──
     if (showResetDialog) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showResetDialog = false },
             title = { Text("Reset DSP settings?", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4622,7 +4642,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
     if (showSaveDialog) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showSaveDialog = false },
             title = { Text("Save current EQ as preset", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4662,7 +4682,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
     if (showOverwriteDialog) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showOverwriteDialog = false },
             title = { Text("Overwrite preset?", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4805,7 +4825,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
     if (showRenameDialog) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showRenameDialog = false },
             title = { Text("Rename preset", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -4842,21 +4862,284 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
     // ── Settings dialog ──
     if (showSettings) {
+        var committedTheme by remember { mutableStateOf(appThemeState.value) }
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
-            onDismissRequest = { showSettings = false },
+            onDismissRequest = {
+                appThemeState.value = committedTheme
+                showSettings = false
+            },
             title = { Text("Settings", color = T.primary, fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // ── Build #89: App theme ──
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("APPEARANCE", fontSize = 11.sp, color = T.accent, fontWeight = FontWeight.Bold)
+                        Text("System appearance", fontSize = 13.sp, color = S.text)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                "SYSTEM" to SurfaceModes.SYSTEM,
+                                "LIGHT" to SurfaceModes.LIGHT,
+                                "DARK" to SurfaceModes.DARK
+                            ).forEach { (label, mode) ->
+                                val selected = appModeState.value == mode
+                                Text(
+                                    label,
+                                    fontSize = 10.sp,
+                                    color = if (selected) T.primary else T.secondary,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background((if (selected) T.primary else T.secondary).copy(alpha = 0.12f))
+                                        .clickable {
+                                            appModeState.value = mode
+                                            context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                                                .edit().putString(
+                                                    "mode",
+                                                    when (mode) {
+                                                        SurfaceModes.LIGHT -> "light"
+                                                        SurfaceModes.DARK -> "dark"
+                                                        else -> "system"
+                                                    }
+                                                ).apply()
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        .semantics { contentDescription = "Appearance $label" }
+                                )
+                            }
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("AUDIO & DIAGNOSTICS", fontSize = 11.sp, color = T.accent, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(S.cardDeep)
+                                .clickable {
+                                    openSecondaryDestination(SonicCoreDestination.SIGNAL_PATH)
+                                    showSettings = false
+                                }
+                                .semantics { contentDescription = "Open measured Signal Path diagnostics" }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Signal Path", fontSize = 13.sp, color = S.text)
+                                Text("Capture-to-output stages and measured health", fontSize = 10.sp, color = T.secondary)
+                            }
+                            Text("›", fontSize = 20.sp, color = T.primary)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(S.cardDeep)
+                                .clickable {
+                                    openSecondaryDestination(SonicCoreDestination.SYSTEM_CAPTURE)
+                                    showSettings = false
+                                }
+                                .semantics { contentDescription = "Open system capture controls" }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("System Capture", fontSize = 13.sp, color = S.text)
+                                Text("Consent, capture status, bypass and buffer controls", fontSize = 10.sp, color = T.secondary)
+                            }
+                            Text("›", fontSize = 20.sp, color = T.primary)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(S.cardDeep)
+                                .clickable {
+                                    showSettings = false
+                                    showOutputStudio = true
+                                }
+                                .semantics { contentDescription = "Open output route preferences" }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Output Preferences", fontSize = 13.sp, color = S.text)
+                                Text("Choose and inspect supported output routes", fontSize = 10.sp, color = T.secondary)
+                            }
+                            Text("›", fontSize = 20.sp, color = T.primary)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(S.cardDeep)
+                                .clickable {
+                                    openSecondaryDestination(SonicCoreDestination.DIAGNOSTICS)
+                                    showSettings = false
+                                }
+                                .semantics { contentDescription = "Open Device Diagnostics" }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Device Diagnostics", fontSize = 13.sp, color = S.text)
+                                Text("Hardware, memory, battery, thermal, and service health", fontSize = 10.sp, color = T.secondary)
+                            }
+                            Text("›", fontSize = 20.sp, color = T.primary)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(S.cardDeep)
+                                .clickable {
+                                    openSecondaryDestination(SonicCoreDestination.CAPABILITIES)
+                                    showSettings = false
+                                }
+                                .semantics { contentDescription = "Open Capability Registry" }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Capability Registry", fontSize = 13.sp, color = S.text)
+                                Text("Evaluated platform, capture, and routing features", fontSize = 10.sp, color = T.secondary)
+                            }
+                            Text("›", fontSize = 20.sp, color = T.primary)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(S.cardDeep)
+                                .clickable {
+                                    openSecondaryDestination(SonicCoreDestination.DEVICE_TOOLS)
+                                    showSettings = false
+                                }
+                                .semantics { contentDescription = "Open Device Tools" }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Device Tools & Shortcuts", fontSize = 13.sp, color = S.text)
+                                Text("System audio shortcuts, focus probe, and Shizuku bridge", fontSize = 10.sp, color = T.secondary)
+                            }
+                            Text("›", fontSize = 20.sp, color = T.primary)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(S.cardDeep)
+                                .clickable {
+                                    openSecondaryDestination(SonicCoreDestination.APP_MANAGER)
+                                    showSettings = false
+                                }
+                                .semantics { contentDescription = "Open App Audio Manager" }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("App Audio Manager", fontSize = 13.sp, color = S.text)
+                                Text("Audio app visibility, launch, and per-app presets", fontSize = 10.sp, color = T.secondary)
+                            }
+                            Text("›", fontSize = 20.sp, color = T.primary)
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Glass Effect", fontSize = 14.sp, color = S.text, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Choose the shared Liquid Glass material. Changes are visual only.",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            GlassIntensityPreference.LEVELS.forEach { (label, value) ->
+                                val selected = appGlassState.value == value
+                                LiquidGlassChoiceChip(
+                                    text = label,
+                                    selected = selected,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                            appGlassState.value = value
+                                            context.getSharedPreferences(
+                                                UI_PREFS,
+                                                android.content.Context.MODE_PRIVATE
+                                            ).edit().putString(
+                                                GlassIntensityPreference.KEY,
+                                                GlassIntensityPreference.serialize(value)
+                                            ).apply()
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Theme selection previews immediately; Apply commits to the existing theme preference.
                     val ctx = LocalContext.current
                     Column {
-                        Text("App Theme", fontSize = 14.sp, color = S.text)
-                        Text("Accent palette for the entire UI", fontSize = 11.sp, color = Color.Gray)
+                        Text("THEME STUDIO", fontSize = 11.sp, color = T.accent, fontWeight = FontWeight.Bold)
+                        Text("Complete color and surface treatments", fontSize = 11.sp, color = Color.Gray)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(Themes.ALL) { t ->
+                                val selected = appThemeState.value.id == t.id
+                                Column(
+                                    modifier = Modifier
+                                        .width(116.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(t.darkSurfaces.card)
+                                        .border(
+                                            1.dp,
+                                            if (selected) t.primary else t.darkSurfaces.borderDim,
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable { appThemeState.value = t }
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        listOf(t.primary, t.secondary, t.accent).forEach { color ->
+                                            Box(
+                                                Modifier
+                                                    .size(17.dp)
+                                                    .clip(CircleShape)
+                                                    .background(color)
+                                            )
+                                        }
+                                        Spacer(Modifier.weight(1f))
+                                        if (selected) Text("✓", color = t.primary, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text(
+                                        t.label,
+                                        fontSize = 11.sp,
+                                        color = if (selected) t.primary else S.text,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 2,
+                                        minLines = 2
+                                    )
+                                }
+                            }
+                        }
+                        Button(
+                            onClick = {
+                                committedTheme = appThemeState.value
+                                ctx.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                                    .edit().putString("theme", committedTheme.id).apply()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = T.primary)
+                        ) {
+                            Text("APPLY ${appThemeState.value.label.uppercase()}", color = Color.Black)
+                        }
+
+                        Text("AUDIO PERFORMANCE", fontSize = 11.sp, color = T.accent, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(12.dp))
                         Text("Performance Mode", fontSize = 14.sp, color = S.text)
                         Text("UI effects only — audio DSP quality never changes", fontSize = 11.sp, color = Color.Gray)
@@ -4879,40 +5162,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                         .semantics { contentDescription = "Performance mode " + label })
                             }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Spacer(Modifier.height(10.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Themes.ALL.forEach { t ->
-                                val selected = appThemeState.value.id == t.id
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (selected) t.primary.copy(alpha = 0.12f) else S.cardDeep)
-                                        .border(1.dp, if (selected) t.primary else S.borderDim, RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            appThemeState.value = t
-                                            try {
-                                                ctx.getSharedPreferences(UI_PREFS, android.content.Context.MODE_PRIVATE)
-                                                    .edit().putString("theme", t.id).apply()
-                                            } catch (_: Throwable) { }
-                                        }
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        listOf(t.primary, t.secondary, t.accent).forEach { c ->
-                                            Box(Modifier.size(14.dp).clip(CircleShape).background(c))
-                                            Spacer(Modifier.width(6.dp))
-                                        }
-                                    }
-                                    Text(t.label, fontSize = 13.sp,
-                                        color = if (selected) t.primary else S.textSoft,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-                                }
-                            }
-                        }
                     }
 
                     // Start on boot
@@ -4925,16 +5174,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Start on Boot", fontSize = 14.sp, color = S.text)
                             Text("Auto-start EQ after device reboot", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = startOnBoot,
                             onCheckedChange = {
                                 startOnBoot = it
                                 engine.setStartOnBoot(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     // Auto-apply last preset
@@ -4947,16 +5192,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Auto-apply Preset", fontSize = 14.sp, color = S.text)
                             Text("Restore last preset on app launch", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = autoApplyPreset,
                             onCheckedChange = {
                                 autoApplyPreset = it
                                 engine.setAutoApplyPreset(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     // Show visualizer
@@ -4969,16 +5210,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Visualizer", fontSize = 14.sp, color = S.text)
                             Text("Show live spectrum bars", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = showVisualizer,
                             onCheckedChange = {
                                 showVisualizer = it
                                 engine.setShowVisualizer(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     // Visualizer style picker
@@ -5015,16 +5252,12 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                             Text("Breathing Glow", fontSize = 14.sp, color = S.text)
                             Text("Animated glow behind header", fontSize = 11.sp, color = Color.Gray)
                         }
-                        Switch(
+                        LiquidToggle(
                             checked = showGlow,
                             onCheckedChange = {
                                 showGlow = it
                                 engine.setShowGlow(it)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = T.primary,
-                                checkedTrackColor = T.primary.copy(alpha = 0.3f)
-                            )
+                            }
                         )
                     }
                     Spacer(Modifier.height(4.dp))
@@ -5122,7 +5355,10 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showSettings = false }) { Text("Done") }
+                TextButton(onClick = {
+                    appThemeState.value = committedTheme
+                    showSettings = false
+                }) { Text("Done") }
             }
         )
     }
@@ -5130,7 +5366,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     // ── Import dialog ──
     if (showImportDialog) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showImportDialog = false },
             title = { Text("Import presets", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -5173,7 +5409,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
     if (showRestoreDialog) {
         AlertDialog(
-            containerColor = S.card.copy(alpha = 0.94f),
+            containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
             shape = RoundedCornerShape(24.dp),
             onDismissRequest = { showRestoreDialog = false },
             title = { Text("Restore backup", color = T.primary, fontWeight = FontWeight.Bold) },
@@ -5238,11 +5474,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 // Compact "SC" monogram — cyan-to-violet gradient, geometric, minimal.
 // Used in the header and the splash screen. No external image asset.
 @Composable
-fun SCMark(size: androidx.compose.ui.unit.Dp = 34.dp) {
+fun SCMark(markSize: androidx.compose.ui.unit.Dp = 34.dp) {
     Box(
         modifier = Modifier
-            .size(size)
-            .clip(RoundedCornerShape(size / 3.4f))
+            .size(markSize)
+            .clip(RoundedCornerShape(markSize / 3.4f))
             .background(Brush.verticalGradient(listOf(
                 T.primary.copy(alpha = 0.90f),
                 T.secondary.copy(alpha = 0.85f)
@@ -5262,12 +5498,12 @@ fun SCMark(size: androidx.compose.ui.unit.Dp = 34.dp) {
             .border(1.dp, Brush.verticalGradient(listOf(
                 Color.White.copy(alpha = 0.35f),
                 Color.White.copy(alpha = 0.08f)
-            )), RoundedCornerShape(size / 3.4f)),
+            )), RoundedCornerShape(markSize / 3.4f)),
         contentAlignment = Alignment.Center
     ) {
         Text(
             "SC", color = Color.White, fontWeight = FontWeight.Bold,
-            fontSize = (size.value * 0.42f).sp, letterSpacing = 0.sp
+            fontSize = (markSize.value * 0.42f).sp, letterSpacing = 0.sp
         )
     }
 }
@@ -5281,7 +5517,7 @@ private fun meterFraction(mb: Int): Float = ((mb / 100f + 60f) / 60f).coerceIn(0
 fun StereoMeterBar(label: String, lMb: Int, rMb: Int, clipping: Boolean = false) {
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, fontSize = 9.sp, color = T.secondary, letterSpacing = 1.sp, modifier = Modifier.width(28.dp))
+            Text(label, fontSize = 9.sp, color = S.textSoft.copy(alpha = 0.8f), letterSpacing = 1.sp, modifier = Modifier.width(28.dp))
             if (clipping) {
                 Spacer(Modifier.width(4.dp))
                 Text("⚠", fontSize = 9.sp, color = StatusColors.error)
@@ -5290,26 +5526,31 @@ fun StereoMeterBar(label: String, lMb: Int, rMb: Int, clipping: Boolean = false)
         listOf("L" to lMb, "R" to rMb).forEach { (ch, mb) ->
             val frac by animateFloatAsState(meterFraction(mb), tween(90), label = "meter$ch")
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                Text(ch, fontSize = 8.sp, color = T.secondary, modifier = Modifier.width(10.dp))
+                Text(ch, fontSize = 8.sp, color = S.textSoft.copy(alpha = 0.8f), modifier = Modifier.width(10.dp))
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(S.borderDim.copy(alpha = 0.5f))
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(glassTrack())
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth(frac)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(if (clipping) StatusColors.error else T.primary)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (clipping)
+                                    Brush.horizontalGradient(listOf(StatusColors.error, Color(0xFFFFB199)))
+                                else
+                                    Brush.horizontalGradient(listOf(Color(0xFF3A7BFF), Color(0xFF7FF3FF)))
+                            )
                     )
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    String.format("%.1f dB", mb / 100f), fontSize = 8.sp, color = T.secondary,
-                    modifier = Modifier.width(42.dp)
+                    String.format("%.1f dB", mb / 100f), fontSize = 8.sp,
+                    color = S.textSoft.copy(alpha = 0.8f), modifier = Modifier.width(42.dp)
                 )
             }
         }
@@ -5319,54 +5560,32 @@ fun StereoMeterBar(label: String, lMb: Int, rMb: Int, clipping: Boolean = false)
 
 @Composable
 fun GlassChip(label: String, state: Int, modifier: Modifier = Modifier) {
-    // Build #132: semantic status colors (spec §5) — cyan keeps the
-    // "processing" meaning on ACTIVE, the rest are fixed status colors.
-    val (col, glyph) = when (state) {
-        0 -> T.primary to "●"                    // ACTIVE / processing
-        2 -> StatusColors.warn to "⚠"            // WARNING
-        3 -> StatusColors.error to "✗"           // ERROR
-        4 -> StatusColors.inactive to "·"        // NEUTRAL
-        else -> StatusColors.inactive to "○"     // MUTED / inactive
+    val (k, glyph) = when (state) {
+        0 -> GlassChipKind.Active to "●"
+        2 -> GlassChipKind.Warn to "⚠"
+        3 -> GlassChipKind.Error to "✗"
+        4 -> GlassChipKind.Neutral to "·"
+        else -> GlassChipKind.Muted to "○"
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(Brush.verticalGradient(listOf(
-                S.cardDeep.copy(alpha = 0.60f),
-                S.cardDeep.copy(alpha = 0.50f)
-            )))
-            .border(1.dp, Brush.verticalGradient(listOf(
-                Color.White.copy(alpha = glassSpecularAlpha() * 1.5f),
-                col.copy(alpha = 0.25f)
-            )), RoundedCornerShape(50))
-            .padding(horizontal = 9.dp, vertical = 4.dp)
-            .semantics { contentDescription = label }
-    ) {
-        Text(glyph, fontSize = 8.sp, color = col)
-        Text(label, fontSize = 9.sp, color = col, modifier = Modifier.padding(start = 4.dp))
-    }
+    LiquidChip(
+        label = label,
+        kind = k,
+        glyph = glyph,
+        modifier = modifier.semantics { contentDescription = label }
+    )
 }
 
 // Compact pill button. kind: 0 PRIMARY · 1 SECONDARY · 2 DESTRUCTIVE
 @Composable
 fun GlassButton(label: String, kind: Int = 0, enabled: Boolean = true, onClick: () -> Unit) {
     val col = when (kind) { 2 -> T.accent; 1 -> T.secondary; else -> T.primary }
-    Text(
-        label, fontSize = 10.sp,
-        color = if (enabled) col else col.copy(alpha = 0.40f),
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(Brush.verticalGradient(listOf(
-                (if (enabled) col else col.copy(alpha = 0.4f)).copy(alpha = 0.16f),
-                (if (enabled) col else col.copy(alpha = 0.4f)).copy(alpha = 0.08f)
-            )))
-            .border(1.dp, Brush.verticalGradient(listOf(
-                Color.White.copy(alpha = if (enabled) glassSpecularAlpha() * 1.2f else 0.04f),
-                col.copy(alpha = 0.15f)
-            )), RoundedCornerShape(50))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 5.dp)
+    LiquidGlassButton(
+        text = label,
+        onClick = onClick,
+        enabled = enabled,
+        secondary = kind == 1,
+        selected = kind != 1,
+        accentColor = col
     )
 }
 
@@ -5395,42 +5614,20 @@ fun TechValue(text: String, fontSize: TextUnit = 10.sp, color: Color = T.seconda
 fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     if (!visible) return
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() }) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .shadow(14.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(Brush.verticalGradient(listOf(
-                        S.card.copy(alpha = 0.92f),
-                        S.cardAlt.copy(alpha = 0.96f)
-                    )))
-                    .drawBehind {
-                        // Specular highlight along the top edge of the sheet
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = glassSpecularAlpha() * 1.5f),
-                                1f to Color.Transparent
-                            ),
-                            topLeft = Offset(0f, 0f),
-                            size = Size(size.width, 4.dp.toPx())
-                        )
-                    }
-                    .border(1.dp, Brush.verticalGradient(listOf(
-                        Color.White.copy(alpha = glassBorderAlpha() * 1.2f),
-                        T.primary.copy(alpha = 0.22f),
-                        T.secondary.copy(alpha = 0.10f)
-                    )), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 10.dp, bottom = 20.dp),
-            ) {
-                Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50))
-                    .background(T.secondary.copy(alpha = 0.35f)).align(Alignment.CenterHorizontally))
-                Spacer(Modifier.height(10.dp))
-                content()
-            }
+    Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() }) {
+        LiquidGlassSurface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding(),
+            shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+            contentPadding = 16.dp
+        ) {
+            Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50))
+                .background(T.secondary.copy(alpha = 0.35f)).align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(10.dp))
+            content()
+        }
         }
     }
 }
@@ -5438,58 +5635,11 @@ fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composab
 @Composable
 fun NeonCard(
     modifier: Modifier = Modifier,
+    riseDelayMs: Int = 0,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // Liquid Glass: translucent tonal surface with specular top highlight,
-    // inner depth shadow, and neon gradient border. The top edge catches
-    // light (white specular), the bottom recedes (inner shadow) — giving
-    // each card the appearance of a shaped glass panel.
-    val a = glassSurfaceAlpha()
-    val bA = glassBorderAlpha()
-    val sA = glassSpecularAlpha()
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(22.dp))
-            .clip(RoundedCornerShape(22.dp))
-            .background(Brush.verticalGradient(
-                listOf(
-                    S.card.copy(alpha = (a * 0.82f).coerceAtMost(0.98f)),
-                    S.card.copy(alpha = a),
-                    S.cardAlt.copy(alpha = (a * 1.06f).coerceAtMost(0.99f))
-                )
-            ))
-            .drawBehind {
-                // Specular highlight — bright line at the top edge (light catching glass)
-                val specH = 3.dp.toPx()
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.White.copy(alpha = sA),
-                        1f to Color.Transparent
-                    ),
-                    topLeft = Offset(0f, 0f),
-                    size = Size(size.width, specH)
-                )
-                // Inner depth — subtle shadow at the bottom edge
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = sA * 0.5f)
-                    ),
-                    topLeft = Offset(0f, size.height - specH),
-                    size = Size(size.width, specH)
-                )
-            }
-            .border(
-                1.dp,
-                Brush.verticalGradient(listOf(
-                    Color.White.copy(alpha = (bA * 1.5f).coerceAtMost(0.4f)),
-                    T.primary.copy(alpha = bA * 0.7f),
-                    T.secondary.copy(alpha = bA * 0.35f)
-                )),
-                RoundedCornerShape(22.dp)
-            )
-            .padding(14.dp),
+    LiquidGlassPanel(
+        modifier = modifier.fillMaxWidth().riseIn(riseDelayMs),
         content = content
     )
 }
@@ -5497,13 +5647,14 @@ fun NeonCard(
 // Gradient section header — matches the wordmark language.
 @Composable
 fun GradientText(text: String, fontSize: androidx.compose.ui.unit.TextUnit, brush: Brush) {
+    // .h — restrained uppercase section label: 600 weight, 1.6px tracking,
+    // 80% ink. The liquid-glass direction drops the neon gradient sweep.
     Text(
-        buildAnnotatedString {
-            withStyle(SpanStyle(brush = brush)) { append(text) }
-        },
+        text.uppercase(),
         fontSize = fontSize,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 2.sp
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.6.sp,
+        color = S.textSoft.copy(alpha = 0.8f)
     )
 }
 
@@ -6165,14 +6316,19 @@ fun AppProfileChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
         fontSize = 10.sp,
-        color = if (selected) T.primary else Color.Gray,
+        color = if (selected) Color.White else chipInk(),
         maxLines = 1,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(if (selected) T.primary.copy(alpha = 0.15f) else S.cardDeep)
+            .background(
+                if (selected)
+                    chipSelectedBrush()
+                else
+                    Brush.linearGradient(listOf(chipFill(false, false), chipFill(false, false)))
+            )
             .border(
                 1.dp,
-                if (selected) T.primary.copy(alpha = 0.5f) else T.primary.copy(alpha = 0.12f),
+                Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
                 RoundedCornerShape(50)
             )
             .clickable {
@@ -6195,11 +6351,14 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
             }
             .clip(RoundedCornerShape(16.dp))
             .background(
-                if (selected) T.primary.copy(alpha = 0.15f) else S.cardDeep
+                if (selected)
+                    chipSelectedBrush()
+                else
+                    Brush.linearGradient(listOf(chipFill(false, false), chipFill(false, false)))
             )
             .border(
                 1.dp,
-                if (selected) T.primary.copy(alpha = 0.6f) else T.primary.copy(alpha = 0.12f),
+                Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
                 RoundedCornerShape(16.dp)
             )
             .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -6207,7 +6366,7 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
         // Mini sparkline preview — 24px tall, draws the EQ curve shape
         // Hoisted out of the draw loop — the old version allocated two Color
         // objects per band per frame while the row scrolled (31 bands x N chips).
-        val thumbColor = if (selected) T.primary.copy(alpha = 0.8f) else T.secondary.copy(alpha = 0.5f)
+        val thumbColor = if (selected) Color.White.copy(alpha = 0.9f) else Color(0xFF9FD8FF).copy(alpha = 0.6f)
         Canvas(modifier = Modifier.width(60.dp).height(24.dp)) {
             val levels = preset.levels
             // Build #93: built-in presets are 10-slot curves now; user-saved
@@ -6231,7 +6390,7 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(2.dp))
-        Text(preset.name, fontSize = 10.sp, color = if (selected) T.primary else Color.Gray, maxLines = 1)
+        Text(preset.name, fontSize = 10.sp, color = if (selected) Color.White else chipInk(), maxLines = 1)
     }
 }
 
@@ -6250,11 +6409,14 @@ fun CustomPresetChip(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
             .background(
-                if (selected) T.secondary.copy(alpha = 0.2f) else S.cardDeep
+                if (selected)
+                    chipSelectedBrush()
+                else
+                    Brush.linearGradient(listOf(chipFill(false, false), chipFill(false, false)))
             )
             .border(
                 1.dp,
-                if (selected) T.secondary.copy(alpha = 0.6f) else T.secondary.copy(alpha = 0.15f),
+                Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
                 RoundedCornerShape(16.dp)
             )
             .padding(horizontal = 4.dp)
@@ -6285,7 +6447,7 @@ fun CustomPresetChip(
         Text(
             preset.name,
             fontSize = 10.sp,
-            color = if (selected) T.secondary else Color.Gray,
+            color = if (selected) Color.White else chipInk(),
             modifier = Modifier
                 .combinedClickable(
                     onClick = {
@@ -6327,9 +6489,6 @@ fun CircularDial(
 
     // Build #136: hoisted out of the draw pass — was allocating a new
     // shader every frame while the dial animated.
-    val dialSweepBrush = remember(T.primary, T.secondary) {
-        Brush.sweepGradient(0.375f to T.secondary, 1.0f to T.primary)
-    }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(contentAlignment = Alignment.Center) {
             Canvas(
@@ -6369,7 +6528,7 @@ fun CircularDial(
 
                 // Track — full 270° in muted surface tone
                 drawArc(
-                    color = Color.Gray.copy(alpha = 0.18f),
+                    color = glassTrack(),
                     startAngle = 135f,
                     sweepAngle = 270f,
                     useCenter = false,
@@ -6380,7 +6539,7 @@ fun CircularDial(
                 // Progress — neon gradient sweep (cyan → purple), stops
                 // shifted so the gradient begins at the dial's 135° start.
                 drawArc(
-                    brush = dialSweepBrush,
+                    color = T.primary,
                     startAngle = 135f,
                     sweepAngle = 270f * fraction,
                     useCenter = false,
@@ -6413,15 +6572,24 @@ fun CircularDial(
                     center = Offset(knobCenter.x - strokePx * 0.15f, knobCenter.y - strokePx * 0.15f)
                 )
             }
-            Text(
-                valueText ?: "$value",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = T.accent
-            )
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(dialCoreBrush())
+                    .border(1.dp, dialEdge(), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    valueText ?: "$value",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = dialInk()
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
-        Text(label, fontSize = 10.sp, color = Color.Gray, letterSpacing = 1.sp)
+        Text(label, fontSize = 10.sp, color = S.textSoft.copy(alpha = 0.75f), letterSpacing = 1.sp)
     }
 }
 

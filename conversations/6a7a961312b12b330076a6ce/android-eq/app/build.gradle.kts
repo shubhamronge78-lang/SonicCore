@@ -26,7 +26,7 @@ android {
 
     defaultConfig {
         applicationId = "com.neon.eq"
-        minSdk = 21
+        minSdk = 26
         targetSdk = 34
         // Tie versionCode/versionName to the CI run so it's easy to confirm on-device
         // (Settings > Apps > Neon EQ > version) that you're actually running the
