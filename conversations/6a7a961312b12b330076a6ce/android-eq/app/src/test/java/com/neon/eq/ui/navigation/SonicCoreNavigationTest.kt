@@ -275,4 +275,96 @@ class SonicCoreNavigationTest {
         }
         assertFalse(SonicCoreRoutes.isKnown("tool:not.a.tool"))
     }
+
+    // ── Every tap the launcher offers changes what the body renders ──
+
+    /**
+     * What the launcher body renders for a frame. `mainContent` in
+     * `MainActivity.kt` dispatches on exactly these three reads — [SonicCoreNavState.isHome],
+     * [SonicCoreNavState.onCategoryHub] and the open tool's destination — so a tap
+     * that does not change this string cannot render a new screen, however the UI
+     * is drawn. A stale frame (and only a stale frame) makes a tap look dead.
+     */
+    private fun screenOf(state: SonicCoreNavState): String {
+        val tool = state.tool
+        return when {
+            state.isHome -> "HOME"
+            tool != null -> "TOOL ${tool.id}: " +
+                (tool.destination?.name ?: "own screen ${tool.id}")
+            else -> "HUB ${state.category?.name}"
+        }
+    }
+
+    @Test
+    fun allSixHomeCardsOpenTheirOwnCategoryHub() {
+        val home = SonicCoreNavState()
+        // The card grid and the dock both call openCategory(category).
+        SonicCoreCategory.entries.forEach { category ->
+            val hub = home.selectCategory(category)
+            assertEquals("HUB ${category.name}", screenOf(hub))
+            assertFalse(hub.isHome)
+            assertTrue(hub.onCategoryHub)
+            assertEquals(category, hub.category)
+            assertNull(hub.tool)
+            // Both the breadcrumb's back control and system Back leave the hub.
+            assertEquals("HOME", screenOf(hub.pop()))
+        }
+    }
+
+    @Test
+    fun theAudioCardReachesTheExistingEqualizerScreen() {
+        val equalizer = SonicCoreToolRegistry.find("audio.equalizer")!!
+        // The Equalizer row must open the long-standing EQ body, not a copy.
+        assertEquals(SonicCoreDestination.EQUALIZER, equalizer.destination)
+        assertEquals(equalizer, SonicCoreToolRegistry.firstFor(SonicCoreDestination.EQUALIZER))
+
+        val open = SonicCoreNavState()
+            .selectCategory(SonicCoreCategory.AUDIO)
+            .openTool(equalizer)
+        assertEquals("TOOL audio.equalizer: EQUALIZER", screenOf(open))
+    }
+
+    @Test
+    fun everyToolRowOpensAScreenOfItsOwn() {
+        SonicCoreToolRegistry.all.forEach { tool ->
+            val open = SonicCoreNavState().selectCategory(tool.category).openTool(tool)
+            assertEquals(tool, open.tool)
+            assertEquals(tool.category, open.category)
+            assertFalse("${tool.id} still looks like a hub", open.onCategoryHub)
+            assertTrue(
+                "${tool.id} renders ${screenOf(open)} instead of its own screen",
+                screenOf(open).startsWith("TOOL ${tool.id}:")
+            )
+        }
+    }
+
+    @Test
+    fun backFromEveryToolWalksItsHubThenHome() {
+        SonicCoreToolRegistry.all.forEach { tool ->
+            // Opened straight from Home: the hub is pushed first, so back is
+            // always tool → hub → Home whatever the tool was reached from.
+            val open = SonicCoreNavState().openTool(tool)
+            assertTrue(
+                "${tool.id} renders ${screenOf(open)}",
+                screenOf(open).startsWith("TOOL ${tool.id}: ")
+            )
+
+            val hub = open.pop()
+            assertEquals("HUB ${tool.category.name}", screenOf(hub))
+            assertEquals("HOME", screenOf(hub.pop()))
+        }
+    }
+
+    @Test
+    fun everyFrameOfAJourneyRendersADifferentScreen() {
+        // Home → Audio → Equalizer: three frames, three screens. This is what a
+        // recomposition must follow; re-rendering any earlier frame is the bug.
+        val equalizer = SonicCoreToolRegistry.find("audio.equalizer")!!
+        val home = SonicCoreNavState()
+        val hub = home.selectCategory(SonicCoreCategory.AUDIO)
+        val tool = hub.openTool(equalizer)
+
+        val screens = listOf(screenOf(home), screenOf(hub), screenOf(tool))
+        assertEquals(screens.size, screens.toSet().size)
+    }
 }
