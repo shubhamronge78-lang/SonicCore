@@ -1,13 +1,23 @@
 package com.neon.eq.ui.design
 
 import android.content.Intent
+import android.media.audiofx.AudioEffect
 import android.provider.Settings
+import android.os.Build
+import android.net.Uri
+import com.neon.eq.ui.navigation.SonicCoreDestination
+import com.neon.eq.tools.ToolShortcut
+import com.neon.eq.tools.DeviceToolsManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -38,7 +48,10 @@ fun SettingsScreen(
     onGlassIntensityChange: (String) -> Unit = {},
     onThemeChange: (String) -> Unit = {},
     currentGlassIntensity: String = "MEDIUM",
-    currentTheme: String = "cyan_dream"
+    currentTheme: String = "cyan_dream",
+    onNavigate: (SonicCoreDestination) -> Unit = {},
+    onSettingsChanged: () -> Unit = {},
+    onToolClick: (ToolShortcut) -> Unit = {}
 ) {
     val context = LocalContext.current
     val glassIntensities = listOf("LOW", "MEDIUM", "HIGH")
@@ -109,6 +122,7 @@ fun SettingsScreen(
                         onSelected = {
                             selectedGlassIntensity = intensity
                             onGlassIntensityChange(intensity)
+                            onSettingsChanged()
                         }
                     )
                 }
@@ -147,9 +161,49 @@ fun SettingsScreen(
                         onSelected = {
                             selectedTheme = theme
                             onThemeChange(theme)
+                            onSettingsChanged()
                         }
                     )
                 }
+            }
+        }
+        
+        // Sessions & Reports Section
+        LiquidGlassSurface(
+            modifier = Modifier.fillMaxWidth(),
+            depth = LiquidGlassDepth.Floating
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "Sessions & Reports",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = SonicCoreColors.PrimaryText,
+                    fontWeight = FontWeight.SemiBold
+                )
+                
+                Text(
+                    "View session history, performance reports, and export diagnostics",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SonicCoreColors.SecondaryText,
+                    fontSize = 11.sp
+                )
+                
+                Spacer(Modifier.height(8.dp))
+                
+                // Navigate to Sessions section
+                SystemSettingButton(
+                    title = "Sessions",
+                    subtitle = "View session history and diagnostic reports",
+                    icon = "▤",
+                    onClick = {
+                        try {
+                            onNavigate(SonicCoreDestination.SESSIONS)
+                        } catch (_: Exception) { }
+                    }
+                )
             }
         }
         
@@ -266,52 +320,26 @@ fun SettingsScreen(
                 
                 Spacer(Modifier.height(8.dp))
                 
-                // App Permissions
+                // Navigate to Permissions & Privacy Center section
                 SystemSettingButton(
-                    title = "App Permissions",
-                    subtitle = "Grant or revoke audio and notification permissions",
+                    title = "Permissions & Privacy",
+                    subtitle = "Real permission status with recovery and explanations",
                     icon = "🔒",
                     onClick = {
                         try {
-                            Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.parse("package:${context.packageName}")
-                            ).also { intent ->
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                context.startActivity(intent)
-                            }
-                        } catch (_: Exception) { }
-                    }
-                )
-                
-                // Notification Settings
-                SystemSettingButton(
-                    title = "Notifications",
-                    subtitle = "Configure EQ service notifications",
-                    icon = "🔔",
-                    onClick = {
-                        try {
-                            if (Build.VERSION.SDK_INT >= 26) {
-                                Intent(
-                                    Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                                ).apply {
-                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                    context.startActivity(this)
-                                }
-                            } else {
-                                Intent(
-                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.parse("package:${context.packageName}")
-                                ).also { intent ->
-                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    context.startActivity(intent)
-                                }
-                            }
+                            onNavigate(SonicCoreDestination.CAPABILITIES)
                         } catch (_: Exception) { }
                     }
                 )
             }
         }
+        
+        // Device Tools Section - System shortcuts
+        DeviceToolsSection(
+            modifier = Modifier.fillMaxWidth(),
+            onToolClick = { onToolClick(it) },
+            onNavigate = { onNavigate(it) }
+        )
         
         Spacer(Modifier.height(24.dp))
     }
@@ -483,6 +511,102 @@ private fun SystemSettingButton(
                     text = subtitle,
                     color = SonicCoreColors.SecondaryText,
                     fontSize = 11.sp
+                )
+            }
+            
+            Text(
+                text = "→",
+                color = SonicCoreColors.Cyan,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+// Device Tools Section - Comprehensive list of system audio shortcuts
+@Composable
+fun DeviceToolsSection(
+    modifier: Modifier = Modifier,
+    onToolClick: (ToolShortcut) -> Unit = {},
+    onNavigate: (SonicCoreDestination) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val tools = DeviceToolsManager.SHORTCUTS
+    
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        tools.forEach { tool ->
+            DeviceToolCard(
+                icon = tool.title.split(" ").firstOrNull()?.let { 
+                    if (it.isNotEmpty()) it.substring(0,1).uppercase() else ""
+                } ?: "",
+                title = tool.title,
+                subtitle = tool.subtitle,
+                permissionText = tool.permissionRequirement,
+                onClick = { 
+                    onToolClick(tool)
+                    // Navigate to Device Tools section
+                    onNavigate(SonicCoreDestination.DEVICE_TOOLS)
+                }
+            )
+        }
+    }
+}
+
+// Device Tool Card Component
+@Composable
+fun DeviceToolCard(
+    icon: String,
+    title: String,
+    subtitle: String,
+    permissionText: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SonicCoreColors.ElevatedSurface)
+            .border(1.dp, SonicCoreColors.Border.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp)
+            .semantics { contentDescription = "Open $title settings" }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = icon,
+                fontSize = 20.sp
+            )
+            
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = title,
+                    color = SonicCoreColors.PrimaryText,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                
+                Text(
+                    text = subtitle,
+                    color = SonicCoreColors.SecondaryText,
+                    fontSize = 11.sp
+                )
+                
+                Text(
+                    text = "Permission: $permissionText",
+                    color = SonicCoreColors.Cyan,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
             

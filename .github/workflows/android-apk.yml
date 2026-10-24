@@ -1,0 +1,89 @@
+name: Build Debug APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: "17"
+        distribution: "temurin"
+
+    - name: Set up Android SDK and NDK
+      uses: android-actions/setup-android@v3
+      with:
+        api-level: 34
+        build-tools: "34.0.0"
+        ndk: "25.1.8937393"
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: "8.5"
+
+    - name: Configure local.properties
+      working-directory: conversations/6a7a961312b12b330076a6ce/android-eq
+      run: |
+        echo "sdk.dir=$ANDROID_HOME" > local.properties
+        echo "cmake.dir=$ANDROID_HOME/cmake/3.22.1" >> local.properties
+
+    - name: Override CMake path for CI (use SDK-managed CMake on x86_64 runner)
+      working-directory: conversations/6a7a961312b12b330076a6ce/android-eq
+      run: |
+        sed -i '/^android.cmake.path/d' gradle.properties
+
+    - name: Run unit tests
+      working-directory: conversations/6a7a961312b12b330076a6ce/android-eq
+      run: |
+        chmod +x gradlew
+        ./gradlew testDebugUnitTest --no-daemon --continue
+
+    - name: Build Debug APK
+      working-directory: conversations/6a7a961312b12b330076a6ce/android-eq
+      run: |
+        chmod +x gradlew
+        ./gradlew assembleDebug --no-daemon -x test
+
+    - name: Validate APK exists and is non-empty
+      working-directory: conversations/6a7a961312b12b330076a6ce/android-eq
+      run: |
+        APK=app/build/outputs/apk/debug/app-debug.apk
+        if [ ! -s "$APK" ]; then
+          echo "ERROR: APK missing or empty: $APK"
+          exit 1
+        fi
+        echo "APK size: $(stat -c %s "$APK") bytes"
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-apk
+        path: conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+
+    - name: Upload test reports on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-reports
+        path: conversations/6a7a961312b12b330076a6ce/android-eq/app/build/reports/
+        retention-days: 30
+
+    - name: Upload build logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: conversations/6a7a961312b12b330076a6ce/android-eq/app/build/
+        retention-days: 30

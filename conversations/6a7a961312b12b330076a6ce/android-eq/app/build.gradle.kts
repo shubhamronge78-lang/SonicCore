@@ -53,7 +53,10 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            // CMake toolchain file is injected via the cmake wrapper script
+            // (/opt/soniccore-tools/cmake-3.22.6/bin/cmake) which adds
+            // -DCMAKE_TOOLCHAIN_FILE and -DCMAKE_SYSTEM_NAME=Linux after AGP's
+            // arguments, overriding AGP's NDK x86_64 toolchain and Android platform.
         }
     }
 
