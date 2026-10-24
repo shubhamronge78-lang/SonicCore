@@ -3,6 +3,7 @@ package com.neon.eq.diagnostics
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,9 +37,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.neon.eq.system.DeviceCapabilityProbe
 import com.neon.eq.ui.design.LiquidGlassDepth
 import com.neon.eq.ui.design.LiquidGlassSurface
+import com.neon.eq.ui.design.PlatformInfoRow
+import com.neon.eq.ui.design.PlatformSectionLabel
 import com.neon.eq.ui.design.SonicCoreColors
+import com.neon.eq.ui.design.StatusPill
 import kotlinx.coroutines.delay
 
 @Composable
@@ -51,8 +55,14 @@ fun DeviceDiagnosticsScreen(
     var batStatus by remember { mutableStateOf(DeviceDiagnosticsManager.getBatteryStatus(context)) }
     var thermStatus by remember { mutableStateOf(DeviceDiagnosticsManager.getThermalStatus(context)) }
     var srvHealth by remember { mutableStateOf(DeviceDiagnosticsManager.getServiceHealth(context)) }
+    var storage by remember { mutableStateOf(DeviceCapabilityProbe.storageSummary(context)) }
+    var network by remember { mutableStateOf(DeviceCapabilityProbe.networkSummary(context)) }
+    val cpu = remember { DeviceCapabilityProbe.cpuSummary() }
+    val display = remember { DeviceCapabilityProbe.displaySummary(context) }
+    val sensors = remember { DeviceCapabilityProbe.sensorSummary(context) }
+    var logTick by remember { mutableStateOf(0) }
 
-    // Lifecycle-bounded refresh every 3 seconds while screen is visible
+    // Lifecycle-bounded refresh every 3 seconds while the screen is visible.
     LaunchedEffect(Unit) {
         while (true) {
             delay(3000)
@@ -60,6 +70,9 @@ fun DeviceDiagnosticsScreen(
             batStatus = DeviceDiagnosticsManager.getBatteryStatus(context)
             thermStatus = DeviceDiagnosticsManager.getThermalStatus(context)
             srvHealth = DeviceDiagnosticsManager.getServiceHealth(context)
+            storage = DeviceCapabilityProbe.storageSummary(context)
+            network = DeviceCapabilityProbe.networkSummary(context)
+            logTick++
         }
     }
 
@@ -72,183 +85,330 @@ fun DeviceDiagnosticsScreen(
     ) {
         // 1. Hardware & Platform Card
         LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            PlatformSectionLabel("Hardware & platform")
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow("Device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            PlatformInfoRow("Android OS", "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+            PlatformInfoRow("Board / Hardware", "${android.os.Build.BOARD} / ${android.os.Build.HARDWARE}")
+            PlatformInfoRow("CPU ABIs", android.os.Build.SUPPORTED_ABIS.joinToString(", "))
+        }
+
+        // 2. CPU Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            PlatformSectionLabel("Processor")
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow("Logical cores", cpu.cores.toString())
+            PlatformInfoRow("Hardware", cpu.hardware)
+            PlatformInfoRow("Max frequency", DeviceCapabilityProbe.formatFrequency(cpu.maxFreqMhz))
             Text(
-                "HARDWARE & PLATFORM",
-                style = MaterialTheme.typography.labelSmall,
-                color = SonicCoreColors.Cyan,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
+                cpu.freqNote,
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        // 3. Memory & Resources Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlatformSectionLabel("Memory & heap")
+                if (memStatus.isLowMemory) {
+                    StatusPill("LOW MEMORY", SonicCoreColors.Error)
+                } else {
+                    StatusPill("HEALTHY", SonicCoreColors.Success)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow("Available RAM", "${memStatus.availRamMb} MB / ${memStatus.totalRamMb} MB")
+            PlatformInfoRow("Low RAM threshold", "${memStatus.thresholdMb} MB")
+            PlatformInfoRow("App JVM heap", "${memStatus.jvmUsedHeapMb} MB used / ${memStatus.jvmMaxHeapMb} MB max")
+        }
+
+        // 4. Storage Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlatformSectionLabel("Storage")
+                StatusPill(
+                    "${DeviceCapabilityProbe.storageUsagePercent(storage.dataTotalBytes, storage.dataFreeBytes)}% used",
+                    SonicCoreColors.Cyan
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow("Data partition", DeviceCapabilityProbe.formatStorage(storage.dataTotalBytes))
+            PlatformInfoRow("Free", DeviceCapabilityProbe.formatStorage(storage.dataFreeBytes))
+            PlatformInfoRow("App cache", DeviceCapabilityProbe.formatStorage(storage.appCacheBytes))
+            Text(
+                storage.note,
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        // 5. Display Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            PlatformSectionLabel("Display")
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow("Resolution", "${display.widthPx} × ${display.heightPx} px")
+            PlatformInfoRow("Density", "${display.densityDpi} dpi")
+            PlatformInfoRow(
+                "Refresh rate",
+                display.refreshHz?.let { "%.1f Hz".format(it) } ?: "Not readable"
+            )
+            Text(
+                display.note,
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        // 6. Network Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlatformSectionLabel("Network")
+                StatusPill(
+                    if (network.connected) "ONLINE" else "OFFLINE",
+                    if (network.connected) SonicCoreColors.Success else SonicCoreColors.SecondaryText
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow(
+                "Status",
+                DeviceCapabilityProbe.networkStatusLabel(network.connected, network.transport, network.metered)
+            )
+            PlatformInfoRow("Downstream", network.downloadKbps?.let { "$it kbps" } ?: "Not reported")
+            PlatformInfoRow("Upstream", network.uploadKbps?.let { "$it kbps" } ?: "Not reported")
+            PlatformInfoRow("VPN", if (network.vpnActive) "Active" else "Inactive")
+            Text(
+                network.note,
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        // 7. Sensors Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlatformSectionLabel("Sensors")
+                StatusPill("${sensors.total} total", SonicCoreColors.Cyan)
+            }
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow(
+                "Present",
+                sensors.present.joinToString(", ").ifEmpty { "None reported" }
+            )
+            PlatformInfoRow(
+                "Missing",
+                sensors.missing.joinToString(", ").ifEmpty { "None" }
+            )
+            Text(
+                sensors.note,
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        // 8. Power, Battery & Thermal Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlatformSectionLabel("Power & thermal")
+                if (thermStatus.isThrottling) {
+                    StatusPill("THROTTLED", SonicCoreColors.Warning)
+                } else {
+                    StatusPill(thermStatus.statusLabel, SonicCoreColors.Success)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow("Battery level", if (batStatus.levelPercent >= 0) "${batStatus.levelPercent}%" else "Unknown")
+            PlatformInfoRow("Power source", batStatus.powerSource)
+            PlatformInfoRow("Temperature", "${batStatus.temperatureCelsius} °C (${batStatus.health})")
+            PlatformInfoRow("Battery saver", if (batStatus.isPowerSaveMode) "Active (may limit background)" else "Inactive")
+            PlatformInfoRow("Thermal status", "${thermStatus.statusLabel} — ${thermStatus.note}")
+        }
+
+        // 9. Audio Engine & Service Health Card
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlatformSectionLabel("Audio service & DSP")
+                if (srvHealth.captureRunning) {
+                    StatusPill(if (srvHealth.captureBypassed) "BYPASS" else "PROCESSING", SonicCoreColors.Cyan)
+                } else {
+                    StatusPill("STANDBY", SonicCoreColors.SecondaryText)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            PlatformInfoRow("Capture service", if (srvHealth.captureRunning) "Active foreground service" else "Standby / idle")
+            PlatformInfoRow("Frames captured", srvHealth.framesCaptured.toString())
+            PlatformInfoRow("Buffer underruns", srvHealth.underruns.toString())
+            PlatformInfoRow("DSP load", "${"%.1f".format(srvHealth.dspCpuLoadPct)}%")
+            PlatformInfoRow("Native C++ DSP", if (srvHealth.dspAvailable) "Loaded & verified" else "Unavailable")
+            PlatformInfoRow("Peak clips / NaN", "${srvHealth.clips} / ${srvHealth.nanEvents}")
+            PlatformInfoRow("Active route", srvHealth.outputRoute)
+        }
+
+        // 10. Operation log
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), depth = LiquidGlassDepth.Inset) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlatformSectionLabel("Operation log", color = SonicCoreColors.Violet)
+                StatusPill("session", SonicCoreColors.SecondaryText)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Bounded to ${OperationLog.MAX_ENTRIES} entries and held in memory for this session only.",
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText
             )
             Spacer(Modifier.height(8.dp))
-            DiagRow("Device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-            DiagRow("Android OS", "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
-            DiagRow("Board / Hardware", "${android.os.Build.BOARD} / ${android.os.Build.HARDWARE}")
-            DiagRow("CPU ABIs", android.os.Build.SUPPORTED_ABIS.joinToString(", "))
-        }
-
-        // 2. Memory & Resources Card
-        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            // logTick participates so the list refreshes with the 3s loop.
+            val entries = remember(logTick) { OperationLog.snapshot().take(10) }
+            if (entries.isEmpty()) {
                 Text(
-                    "MEMORY & HEAP HEALTH",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SonicCoreColors.Cyan,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    "Nothing recorded yet. Probing capabilities or refreshing Shizuku adds entries.",
+                    fontSize = 11.sp,
+                    color = SonicCoreColors.SecondaryText
                 )
-                if (memStatus.isLowMemory) {
-                    StatusBadge(text = "LOW MEMORY", color = Color(0xFFFF5252))
-                } else {
-                    StatusBadge(text = "HEALTHY", color = Color(0xFF00E676))
+            } else {
+                entries.forEach { entry ->
+                    Text(
+                        "${entry.timeLabel} · ${entry.result.label} · ${entry.category} · ${entry.message}",
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                        color = when (entry.result) {
+                            OperationResult.SUCCESS -> SonicCoreColors.Success
+                            OperationResult.FAILED -> SonicCoreColors.Error
+                            OperationResult.UNAVAILABLE -> SonicCoreColors.Warning
+                            OperationResult.INFO -> SonicCoreColors.SecondaryText
+                        },
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
-            DiagRow("Available RAM", "${memStatus.availRamMb} MB / ${memStatus.totalRamMb} MB")
-            DiagRow("Low RAM Threshold", "${memStatus.thresholdMb} MB")
-            DiagRow("App JVM Heap", "${memStatus.jvmUsedHeapMb} MB used / ${memStatus.jvmMaxHeapMb} MB max")
-        }
-
-        // 3. Power, Battery & Thermal Card
-        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Button(
+                onClick = {
+                    OperationLog.clear()
+                    logTick++
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "Clear the session operation log" },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SonicCoreColors.ElevatedSurface,
+                    contentColor = SonicCoreColors.SecondaryText
+                ),
+                shape = RoundedCornerShape(10.dp)
             ) {
-                Text(
-                    "POWER & THERMAL",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SonicCoreColors.Cyan,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                if (thermStatus.isThrottling) {
-                    StatusBadge(text = "THROTTLED", color = Color(0xFFFFAB00))
-                } else {
-                    StatusBadge(text = thermStatus.statusLabel, color = Color(0xFF00E676))
-                }
+                Text("CLEAR LOG", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.height(8.dp))
-            DiagRow("Battery Level", if (batStatus.levelPercent >= 0) "${batStatus.levelPercent}%" else "Unknown")
-            DiagRow("Power Source", batStatus.powerSource)
-            DiagRow("Battery Temperature", "${batStatus.temperatureCelsius} °C (${batStatus.health})")
-            DiagRow("Battery Saver", if (batStatus.isPowerSaveMode) "Active (May limit background)" else "Inactive")
-            DiagRow("Thermal Status", "${thermStatus.statusLabel} — ${thermStatus.note}")
         }
 
-        // 4. Audio Engine & Service Health Card
-        LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "AUDIO SERVICE & DSP HEALTH",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SonicCoreColors.Cyan,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                if (srvHealth.captureRunning) {
-                    StatusBadge(text = if (srvHealth.captureBypassed) "BYPASS" else "PROCESSING", color = Color(0xFF00E5FF))
-                } else {
-                    StatusBadge(text = "STANDBY", color = Color.Gray)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            DiagRow("Capture Service", if (srvHealth.captureRunning) "Active Foreground Service" else "Standby / Idle")
-            DiagRow("Frames Captured", "${srvHealth.framesCaptured} frames")
-            DiagRow("Buffer Underruns", "${srvHealth.underruns}")
-            DiagRow("DSP Load", "${"%.1f".format(srvHealth.dspCpuLoadPct)}%")
-            DiagRow("Native C++ DSP", if (srvHealth.dspAvailable) "Loaded & Verified (NEON)" else "Unavailable")
-            DiagRow("Peak Clips / NaN", "${srvHealth.clips} clips / ${srvHealth.nanEvents} NaN events")
-            DiagRow("Active Route", srvHealth.outputRoute)
-        }
-
-        // 5. Actions Card
+        // 11. Export
         LiquidGlassSurface(
             modifier = Modifier.fillMaxWidth(),
             depth = LiquidGlassDepth.Inset
         ) {
-            Text(
-                "PRIVACY-REDACTED REPORT",
-                style = MaterialTheme.typography.labelSmall,
-                color = SonicCoreColors.Violet,
-                fontWeight = FontWeight.Bold
-            )
+            PlatformSectionLabel("Export report", color = SonicCoreColors.Violet)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Generates an anonymized diagnostic report sanitizing all IP, MAC, serial, and user path identifiers.",
+                "Composes platform, permission, Shizuku and operation-log sections, then sanitises MAC addresses, IP addresses and app storage paths.",
                 fontSize = 11.sp,
-                color = SonicCoreColors.SecondaryText
+                color = SonicCoreColors.SecondaryText,
+                lineHeight = 15.sp
             )
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = {
-                    val report = DeviceDiagnosticsManager.generateRedactedReport(context)
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    val clip = ClipData.newPlainText("SonicCore Diagnostics", report)
-                    clipboard?.setPrimaryClip(clip)
-                    Toast.makeText(context, "Redacted diagnostic report copied to clipboard", Toast.LENGTH_SHORT).show()
+                    val report = DiagnosticReportExporter.buildReport(context)
+                    val shared = try {
+                        val file = DiagnosticReportExporter.writeToCache(context, report)
+                        context.startActivity(
+                            Intent.createChooser(
+                                DiagnosticReportExporter.shareIntent(context, file),
+                                "Share SonicCore diagnostics"
+                            )
+                        )
+                        true
+                    } catch (_: Throwable) {
+                        false
+                    }
+                    OperationLog.record(
+                        category = "Diagnostics",
+                        message = if (shared) "Report file shared" else "Report share failed",
+                        result = if (shared) OperationResult.SUCCESS else OperationResult.FAILED
+                    )
+                    if (!shared) {
+                        Toast.makeText(context, "Sharing is unavailable — use copy instead", Toast.LENGTH_SHORT).show()
+                    }
+                    logTick++
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "Copy privacy-redacted diagnostics report to clipboard" },
+                    .semantics { contentDescription = "Build and share the diagnostic report file" },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = SonicCoreColors.Cyan.copy(alpha = 0.25f),
                     contentColor = SonicCoreColors.Cyan
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
+                Text("SHARE REPORT FILE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    val report = DiagnosticReportExporter.buildReport(context)
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    clipboard?.setPrimaryClip(ClipData.newPlainText("SonicCore Diagnostics", report))
+                    OperationLog.record("Diagnostics", "Report copied to clipboard", OperationResult.SUCCESS)
+                    logTick++
+                    Toast.makeText(context, "Redacted diagnostic report copied to clipboard", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "Copy privacy-redacted diagnostics report to clipboard" },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SonicCoreColors.Violet.copy(alpha = 0.20f),
+                    contentColor = SonicCoreColors.Violet
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
                 Text("COPY REDACTED REPORT", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
-    }
-}
-
-@Composable
-private fun DiagRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = SonicCoreColors.SecondaryText,
-            fontSize = 12.sp
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.bodySmall,
-            color = SonicCoreColors.PrimaryText,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp
-        )
-    }
-}
-
-@Composable
-private fun StatusBadge(text: String, color: Color) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(color.copy(alpha = 0.16f))
-            .padding(horizontal = 8.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = text,
-            color = color,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }

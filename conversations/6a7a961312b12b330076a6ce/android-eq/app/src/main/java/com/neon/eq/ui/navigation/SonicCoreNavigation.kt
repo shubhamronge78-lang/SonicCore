@@ -53,7 +53,11 @@ enum class SonicCoreDestination(
     DIAGNOSTICS("Diagnostics", "DIAG", "Device info, battery, thermal, and health", "⚙", false),
     CAPABILITIES("Capabilities", "CAPS", "Capability registry and system restrictions", "✓", false),
     DEVICE_TOOLS("Device Tools", "TOOLS", "System audio shortcuts and settings", "🛠", false),
-    APP_MANAGER("App Manager", "APPS", "App profiles, package visibility, and launch", "㗊", false);
+    APP_MANAGER("App Manager", "APPS", "App profiles, package visibility, and launch", "㗊", false),
+    SHIZUKU("Shizuku", "SHIZUKU", "Optional elevated bridge status and operation registry", "⇄", false),
+    CUSTOMIZATION("Customization", "CUSTOM", "Themes, glass intensity, appearance and system support", "◈", false),
+    PERMISSIONS("Permissions", "PERMS", "Runtime permissions, capture consent and privacy", "🔒", false),
+    SETTINGS("Settings", "SET", "Preferences hub and app information", "≡", false);
 
     companion object {
         val primaryDestinations = listOf(DASHBOARD, EQUALIZER, PLAYER, DSP_FX)
@@ -66,10 +70,14 @@ enum class SonicCoreDestination(
             SESSIONS,
             SIGNAL_PATH,
             PRO_FX,
+            DEVICE_TOOLS,
+            SHIZUKU,
+            CUSTOMIZATION,
+            PERMISSIONS,
             DIAGNOSTICS,
             CAPABILITIES,
-            DEVICE_TOOLS,
-            APP_MANAGER
+            APP_MANAGER,
+            SETTINGS
         )
     }
 }

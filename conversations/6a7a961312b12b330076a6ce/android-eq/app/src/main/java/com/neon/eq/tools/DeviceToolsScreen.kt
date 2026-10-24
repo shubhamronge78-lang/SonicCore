@@ -76,6 +76,7 @@ fun DeviceToolsScreen(
                     ShizukuState.CONNECTED -> Color(0xFF00E676)
                     ShizukuState.PERMISSION_REQUIRED -> Color(0xFFFFAB00)
                     ShizukuState.NOT_RUNNING -> Color(0xFFFF9100)
+                    ShizukuState.DISCONNECTED -> Color(0xFFFF9100)
                     ShizukuState.NOT_INSTALLED -> Color.Gray
                     ShizukuState.UNSUPPORTED -> Color.Gray
                 }

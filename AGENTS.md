@@ -15,6 +15,22 @@ This is a **Base44 agent workspace**, not a web application. It holds:
 repo.** An Android app has no browser surface, so it can never render inside the
 browser preview. Do not go looking for a web app, and do not invent one.
 
+The app itself now has two layers:
+
+- **Audio**: native C++ DSP (`app/src/main/cpp/neondsp.cpp`), `EqualizerEngine`,
+  the capture pipeline, presets. Untouched by the platform expansion.
+- **Platform centers**: `system/` (device probes), `permissions/` (permission
+  model), `shizuku/` (bridge + operation registry), `diagnostics/` (device
+  health, operation log, report export), `ui/customization/`,
+  `ui/settings/`. The Compose navigation lives in
+  `ui/navigation/SonicCoreNavigation.kt`; screens are dispatched from the single
+  large `EqualizerScreen` composable in `MainActivity.kt`.
+
+Every platform center is reachable from the bottom dock
+(`SonicCoreDestination.consoleDestinations`), and
+`SonicCoreNavigationTest` asserts that list exactly — adding a destination
+requires updating that test.
+
 ## How the app is run / verified here
 
 `docker-compose.base44.yml` builds the app **from the cloned source** (the source
@@ -31,7 +47,8 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (88 tests as of 6128518) plus the debug APK, built from the mounted source.
+   (159 tests: 120 from the platform expansion + 39 for the Shizuku IPC work)
+   plus the debug APK, built from the mounted source.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -91,6 +108,37 @@ own and behave identically outside the sandbox. Specifically:
 
 ## Non-obvious quirks worth knowing
 
+- **Shizuku uses the official client, but only for read-only work.**
+  `dev.rikka.shizuku:api` + `:provider` 13.1.5 (`ShizukuProvider` declared in the
+  manifest as `${applicationId}.shizuku`) give `ShizukuBridge` a real binder:
+  install / running / authorized state, binder received + dead listeners,
+  `Shizuku.requestPermission`, and `Shizuku.getUid/getVersion/getSELinuxContext`.
+  The single executed elevated operation is `ShizukuDiagnostics` (read-only IPC
+  probe, 2 s bound through `ShizukuInvoker`). Everything else resolves to
+  `AVAILABLE` / `BLOCKED` / `UNSUPPORTED` / `NOT_IMPLEMENTED` — never a stub
+  reported as success. Do not "fix" a `NOT_IMPLEMENTED` entry by making it look
+  available; `docs/shizuku-operations.md` records what each one would need.
+- **`newProcess` is private in the v13 client.** Spawning a shell, and the
+  deprecated `SystemServiceHelper` transaction-code helpers, are not usable from
+  an app process. The documented remaining path is a Shizuku user service (AIDL +
+  privileged process); it is deliberately out of scope. Nothing in SonicCore
+  writes secure settings, grants permissions or reroutes audio through Shizuku.
+- **`ShizukuState.DISCONNECTED` is distinct from `NOT_RUNNING`.** The bridge
+  remembers that a binder was seen in this process (`hasSeenBinder`), so a service
+  that dies after connecting is reported as "connection lost" instead of
+  "never started". Adding a `ShizukuState` value breaks every exhaustive `when`
+  over it — `CapabilityRegistry`, `DeviceToolsScreen` and `ShizukuCenterScreen`
+  each handle it.
+- **Platform logic is split pure/Android so it can be unit-tested.** Anything
+  needing a device lives behind a `probe(context)` function; the decision logic
+  is a pure `evaluate(plainData)` that JVM tests call directly
+  (`PermissionCenter.evaluate`, `ShizukuOperations.evaluate`,
+  `DeviceCapabilityProbe` formatters). There is no Robolectric in this project —
+  do not add Android framework calls to the `evaluate` paths or the tests break
+  with "not mocked" errors.
+- `ACCESS_NETWORK_STATE` was added for the device dashboard's network card. It
+  is a normal permission (granted at install), so it never shows a runtime
+  prompt.
 - `gradle.properties` carries the original author's
   `android.cmake.path = /opt/soniccore-tools/cmake-3.22.6`. That directory does
   not exist here — and it does not need to: `android.cmake.path` is not an AGP
