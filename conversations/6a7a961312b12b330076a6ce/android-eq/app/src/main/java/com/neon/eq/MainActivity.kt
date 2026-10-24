@@ -550,10 +550,13 @@ private val navStateSaver: Saver<SonicCoreNavState, String> = Saver(
  */
 @Composable
 fun SonicCoreNavHost(engine: EqualizerEngine) {
-    var navState by rememberSaveable(stateSaver = navStateSaver) {
+    // The frame lives here for the whole session (and survives process death).
+    // The navigator is handed this exact State, so every screen — and every
+    // callback any screen captured earlier — reads and moves the current stack.
+    val frame = rememberSaveable(stateSaver = navStateSaver) {
         mutableStateOf(SonicCoreNavState())
     }
-    val navigator = SonicCoreNavigator(navState) { next -> navState = next }
+    val navigator = SonicCoreNavigator(frame) { next -> frame.value = next }
     EqualizerScreen(engine = engine, navigation = navigator)
 }
 
@@ -790,14 +793,11 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         }
     }
 
-    // Navigation is owned by SonicCoreNavHost; this screen only reads it and
-    // asks the host to move. `navState` is the state of the current frame.
-    val navState = navigation.state
-    val activeTool = navState.tool
-
-    /** True when [destination] is the tool that is currently open. */
-    fun toolTargets(destination: SonicCoreDestination): Boolean =
-        activeTool?.destination == destination
+    // Navigation is owned by SonicCoreNavHost; this screen only asks the host to
+    // move. Nothing here copies the frame into a local value — `navigation` reads
+    // the live stack, so a callback captured in an earlier composition still
+    // moves the CURRENT screen. The body below takes the frame as a parameter
+    // for the same reason: see `mainContent`.
 
     /** Opens the tool that owns [destination] — see [SonicCoreToolRegistry]. */
     fun openDestination(destination: SonicCoreDestination) {
@@ -861,7 +861,9 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         0
     }
 
-    BackHandler(enabled = !navState.isHome && !showSettings) { navigation.back() }
+    // Reading the frame here also ties this screen's recomposition to it: every
+    // navigation change re-renders the launcher body below.
+    BackHandler(enabled = !navigation.isHome && !showSettings) { navigation.back() }
     var spSmoothAmt by remember { mutableStateOf(when (favPrefs.getInt("an_smooth", 1)) { 0 -> 0.35f; 2 -> 0.75f; else -> 0.55f }) }
     var spFrozen by remember { mutableStateOf(false) }
     var presetFavs by remember { mutableStateOf(favPrefs.getStringSet("preset_favs", emptySet<String>()) ?: emptySet()) }
@@ -966,7 +968,24 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         } catch (_: Throwable) { "Unknown" }
     }
 
-    val mainContent = remember { movableContentOf {
+    // The launcher body. It must NOT be remembered: it used to be wrapped in
+    // `remember { movableContentOf { … } }` — a leftover from when the same body
+    // was moved between the portrait column and the landscape sidebar (there is a
+    // single call site now). That wrapper captured the navigation frame of the
+    // FIRST composition and read that one copy forever, so every later card tap,
+    // tool push and back press recomposed into the very same screen: the UI was
+    // there, but dead to the touch.
+    val mainContent: @Composable (SonicCoreNavigator) -> Unit = { navigator ->
+        // The frame of THIS composition, read live from the navigator (never
+        // captured once and read forever): the body recomposes whenever the stack
+        // moves and always renders the screen the current frame names.
+        val navState = navigator.state
+        val activeTool = navState.tool
+
+        /** True when [destination] is the tool that is currently open. */
+        fun toolTargets(destination: SonicCoreDestination): Boolean =
+            activeTool?.destination == destination
+
     Column(
         modifier = Modifier.fillMaxSize().background(Color.Transparent),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -985,7 +1004,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             SonicCoreBreadcrumbHeader(
                 category = hubCategory,
                 tool = activeTool,
-                onBack = { navigation.back() }
+                onBack = { navigator.back() }
             )
         }
 
@@ -1055,8 +1074,8 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         if (navState.isHome) {
             SonicCoreHomeScreen(
                 summary = liveAudioSummary,
-                onCategoryClick = { navigation.openCategory(it) },
-                onToolClick = { navigation.openTool(it) },
+                onCategoryClick = { navigator.openCategory(it) },
+                onToolClick = { navigator.openTool(it) },
                 onToggleEngine = {
                     val next = !enabled
                     enabled = next
@@ -1097,7 +1116,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                     },
                     onOpenFullSettings = { showSettings = true }
                 ),
-                onToolClick = { navigation.openTool(it) }
+                onToolClick = { navigator.openTool(it) }
             )
         }
 
@@ -4080,14 +4099,14 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         SonicCoreBottomNavigation(
             selected = navState.category,
             onSelect = { category ->
-                navigation.openCategory(category)
+                navigator.openCategory(category)
                 focusEq = false
             },
             landscape = LocalConfiguration.current.orientation ==
                 android.content.res.Configuration.ORIENTATION_LANDSCAPE
         )
     }
-    } }
+    }
     // v144 §11: live route monitoring — public AudioDeviceCallback, registered
     // for the composition and ALWAYS unregistered on dispose (lifecycle-safe;
     // never registered from or touching the audio thread).
@@ -4151,7 +4170,9 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
     SonicCoreTheme(glassLevel = appGlassState.value) {
         Box(modifier = Modifier.fillMaxSize()) {
             GlassBackground()
-            mainContent()
+            // The body reads the frame live from the navigator, so it renders the
+            // screen the current stack names — never the one it started on.
+            mainContent(navigation)
             SnackbarHost(
                 hostState = snackbarHost,
                 modifier = Modifier
