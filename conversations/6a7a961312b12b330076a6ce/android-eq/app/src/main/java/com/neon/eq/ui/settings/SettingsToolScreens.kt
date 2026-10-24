@@ -30,7 +30,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -245,7 +244,7 @@ fun SettingsNavigationScreen(context: Context, modifier: Modifier = Modifier) {
                 "Hides the six-category dock on devices where it is not wanted.",
                 AppearanceState.dockVisible
             ) { visible ->
-                AppearanceState.dockVisible = visible
+                AppearanceState.setDockVisible(visible)
                 AppearanceState.save(context)
             }
         }
@@ -284,17 +283,11 @@ fun SettingsNotificationsScreen(context: Context, modifier: Modifier = Modifier)
             SonicCoreDataRow("Engine enabled", if (engineEnabled) "Yes" else "No",
                 SonicCoreCapability.AVAILABLE, "The engine notification is posted by the running capture session.")
             Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NotificationShortcut(
-                    context,
-                    "NOTIFICATION SETTINGS",
-                    notificationIntent(context),
-                    modifier = Modifier.weight(1f)
-                )
+                NotificationShortcut(context, "NOTIFICATION SETTINGS", notificationIntent(context))
                 NotificationShortcut(
                     context,
                     "REFRESH STATE",
                     null,
-                    modifier = Modifier.weight(1f),
                     onFallback = {
                         tick++
                         OperationLog.record(
@@ -323,8 +316,7 @@ private fun NotificationShortcut(
     context: Context,
     label: String,
     intent: Intent?,
-    onFallback: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onFallback: (() -> Unit)? = null
 ) {
     Text(
         label,
@@ -332,7 +324,8 @@ private fun NotificationShortcut(
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        modifier = modifier
+        modifier = Modifier
+            .weight(1f)
             .clip(RoundedCornerShape(11.dp))
             .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
             .clickable {

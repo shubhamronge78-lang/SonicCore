@@ -1,6 +1,6 @@
 package com.neon.eq.dsp
 
-data class MeterLevels(
+internal data class MeterLevels(
     val db: FloatArray,
     val rms: FloatArray,
     val peaks: FloatArray
