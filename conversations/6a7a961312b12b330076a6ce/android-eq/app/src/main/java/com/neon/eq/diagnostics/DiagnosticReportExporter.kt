@@ -63,7 +63,10 @@ object DiagnosticReportExporter {
         sb.appendLine("[SHIZUKU]")
         sb.appendLine("  State        : ${shizukuState.label} — ${shizukuState.description}")
         operations.forEach { status ->
-            sb.appendLine("  ${status.operation.title.padEnd(26)}: ${status.availability.label}")
+            sb.appendLine(
+                "  ${status.operation.title.padEnd(26)}: ${status.outcome.label} " +
+                    "(${status.operation.access.label}) — ${status.reason}"
+            )
         }
         sb.appendLine()
         sb.appendLine("[OPERATION LOG — CURRENT SESSION]")

@@ -47,8 +47,8 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (120 tests as of the platform expansion) plus the debug APK, built from the
-   mounted source.
+   (159 tests: 120 from the platform expansion + 39 for the Shizuku IPC work)
+   plus the debug APK, built from the mounted source.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -108,13 +108,27 @@ own and behave identically outside the sandbox. Specifically:
 
 ## Non-obvious quirks worth knowing
 
-- **Shizuku is detection-only on purpose.** `ShizukuBridge` really checks
-  install/running/permission state, but no privileged call is executed:
-  SonicCore bundles no third-party Shizuku IPC client. `ShizukuOperations`
-  therefore resolves every privileged operation to an explicit
-  `NOT_IMPLEMENTED` (or the earlier blocking step) and only the state probe and
-  "open Shizuku Manager" ever report `AVAILABLE`. That is a deliberate honest
-  status, **not** a bug to "fix" by making operations look available.
+- **Shizuku uses the official client, but only for read-only work.**
+  `dev.rikka.shizuku:api` + `:provider` 13.1.5 (`ShizukuProvider` declared in the
+  manifest as `${applicationId}.shizuku`) give `ShizukuBridge` a real binder:
+  install / running / authorized state, binder received + dead listeners,
+  `Shizuku.requestPermission`, and `Shizuku.getUid/getVersion/getSELinuxContext`.
+  The single executed elevated operation is `ShizukuDiagnostics` (read-only IPC
+  probe, 2 s bound through `ShizukuInvoker`). Everything else resolves to
+  `AVAILABLE` / `BLOCKED` / `UNSUPPORTED` / `NOT_IMPLEMENTED` — never a stub
+  reported as success. Do not "fix" a `NOT_IMPLEMENTED` entry by making it look
+  available; `docs/shizuku-operations.md` records what each one would need.
+- **`newProcess` is private in the v13 client.** Spawning a shell, and the
+  deprecated `SystemServiceHelper` transaction-code helpers, are not usable from
+  an app process. The documented remaining path is a Shizuku user service (AIDL +
+  privileged process); it is deliberately out of scope. Nothing in SonicCore
+  writes secure settings, grants permissions or reroutes audio through Shizuku.
+- **`ShizukuState.DISCONNECTED` is distinct from `NOT_RUNNING`.** The bridge
+  remembers that a binder was seen in this process (`hasSeenBinder`), so a service
+  that dies after connecting is reported as "connection lost" instead of
+  "never started". Adding a `ShizukuState` value breaks every exhaustive `when`
+  over it — `CapabilityRegistry`, `DeviceToolsScreen` and `ShizukuCenterScreen`
+  each handle it.
 - **Platform logic is split pure/Android so it can be unit-tested.** Anything
   needing a device lives behind a `probe(context)` function; the decision logic
   is a pure `evaluate(plainData)` that JVM tests call directly

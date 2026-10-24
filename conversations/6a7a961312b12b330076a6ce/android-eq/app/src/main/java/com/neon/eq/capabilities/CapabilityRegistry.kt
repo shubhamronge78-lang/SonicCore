@@ -242,6 +242,7 @@ object CapabilityRegistry {
             ShizukuState.CONNECTED -> SupportState.SUPPORTED
             ShizukuState.PERMISSION_REQUIRED -> SupportState.PERMISSION_REQUIRED
             ShizukuState.NOT_RUNNING -> SupportState.PARTIALLY_SUPPORTED
+            ShizukuState.DISCONNECTED -> SupportState.PARTIALLY_SUPPORTED
             ShizukuState.NOT_INSTALLED -> SupportState.UNSUPPORTED
             ShizukuState.UNSUPPORTED -> SupportState.UNSUPPORTED
         }
@@ -258,6 +259,7 @@ object CapabilityRegistry {
                     ShizukuState.NOT_INSTALLED -> "Optional: Install Shizuku if elevated diagnostics are desired."
                     ShizukuState.NOT_RUNNING -> "Start Shizuku service via wireless debugging or adb."
                     ShizukuState.PERMISSION_REQUIRED -> "Authorize SonicCore in the Shizuku Manager app."
+                    ShizukuState.DISCONNECTED -> "The connection was lost. Restart the Shizuku service, then refresh."
                     else -> null
                 }
             )

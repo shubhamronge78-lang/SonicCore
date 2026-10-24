@@ -3,19 +3,15 @@ package com.neon.eq.shizuku
 /**
  * Registry of the elevated operations SonicCore knows how to talk about.
  *
- * Detection is real (see [ShizukuBridge]); execution of privileged calls is NOT
- * implemented, because SonicCore deliberately does not bundle a third-party
- * Shizuku IPC client. Every operation therefore resolves to an explicit
- * availability state instead of pretending to run:
+ * Every entry states who can perform it ([ShizukuAccess]) and whether SonicCore
+ * actually implements it ([ShizukuOperation.implemented]). Eligibility is decided
+ * by [ShizukuOperationEngine] from a live [ShizukuEnvironment]; execution of the
+ * read-only diagnostics lives in [ShizukuDiagnostics].
  *
- *  * a version/device gate          -> NOT_SUPPORTED
- *  * Shizuku missing                -> NOT_INSTALLED
- *  * Shizuku installed but stopped   -> REQUIRES_CONNECTION
- *  * running but unauthorized        -> REQUIRES_PERMISSION
- *  * authorized but not wired up     -> NOT_IMPLEMENTED
- *
- * Only operations that genuinely work (state probe, opening Shizuku Manager)
- * ever report AVAILABLE.
+ * SonicCore deliberately implements only read-only diagnostics. Operations that
+ * would change secure settings, grant permissions or force audio routes are
+ * listed so they can be reported honestly as NOT_IMPLEMENTED, and are never
+ * attempted silently.
  */
 enum class ShizukuGroup(val label: String) {
     CONNECTION("Connection"),
@@ -24,6 +20,10 @@ enum class ShizukuGroup(val label: String) {
     DIAGNOSTICS("Diagnostics")
 }
 
+/**
+ * Legacy single-value availability, derived from [ShizukuOutcome] + [ShizukuBlocker].
+ * New code should read [ShizukuOperationStatus.outcome] instead.
+ */
 enum class ShizukuAvailability(val label: String, val isRunnable: Boolean) {
     AVAILABLE("Available", true),
     REQUIRES_CONNECTION("Needs Shizuku running", false),
@@ -41,11 +41,17 @@ data class ShizukuOperation(
     val requiredApi: Int = 0,
     val requiresConnection: Boolean = true,
     val implemented: Boolean = false,
+    val access: ShizukuAccess = ShizukuAccess.SHIZUKU,
+    val readOnly: Boolean = true,
+    /** Minimum Shizuku server API when known; 0 means "no server-version gate". */
+    val minServerVersion: Int = 0,
     val note: String? = null
 )
 
 data class ShizukuOperationStatus(
     val operation: ShizukuOperation,
+    val outcome: ShizukuOutcome,
+    val blocker: ShizukuBlocker?,
     val availability: ShizukuAvailability,
     val reason: String
 )
@@ -69,7 +75,8 @@ object ShizukuOperations {
             description = "Reads whether Shizuku is installed, running, and authorized for SonicCore.",
             group = ShizukuGroup.CONNECTION,
             requiresConnection = false,
-            implemented = true
+            implemented = true,
+            access = ShizukuAccess.NONE
         ),
         ShizukuOperation(
             id = "open_manager",
@@ -77,96 +84,102 @@ object ShizukuOperations {
             description = "Launches the Shizuku Manager app so setup or authorization can continue there.",
             group = ShizukuGroup.CONNECTION,
             requiresConnection = false,
-            implemented = true
+            implemented = true,
+            access = ShizukuAccess.NONE
+        ),
+        ShizukuOperation(
+            id = "ipc_diagnostics",
+            title = "Shizuku IPC diagnostics",
+            description = "Read-only binder round-trip: server version, privilege level, SELinux context and latency.",
+            group = ShizukuGroup.DIAGNOSTICS,
+            implemented = true,
+            access = ShizukuAccess.SHIZUKU,
+            note = "Read-only. Uses the official Shizuku client only; nothing on the device is changed."
         ),
         ShizukuOperation(
             id = "audio_policy_read",
             title = "Read restricted audio policy",
             description = "Query hidden audio policy values that the public AudioManager API does not expose.",
             group = ShizukuGroup.AUDIO,
-            note = "Requires a Shizuku IPC client. SonicCore does not bundle one, so this stays unavailable even when Shizuku is connected."
+            access = ShizukuAccess.SHIZUKU,
+            note = "Needs the hidden IAudioService AIDL stubs plus a hidden-API bypass; SonicCore ships neither."
         ),
         ShizukuOperation(
             id = "audio_route_force",
             title = "Force output route",
             description = "Override the active output device independently of the system's own routing decision.",
             group = ShizukuGroup.AUDIO,
-            note = "Requires a Shizuku IPC client and an OEM-safe route table; not wired up."
+            access = ShizukuAccess.IMPOSSIBLE,
+            note = "Changing the global output route needs a platform-signed permission; Shizuku's shell identity cannot do it."
         ),
         ShizukuOperation(
             id = "secure_settings_read",
             title = "Read secure settings",
             description = "Read Settings.Secure keys that are hidden from third-party apps.",
             group = ShizukuGroup.SYSTEM,
-            note = "Requires a Shizuku IPC client. Not implemented."
+            access = ShizukuAccess.SHIZUKU,
+            note = "Requires a Shizuku user service (or hidden-API access) to read as shell; not bundled."
+        ),
+        ShizukuOperation(
+            id = "secure_settings_write",
+            title = "Change secure settings",
+            description = "Modify system settings that are otherwise locked.",
+            group = ShizukuGroup.SYSTEM,
+            access = ShizukuAccess.SHIZUKU,
+            readOnly = false,
+            note = "Deliberately not implemented: SonicCore never changes secure settings or system policy."
         ),
         ShizukuOperation(
             id = "permission_grant",
             title = "Grant app permissions",
             description = "Grant runtime permissions to other packages without user taps.",
             group = ShizukuGroup.SYSTEM,
+            access = ShizukuAccess.ADB,
+            readOnly = false,
             note = "Deliberately not implemented: silently granting permissions to other apps is a high-risk capability."
         ),
         ShizukuOperation(
+            id = "kernel_audio_debugfs",
+            title = "Read kernel audio debug nodes",
+            description = "Inspect ALSA / vendor audio debug nodes that are unreadable without uid 0.",
+            group = ShizukuGroup.AUDIO,
+            access = ShizukuAccess.ROOT,
+            note = "Requires root (uid 0) and a Shizuku user service to read outside the app sandbox; not bundled."
+        ),
+        ShizukuOperation(
             id = "binder_diagnostics",
-            title = "Binder service diagnostics",
-            description = "Enumerate system binder services for troubleshooting audio routing problems.",
+            title = "Binder service enumeration",
+            description = "List every system binder service to troubleshoot audio routing problems.",
             group = ShizukuGroup.DIAGNOSTICS,
-            note = "Requires a Shizuku IPC client. Not implemented."
+            access = ShizukuAccess.SHIZUKU,
+            note = "Needs a Shizuku user service to enumerate the service manager; SonicCore does not bundle one."
         )
     )
 
+    /** Registry with the live connection state applied. */
+    fun evaluate(environment: ShizukuEnvironment): List<ShizukuOperationStatus> =
+        ShizukuOperationEngine.evaluateAll(environment)
+
+    /**
+     * State + device API convenience overload. Kept for the existing screens and
+     * tests; it builds a synthetic environment with no server details known.
+     */
     fun evaluate(state: ShizukuState, apiLevel: Int): List<ShizukuOperationStatus> =
-        OPERATIONS.map { operation -> operation to availabilityFor(operation, state, apiLevel) }
-            .map { (operation, availability) ->
-                ShizukuOperationStatus(
-                    operation = operation,
-                    availability = availability,
-                    reason = reasonFor(operation, availability)
-                )
-            }
+        evaluate(ShizukuEnvironment.of(state, apiLevel))
 
     fun availabilityFor(
         operation: ShizukuOperation,
         state: ShizukuState,
         apiLevel: Int
-    ): ShizukuAvailability {
-        if (apiLevel < maxOf(MIN_API, operation.requiredApi)) {
-            return ShizukuAvailability.NOT_SUPPORTED
-        }
-        if (!operation.requiresConnection) {
-            return if (operation.implemented) ShizukuAvailability.AVAILABLE
-            else ShizukuAvailability.NOT_IMPLEMENTED
-        }
-        // Connection-gated operations report the first blocking step, so the UI
-        // always names the real reason rather than a blanket "unavailable".
-        return when (state) {
-            ShizukuState.UNSUPPORTED -> ShizukuAvailability.NOT_SUPPORTED
-            ShizukuState.NOT_INSTALLED -> ShizukuAvailability.NOT_INSTALLED
-            ShizukuState.NOT_RUNNING -> ShizukuAvailability.REQUIRES_CONNECTION
-            ShizukuState.PERMISSION_REQUIRED -> ShizukuAvailability.REQUIRES_PERMISSION
-            ShizukuState.CONNECTED ->
-                if (operation.implemented) ShizukuAvailability.AVAILABLE
-                else ShizukuAvailability.NOT_IMPLEMENTED
-        }
-    }
-
-    private fun reasonFor(
-        operation: ShizukuOperation,
-        availability: ShizukuAvailability
-    ): String = when (availability) {
-        ShizukuAvailability.AVAILABLE -> "Ready."
-        ShizukuAvailability.NOT_INSTALLED -> "Install Shizuku Manager to enable this operation."
-        ShizukuAvailability.REQUIRES_CONNECTION -> "Start the Shizuku service, then refresh."
-        ShizukuAvailability.REQUIRES_PERMISSION -> "Authorize SonicCore inside Shizuku Manager, then refresh."
-        ShizukuAvailability.NOT_SUPPORTED -> "This Android version or device does not provide the required API."
-        ShizukuAvailability.NOT_IMPLEMENTED ->
-            operation.note ?: "Execution is not wired up yet, so this operation cannot run."
-    }
+    ): ShizukuAvailability = ShizukuOperationEngine
+        .evaluate(operation, ShizukuEnvironment.of(state, apiLevel))
+        .availability
 
     fun setupSteps(state: ShizukuState): List<ShizukuSetupStep> {
         val installed = state != ShizukuState.NOT_INSTALLED && state != ShizukuState.UNSUPPORTED
         // PERMISSION_REQUIRED already means "installed and the service is running".
+        // DISCONNECTED means the service was running but the binder is gone, so it
+        // must be started again.
         val running = state == ShizukuState.CONNECTED || state == ShizukuState.PERMISSION_REQUIRED
         val authorized = state == ShizukuState.CONNECTED
         return listOf(

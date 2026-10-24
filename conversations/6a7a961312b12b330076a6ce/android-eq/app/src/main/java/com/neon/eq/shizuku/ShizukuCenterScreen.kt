@@ -9,14 +9,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,38 +39,70 @@ import com.neon.eq.ui.design.PlatformInfoRow
 import com.neon.eq.ui.design.PlatformSectionLabel
 import com.neon.eq.ui.design.SonicCoreColors
 import com.neon.eq.ui.design.StatusPill
+import rikka.shizuku.Shizuku
 
 /**
- * Shizuku Center: real install/running/permission detection, setup guidance,
- * and an operation registry in which every entry states exactly why it can or
- * cannot run. No privileged call is attempted when Shizuku is not connected.
+ * Shizuku Center: the real connection lifecycle (binder received / dead,
+ * authorization request and result), setup guidance, the operation registry with
+ * its four-state outcome, and the read-only IPC diagnostic.
+ *
+ * Nothing here changes system state: the only executed operation is a read-only
+ * binder probe. Operations SonicCore does not implement say so explicitly.
  */
 @Composable
 fun ShizukuCenterScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var state by remember { mutableStateOf(ShizukuBridge.checkState(context)) }
+    var environment by remember { mutableStateOf(ShizukuBridge.environment(context)) }
     var lastCheckLabel by remember { mutableStateOf("Checked on open") }
 
     fun refresh(trigger: String) {
-        state = ShizukuBridge.checkState(context)
+        environment = ShizukuBridge.environment(context)
         lastCheckLabel = "Last check: $trigger"
         OperationLog.record(
             category = "Shizuku",
-            message = "State probe: ${state.label}",
-            result = when (state) {
-                ShizukuState.CONNECTED -> OperationResult.SUCCESS
-                ShizukuState.NOT_INSTALLED, ShizukuState.NOT_RUNNING -> OperationResult.UNAVAILABLE
-                ShizukuState.PERMISSION_REQUIRED -> OperationResult.UNAVAILABLE
-                ShizukuState.UNSUPPORTED -> OperationResult.FAILED
-            }
+            message = "State probe: ${environment.state.label}",
+            result = probeResultFor(environment.state)
         )
     }
 
-    val operations = remember(state) {
-        ShizukuOperations.evaluate(state, android.os.Build.VERSION.SDK_INT)
+    // Live binder lifecycle: Shizuku can be started, restarted or killed while this
+    // screen is open, so the state follows the real client instead of a snapshot.
+    DisposableEffect(Unit) {
+        val received = Shizuku.OnBinderReceivedListener {
+            environment = ShizukuBridge.environment(context)
+            lastCheckLabel = "Last check: binder received"
+        }
+        val dead = Shizuku.OnBinderDeadListener {
+            environment = ShizukuBridge.environment(context)
+            lastCheckLabel = "Last check: binder died"
+            OperationLog.record("Shizuku", "Binder died — connection lost", OperationResult.FAILED)
+        }
+        val permission = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            if (requestCode == ShizukuBridge.PERMISSION_REQUEST_CODE) {
+                val granted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
+                environment = ShizukuBridge.environment(context)
+                lastCheckLabel = "Last check: authorization result"
+                OperationLog.record(
+                    category = "Shizuku",
+                    message = if (granted) "Authorization granted" else "Authorization denied",
+                    result = if (granted) OperationResult.SUCCESS else OperationResult.UNAVAILABLE
+                )
+            }
+        }
+        ShizukuBridge.addBinderReceivedListener(received)
+        ShizukuBridge.addBinderDeadListener(dead)
+        ShizukuBridge.addPermissionResultListener(permission)
+        onDispose {
+            ShizukuBridge.removeBinderReceivedListener(received)
+            ShizukuBridge.removeBinderDeadListener(dead)
+            ShizukuBridge.removePermissionResultListener(permission)
+        }
     }
+
+    val state = environment.state
+    val operations = remember(environment) { ShizukuOperations.evaluate(environment) }
     val installName = ShizukuBridge.installedPackage(context) ?: "Not installed"
 
     Column(
@@ -99,16 +132,32 @@ fun ShizukuCenterScreen(
             PlatformInfoRow("Install", installName)
             PlatformInfoRow(
                 "Service",
-                if (state == ShizukuState.NOT_RUNNING || state == ShizukuState.NOT_INSTALLED) "Not running" else "Running"
+                when (state) {
+                    ShizukuState.CONNECTED -> "Running"
+                    ShizukuState.PERMISSION_REQUIRED -> "Running"
+                    ShizukuState.DISCONNECTED -> "Connection lost"
+                    else -> "Not running"
+                }
             )
             PlatformInfoRow(
                 "Authorization",
                 when (state) {
                     ShizukuState.CONNECTED -> "Granted to SonicCore"
-                    ShizukuState.PERMISSION_REQUIRED -> "Required"
+                    ShizukuState.PERMISSION_REQUIRED ->
+                        if (environment.permissionDeniedPermanently) "Denied — re-enable in Manager" else "Required"
                     else -> "Not requested"
                 }
             )
+            if (state == ShizukuState.CONNECTED) {
+                PlatformInfoRow("Privilege", environment.privilege.label)
+                PlatformInfoRow(
+                    "Server API",
+                    if (environment.serverVersion >= 0) "${environment.serverVersion}" else "Not reported"
+                )
+                environment.selinuxContext?.takeIf { it.isNotBlank() }?.let { seLinux ->
+                    PlatformInfoRow("SELinux", seLinux)
+                }
+            }
             Spacer(Modifier.height(6.dp))
             Text(
                 lastCheckLabel,
@@ -116,7 +165,14 @@ fun ShizukuCenterScreen(
                 color = SonicCoreColors.SecondaryText
             )
             Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Three actions on a narrow screen: the row scrolls sideways, matching the
+            // action rows elsewhere in the app, so nothing is clipped at 400 dp.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Button(
                     onClick = { refresh("manual refresh") },
                     modifier = Modifier.semantics { contentDescription = "Re-check Shizuku status" },
@@ -127,6 +183,27 @@ fun ShizukuCenterScreen(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text("REFRESH", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                if (state == ShizukuState.PERMISSION_REQUIRED) {
+                    Button(
+                        onClick = {
+                            if (ShizukuBridge.requestPermission()) {
+                                lastCheckLabel = "Last check: authorization requested"
+                                OperationLog.record("Shizuku", "Authorization requested", OperationResult.INFO)
+                            } else {
+                                OperationLog.record("Shizuku", "Authorization request unavailable", OperationResult.UNAVAILABLE)
+                                Toast.makeText(context, "Start the Shizuku service first", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.semantics { contentDescription = "Request Shizuku authorization" },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SonicCoreColors.Warning.copy(alpha = 0.22f),
+                            contentColor = SonicCoreColors.Warning
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("AUTHORIZE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 if (state != ShizukuState.NOT_INSTALLED) {
                     Button(
@@ -164,7 +241,10 @@ fun ShizukuCenterScreen(
             )
         }
 
-        // 2. Setup guidance
+        // 2. Read-only IPC diagnostics (the one elevated operation that really runs)
+        ShizukuDiagnosticsCard(environment = environment)
+
+        // 3. Setup guidance
         LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), depth = LiquidGlassDepth.Inset) {
             PlatformSectionLabel("Setup guide", color = SonicCoreColors.Violet)
             Spacer(Modifier.height(8.dp))
@@ -208,12 +288,12 @@ fun ShizukuCenterScreen(
             }
         }
 
-        // 3. Operation registry
+        // 4. Operation registry
         LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), depth = LiquidGlassDepth.Floating) {
-            PlatformSectionLabel("Supported operation registry")
+            PlatformSectionLabel("Operation registry")
             Spacer(Modifier.height(4.dp))
             Text(
-                "Each entry reports the first step that blocks it. Operations that SonicCore cannot execute are marked as such instead of being offered as working buttons.",
+                "Every entry reports AVAILABLE, BLOCKED, UNSUPPORTED or NOT IMPLEMENTED. Only operations with a real implementation ever become runnable; the rest name the exact reason.",
                 fontSize = 11.sp,
                 color = SonicCoreColors.SecondaryText
             )
@@ -236,7 +316,7 @@ fun ShizukuCenterScreen(
             }
         }
 
-        // 4. Safe error reporting
+        // 5. Safe error reporting
         LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), depth = LiquidGlassDepth.Inset) {
             PlatformSectionLabel("Error reporting", color = SonicCoreColors.Warning)
             Spacer(Modifier.height(6.dp))
@@ -286,11 +366,11 @@ private fun OperationRow(status: ShizukuOperationStatus) {
             Text(
                 status.operation.title,
                 fontSize = 12.sp,
-                color = if (status.availability.isRunnable) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText,
+                color = if (status.outcome.isRunnable) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
             )
-            StatusPill(status.availability.label, availabilityColor(status.availability))
+            StatusPill(status.outcome.label, outcomeColor(status.outcome))
         }
         Text(
             status.operation.description,
@@ -299,26 +379,42 @@ private fun OperationRow(status: ShizukuOperationStatus) {
             lineHeight = 14.sp
         )
         Text(
+            "${status.operation.access.label} · " +
+                if (status.operation.readOnly) "read-only" else "changes system state",
+            fontSize = 10.sp,
+            color = SonicCoreColors.Violet,
+            lineHeight = 14.sp
+        )
+        Text(
             status.reason,
             fontSize = 10.sp,
-            color = availabilityColor(status.availability),
+            color = outcomeColor(status.outcome),
             lineHeight = 14.sp
         )
     }
+}
+
+private fun probeResultFor(state: ShizukuState): OperationResult = when (state) {
+    ShizukuState.CONNECTED -> OperationResult.SUCCESS
+    ShizukuState.NOT_INSTALLED,
+    ShizukuState.NOT_RUNNING,
+    ShizukuState.DISCONNECTED,
+    ShizukuState.PERMISSION_REQUIRED -> OperationResult.UNAVAILABLE
+    ShizukuState.UNSUPPORTED -> OperationResult.FAILED
 }
 
 private fun shizukuColor(state: ShizukuState): Color = when (state) {
     ShizukuState.CONNECTED -> SonicCoreColors.Success
     ShizukuState.PERMISSION_REQUIRED -> SonicCoreColors.Warning
     ShizukuState.NOT_RUNNING -> SonicCoreColors.Warning
+    ShizukuState.DISCONNECTED -> SonicCoreColors.Error
     ShizukuState.NOT_INSTALLED -> SonicCoreColors.SecondaryText
     ShizukuState.UNSUPPORTED -> SonicCoreColors.Error
 }
 
-private fun availabilityColor(availability: ShizukuAvailability): Color = when (availability) {
-    ShizukuAvailability.AVAILABLE -> SonicCoreColors.Success
-    ShizukuAvailability.REQUIRES_CONNECTION, ShizukuAvailability.REQUIRES_PERMISSION -> SonicCoreColors.Warning
-    ShizukuAvailability.NOT_INSTALLED -> SonicCoreColors.SecondaryText
-    ShizukuAvailability.NOT_SUPPORTED -> SonicCoreColors.Error
-    ShizukuAvailability.NOT_IMPLEMENTED -> SonicCoreColors.Violet
+private fun outcomeColor(outcome: ShizukuOutcome): Color = when (outcome) {
+    ShizukuOutcome.AVAILABLE -> SonicCoreColors.Success
+    ShizukuOutcome.BLOCKED -> SonicCoreColors.Warning
+    ShizukuOutcome.UNSUPPORTED -> SonicCoreColors.Error
+    ShizukuOutcome.NOT_IMPLEMENTED -> SonicCoreColors.Violet
 }

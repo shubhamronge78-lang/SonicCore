@@ -36,17 +36,27 @@ estimate, VPN), sensors (7 tracked types), audio service + DSP health.
 - **Unavailable**: per-app CPU/memory breakdown — restricted from third-party
   apps on Android 8+.
 
-## Shizuku Center — Partial (detection real, execution not wired)
+## Shizuku Center — Implemented (official client + read-only diagnostics)
 
-- Install / running / authorized state: **Implemented** (`ShizukuBridge`, real
-  package, provider and permission checks).
+Full detail and the device-validation checklist: `docs/shizuku-operations.md`.
+
+- Official client integrated (`dev.rikka.shizuku:api` + `:provider` 13.1.5) with
+  the `ShizukuProvider` manifest entry: **Implemented**.
+- Install / running / authorized state, binder received + dead listeners, and the
+  in-app AUTHORIZE request (`Shizuku.requestPermission`) with its result callback:
+  **Implemented**. A binder that dies after being seen reports `DISCONNECTED`.
 - Setup guidance (4 steps, per-state done/blocked): **Implemented**.
-- Operation registry (7 operations, each with the first blocking reason):
-  **Implemented**.
-- Open Shizuku Manager: **Implemented**.
-- Privileged operations (audio policy read, route force, secure settings,
-  permission grant, binder diagnostics): **Not implemented** — SonicCore bundles
-  no Shizuku IPC client. They show `NOT_IMPLEMENTED` even when connected.
+- Operation registry (10 operations) reporting `AVAILABLE` / `BLOCKED` /
+  `UNSUPPORTED` / `NOT_IMPLEMENTED` with the first blocker: **Implemented**.
+- Read-only IPC diagnostics (binder ping + round-trip, server uid/privilege, API
+  version, patch, SELinux context, authorization) behind a 2 s bounded call:
+  **Implemented**, and the only elevated operation that runs.
+- Audio policy read, route force, secure settings (read/write), permission grant,
+  binder enumeration: **Not implemented** — each states what it would need
+  (hidden AIDL stubs, a Shizuku user service, or a platform-signed permission),
+  and the write/privilege operations are refused by policy.
+- **Not validated on a physical device** in this environment; only the JVM state
+  machine and the build were verified.
 
 ## Customization Center — Implemented (app-level), Unavailable (system-level)
 

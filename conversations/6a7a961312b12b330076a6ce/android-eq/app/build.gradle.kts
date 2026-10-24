@@ -83,6 +83,12 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    // Official Shizuku API (RikkaApps/Shizuku-API, MIT). `api` holds the Shizuku
+    // client (binder lifecycle, permission requests, ShizukuBinderWrapper) and
+    // `provider` is the ContentProvider Shizuku uses to hand the binder to apps.
+    // Both are required: without `provider` the binder is never received.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     // Build #136 hardening (spec 26): real JVM unit tests for preset validation.
     testImplementation("junit:junit:4.13.2")
     // org.json runs on the JVM for tests (framework stubs throw on-device mocks)

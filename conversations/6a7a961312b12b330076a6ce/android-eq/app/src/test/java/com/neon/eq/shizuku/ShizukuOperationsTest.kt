@@ -44,10 +44,11 @@ class ShizukuOperationsTest {
     fun onlyImplementedOperationsEverBecomeAvailable() {
         val connected = statuses(ShizukuState.CONNECTED)
         val available = connected.values.filter { it.availability == ShizukuAvailability.AVAILABLE }
-        // Exactly the two genuinely wired operations: state probe and manager launch.
-        assertEquals(2, available.size)
+        // Exactly the genuinely wired operations: state probe, manager launch and the
+        // read-only Shizuku IPC diagnostic. Nothing else may ever look available.
+        assertEquals(3, available.size)
         assertEquals(
-            setOf("connection_state", "open_manager"),
+            setOf("connection_state", "open_manager", "ipc_diagnostics"),
             available.map { it.operation.id }.toSet()
         )
         available.forEach { status ->
@@ -59,8 +60,14 @@ class ShizukuOperationsTest {
     @Test
     fun privilegedOperationsAreExplicitlyNotImplementedWhenConnected() {
         val connected = statuses(ShizukuState.CONNECTED)
-        listOf("audio_policy_read", "audio_route_force", "secure_settings_read", "permission_grant", "binder_diagnostics")
-            .forEach { id ->
+        listOf(
+            "audio_policy_read",
+            "audio_route_force",
+            "secure_settings_read",
+            "secure_settings_write",
+            "permission_grant",
+            "binder_diagnostics"
+        ).forEach { id ->
                 val status = connected.getValue(id)
                 assertEquals(ShizukuAvailability.NOT_IMPLEMENTED, status.availability)
                 assertFalse(status.availability.isRunnable)
