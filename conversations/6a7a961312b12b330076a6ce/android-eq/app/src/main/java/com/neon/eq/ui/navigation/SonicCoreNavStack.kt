@@ -1,5 +1,7 @@
 package com.neon.eq.ui.navigation
 
+import androidx.compose.runtime.saveable.Saver
+
 /**
  * Back stack for the SonicCore category navigation, kept as an immutable value
  * so it is both trivially unit-testable and `rememberSaveable`-friendly
@@ -37,6 +39,15 @@ data class SonicCoreNavState(val tokens: List<String> = listOf(SonicCoreRoutes.H
 
     companion object {
         const val MAX_DEPTH = 12
+
+        /**
+         * `rememberSaveable` saver for the stack: one encoded String, so the
+         * route survives configuration changes and process death.
+         */
+        val Saver: Saver<SonicCoreNavState, String> = Saver(
+            save = { it.encode() },
+            restore = { decode(it) }
+        )
 
         fun decode(encoded: String?): SonicCoreNavState {
             val tokens = encoded
