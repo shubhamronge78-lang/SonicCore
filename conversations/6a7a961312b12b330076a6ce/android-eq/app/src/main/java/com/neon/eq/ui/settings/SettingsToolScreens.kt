@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -244,7 +246,7 @@ fun SettingsNavigationScreen(context: Context, modifier: Modifier = Modifier) {
                 "Hides the six-category dock on devices where it is not wanted.",
                 AppearanceState.dockVisible
             ) { visible ->
-                AppearanceState.setDockVisible(visible)
+                AppearanceState.dockVisible = visible
                 AppearanceState.save(context)
             }
         }
@@ -312,7 +314,7 @@ private fun notificationIntent(context: Context): Intent? =
     } else null
 
 @Composable
-private fun NotificationShortcut(
+private fun RowScope.NotificationShortcut(
     context: Context,
     label: String,
     intent: Intent?,

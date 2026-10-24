@@ -14,12 +14,41 @@ data class SonicCoreNavState(val tokens: List<String> = listOf(SonicCoreRoutes.H
 
     val depth: Int get() = tokens.size
 
-    val category: SonicCoreCategory? get() = SonicCoreRoutes.categoryOf(current)
+    /**
+     * Category of the screen on top — the tool's own category while a tool is
+     * open, so the dock keeps the current workspace highlighted and a second
+     * tool of the same category does not push a duplicate hub.
+     */
+    val category: SonicCoreCategory? get() =
+        SonicCoreRoutes.categoryOf(current) ?: SonicCoreRoutes.toolOf(current)?.category
 
     val tool: SonicCoreTool? get() = SonicCoreRoutes.toolOf(current)
 
+    /** True on the Home screen — the floor of the stack. */
+    val isHome: Boolean get() = current == SonicCoreRoutes.HOME
+
     /** True when a category hub (not a tool) is on top of the stack. */
     val onCategoryHub: Boolean get() = category != null && tool == null
+
+    /**
+     * Opens a category hub from the dock. Tapping a category always lands on
+     * that category's hub — anything above Home is dropped, so the dock never
+     * leaves a tool buried under a later category tap and back from a hub
+     * always returns to Home.
+     */
+    fun selectCategory(category: SonicCoreCategory): SonicCoreNavState =
+        SonicCoreNavState(listOf(SonicCoreRoutes.HOME, SonicCoreRoutes.category(category)))
+
+    /**
+     * Opens a tool inside its own category. The category hub is pushed first
+     * when it is not already on the stack, so back always walks tool → hub →
+     * Home.
+     */
+    fun openTool(tool: SonicCoreTool): SonicCoreNavState {
+        val withCategory =
+            if (category == tool.category) this else push(SonicCoreRoutes.category(tool.category))
+        return withCategory.push(SonicCoreRoutes.tool(tool))
+    }
 
     fun push(token: String): SonicCoreNavState {
         if (token.isBlank() || token == current) return this

@@ -2,100 +2,277 @@ package com.neon.eq.ui.navigation
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Contract of the SonicCore category navigation.
+ *
+ * These assertions are the reason a new destination or a new screen cannot be
+ * added half-wired: a tool with no screen, two tools claiming the same
+ * destination, or a screen nobody can reach all fail here instead of shipping as
+ * a dead end in the app.
+ */
 class SonicCoreNavigationTest {
+
+    // ── Home: exactly six categories ──
+
     @Test
-    fun primaryNavigationContainsOnlyTheFourRequestedDestinations() {
+    fun homeExposesExactlyTheSixRequestedCategoriesInOrder() {
         assertEquals(
-            listOf(
-                SonicCoreDestination.DASHBOARD,
-                SonicCoreDestination.EQUALIZER,
-                SonicCoreDestination.PLAYER,
-                SonicCoreDestination.DSP_FX
-            ),
-            SonicCoreDestination.primaryDestinations
+            listOf("Audio", "Device Center", "Shizuku Center", "Customization",
+                "Permissions & Privacy", "Settings"),
+            SonicCoreCategory.entries.map { it.title }
         )
-        assertTrue(SonicCoreDestination.primaryDestinations.all { it.isPrimary })
     }
 
     @Test
-    fun settingsAndSessionScreensAreNotPrimaryDestinations() {
-        assertFalse(SonicCoreDestination.SIGNAL_PATH.isPrimary)
-        assertFalse(SonicCoreDestination.SYSTEM_CAPTURE.isPrimary)
-        assertFalse(SonicCoreDestination.SESSIONS.isPrimary)
-        assertFalse(SonicCoreDestination.PRO_FX.isPrimary)
-        assertFalse(SonicCoreDestination.DIAGNOSTICS.isPrimary)
-        assertFalse(SonicCoreDestination.CAPABILITIES.isPrimary)
-        assertFalse(SonicCoreDestination.DEVICE_TOOLS.isPrimary)
-        assertFalse(SonicCoreDestination.APP_MANAGER.isPrimary)
-        assertFalse(SonicCoreDestination.SHIZUKU.isPrimary)
-        assertFalse(SonicCoreDestination.CUSTOMIZATION.isPrimary)
-        assertFalse(SonicCoreDestination.PERMISSIONS.isPrimary)
-        assertFalse(SonicCoreDestination.SETTINGS.isPrimary)
-    }
-
-    @Test
-    fun everyPlannedPlatformCenterIsReachableFromNavigation() {
-        val destinations = SonicCoreDestination.consoleDestinations
-        // The seven centers named by the platform specification must each be a
-        // real, selectable destination — not a decorative card somewhere.
-        listOf(
-            SonicCoreDestination.DASHBOARD,
-            SonicCoreDestination.EQUALIZER,
-            SonicCoreDestination.DEVICE_TOOLS,
-            SonicCoreDestination.SHIZUKU,
-            SonicCoreDestination.CUSTOMIZATION,
-            SonicCoreDestination.DIAGNOSTICS,
-            SonicCoreDestination.SETTINGS
-        ).forEach { required ->
-            assertTrue("$required must be in the console navigation", destinations.contains(required))
+    fun everyCategoryHasUsableDockLabels() {
+        SonicCoreCategory.entries.forEach { category ->
+            assertTrue(category.subtitle.isNotBlank())
+            assertTrue(category.icon.isNotBlank())
+            // The dock chip is narrow: a long label would be clipped.
+            assertTrue(
+                "${category.label} is too long for the dock chip",
+                category.label.length <= 8
+            )
         }
     }
 
+    // ── Tools belong to a category and are reachable exactly once ──
+
     @Test
-    fun everyDestinationHasUsableLabelsForTheDock() {
-        SonicCoreDestination.consoleDestinations.forEach { destination ->
-            assertTrue(destination.title.isNotBlank())
-            assertTrue(destination.subtitle.isNotBlank())
-            assertTrue(destination.icon.isNotBlank())
-            // The dock chip is 72dp wide at 10sp: a long label would be clipped.
+    fun everyCategoryHasAtLeastOneTool() {
+        SonicCoreCategory.entries.forEach { category ->
             assertTrue(
-                "${destination.label} is too long for the dock chip",
-                destination.label.length <= 8
+                "${category.title} has no tools",
+                SonicCoreToolRegistry.countFor(category) > 0
+            )
+        }
+        assertEquals(
+            SonicCoreToolRegistry.all.size,
+            SonicCoreCategory.entries.sumOf { SonicCoreToolRegistry.countFor(it) }
+        )
+    }
+
+    @Test
+    fun toolIdsAreUnique() {
+        val ids = SonicCoreToolRegistry.all.map { it.id }
+        assertEquals(ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun everyToolHasExactlyOneRenderingPath() {
+        SonicCoreToolRegistry.all.forEach { tool ->
+            val reusesFullScreen = tool.destination != null
+            val hasOwnScreen = SonicCoreToolRoutes.ids.contains(tool.id)
+            assertTrue(
+                "${tool.id} has ${if (reusesFullScreen) 1 else 0} full-screen bodies and " +
+                    "${if (hasOwnScreen) 1 else 0} own screens — it must have exactly one",
+                reusesFullScreen != hasOwnScreen
             )
         }
     }
 
     @Test
-    fun consoleNavigationContainsDestinationsInTheRequestedOrder() {
-        assertEquals(
-            listOf(
-                SonicCoreDestination.DASHBOARD,
-                SonicCoreDestination.EQUALIZER,
-                SonicCoreDestination.PLAYER,
-                SonicCoreDestination.DSP_FX,
-                SonicCoreDestination.SYSTEM_CAPTURE,
-                SonicCoreDestination.SESSIONS,
-                SonicCoreDestination.SIGNAL_PATH,
-                SonicCoreDestination.PRO_FX,
-                SonicCoreDestination.DEVICE_TOOLS,
-                SonicCoreDestination.SHIZUKU,
-                SonicCoreDestination.CUSTOMIZATION,
-                SonicCoreDestination.PERMISSIONS,
-                SonicCoreDestination.DIAGNOSTICS,
-                SonicCoreDestination.CAPABILITIES,
-                SonicCoreDestination.APP_MANAGER,
-                SonicCoreDestination.SETTINGS
-            ),
-            SonicCoreDestination.consoleDestinations
+    fun noTwoToolsShareAFullScreenDestination() {
+        SonicCoreToolRegistry.all
+            .mapNotNull { tool -> tool.destination?.let { it to tool } }
+            .forEach { (destination, tool) ->
+                assertEquals(
+                    "$destination is claimed by more than one tool",
+                    tool,
+                    SonicCoreToolRegistry.firstFor(destination)
+                )
+            }
+    }
+
+    @Test
+    fun everyOwnScreenIsRegisteredForARealTool() {
+        SonicCoreToolRoutes.ids.forEach { id ->
+            val tool = SonicCoreToolRegistry.find(id)
+            assertNotNull("$id is routed to a screen but is not a tool", tool)
+            assertNull("$id has a screen and a full-screen body", tool!!.destination)
+        }
+    }
+
+    @Test
+    fun openDestinationResolvesEveryDestinationItIsGiven() {
+        SonicCoreDestination.all.forEach { destination ->
+            assertNotNull(
+                "$destination has no tool that opens it",
+                SonicCoreToolRegistry.firstFor(destination)
+            )
+        }
+    }
+
+    @Test
+    fun searchFindsToolsByKeywordAndIgnoresBlankQueries() {
+        assertEquals(emptyList<SonicCoreTool>(), SonicCoreToolRegistry.search(""))
+        assertEquals(emptyList<SonicCoreTool>(), SonicCoreToolRegistry.search("   "))
+        assertTrue(
+            SonicCoreToolRegistry.search("equalizer").any {
+                it.destination == SonicCoreDestination.EQUALIZER
+            }
         )
-        assertEquals(16, SonicCoreDestination.consoleDestinations.size)
-        assertEquals("Pro FX", SonicCoreDestination.PRO_FX.title)
-        assertEquals("Diagnostics", SonicCoreDestination.DIAGNOSTICS.title)
-        assertEquals("Capabilities", SonicCoreDestination.CAPABILITIES.title)
-        assertEquals("Device Tools", SonicCoreDestination.DEVICE_TOOLS.title)
-        assertEquals("App Manager", SonicCoreDestination.APP_MANAGER.title)
+    }
+
+    // ── Back stack: tool → hub → Home ──
+
+    @Test
+    fun theStackStartsOnHome() {
+        val state = SonicCoreNavState()
+        assertTrue(state.isHome)
+        assertNull(state.category)
+        assertNull(state.tool)
+        assertFalse(state.onCategoryHub)
+    }
+
+    @Test
+    fun openingAToolPushesItsCategoryFirstSoBackAlwaysWalksHome() {
+        val home = SonicCoreNavState()
+        val tool = SonicCoreToolRegistry.find("device.memory")!!
+
+        val hub = home.selectCategory(tool.category)
+        assertTrue(hub.onCategoryHub)
+        assertEquals(tool.category, hub.category)
+        assertFalse(hub.isHome)
+        assertEquals(2, hub.depth)
+
+        val open = hub.openTool(tool)
+        assertEquals(tool, open.tool)
+        // Home → hub → tool: the hub stays in between, so back is tool → hub → Home.
+        assertEquals(3, open.depth)
+
+        val backToHub = open.pop()
+        assertEquals(hub, backToHub)
+
+        assertTrue(backToHub.pop().isHome)
+    }
+
+    @Test
+    fun openingAToolFromHomeStillKeepsTheHubBetweenThem() {
+        val tool = SonicCoreToolRegistry.find("settings.about")!!
+        val open = SonicCoreNavState().openTool(tool)
+
+        assertEquals(3, open.depth)
+        assertEquals(tool.category, open.category)
+        assertEquals(tool, open.tool)
+        assertTrue(open.pop().onCategoryHub)
+    }
+
+    @Test
+    fun theOpenToolsWorkspaceStaysHighlightedInTheDock() {
+        val memory = SonicCoreToolRegistry.find("device.memory")!!
+        val state = SonicCoreNavState().openTool(memory)
+
+        assertEquals(memory.category, state.category)
+        // A tool screen is not a hub — only a hub lists the category's tools.
+        assertFalse(state.onCategoryHub)
+    }
+
+    @Test
+    fun openingASecondToolOfTheSameCategoryDoesNotDuplicateTheHub() {
+        val equalizer = SonicCoreToolRegistry.find("audio.equalizer")!!
+        val presets = SonicCoreToolRegistry.find("audio.presets")!!
+        assertEquals(equalizer.category, presets.category)
+
+        val state = SonicCoreNavState().openTool(equalizer).openTool(presets)
+
+        // Home → AUDIO → Equalizer → Presets: no second AUDIO hub.
+        assertEquals(4, state.depth)
+        assertEquals(presets, state.tool)
+
+        val backToEqualizer = state.pop()
+        assertEquals(equalizer, backToEqualizer.tool)
+        val backToHub = backToEqualizer.pop()
+        assertTrue(backToHub.onCategoryHub)
+        assertTrue(backToHub.pop().isHome)
+    }
+
+    @Test
+    fun homeIsTheFloorAndNeverPopsAway() {
+        val home = SonicCoreNavState()
+        assertEquals(home, home.pop())
+        assertEquals(home, SonicCoreNavState().pop().pop())
+    }
+
+    @Test
+    fun tappingACategoryInTheDockAlwaysLandsOnItsHub() {
+        val memory = SonicCoreToolRegistry.find("device.memory")!!
+
+        // Same category: the open tool is dropped, not buried under its own hub.
+        val sameCategory = SonicCoreNavState().openTool(memory).selectCategory(memory.category)
+        assertTrue(sameCategory.onCategoryHub)
+        assertEquals(memory.category, sameCategory.category)
+        assertEquals(2, sameCategory.depth)
+        assertTrue(sameCategory.pop().isHome)
+
+        // Different category: the previous workspace is left behind entirely.
+        val about = SonicCoreToolRegistry.find("settings.about")!!
+        val switched = SonicCoreNavState().openTool(memory).selectCategory(about.category)
+        assertTrue(switched.onCategoryHub)
+        assertEquals(about.category, switched.category)
+        assertNull(switched.tool)
+        assertTrue(switched.pop().isHome)
+    }
+
+    @Test
+    fun theStackIsBounded() {
+        var state = SonicCoreNavState()
+        // Opening every tool in turn is the deepest the app can actually go.
+        SonicCoreToolRegistry.all.forEach { state = state.openTool(it) }
+        assertTrue(state.depth <= SonicCoreNavState.MAX_DEPTH)
+    }
+
+    @Test
+    fun homeResetsTheStackInOneStep() {
+        val deep = SonicCoreNavState()
+            .openTool(SonicCoreToolRegistry.find("device.memory")!!)
+        assertTrue(deep.resetToHome().isHome)
+    }
+
+    // ── Surviving process death ──
+
+    @Test
+    fun theStackRoundTripsThroughOneEncodedString() {
+        val state = SonicCoreNavState()
+            .openTool(SonicCoreToolRegistry.find("audio.equalizer")!!)
+        assertEquals(state, SonicCoreNavState.decode(state.encode()))
+    }
+
+    @Test
+    fun decodingDropsTokensThisBuildNoLongerKnows() {
+        assertEquals(
+            SonicCoreNavState(listOf(SonicCoreRoutes.HOME, "cat:AUDIO")),
+            SonicCoreNavState.decode("home|cat:GONE|tool:removed.tool|cat:AUDIO")
+        )
+    }
+
+    @Test
+    fun decodingAnEmptyOrNullStateLandsOnHome() {
+        assertTrue(SonicCoreNavState.decode(null).isHome)
+        assertTrue(SonicCoreNavState.decode("").isHome)
+        assertTrue(SonicCoreNavState.decode("|nonsense|").isHome)
+    }
+
+    @Test
+    fun everyRouteTokenTheAppCanBuildIsRecognised() {
+        assertTrue(SonicCoreRoutes.isKnown(SonicCoreRoutes.HOME))
+        SonicCoreCategory.entries.forEach { category ->
+            val token = SonicCoreRoutes.category(category)
+            assertTrue(SonicCoreRoutes.isKnown(token))
+            assertEquals(category, SonicCoreRoutes.categoryOf(token))
+            assertNull(SonicCoreRoutes.toolOf(token))
+        }
+        SonicCoreToolRegistry.all.forEach { tool ->
+            val token = SonicCoreRoutes.tool(tool)
+            assertTrue(SonicCoreRoutes.isKnown(token))
+            assertEquals(tool, SonicCoreRoutes.toolOf(token))
+            assertNull(SonicCoreRoutes.categoryOf(token))
+        }
+        assertFalse(SonicCoreRoutes.isKnown("tool:not.a.tool"))
     }
 }

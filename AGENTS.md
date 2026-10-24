@@ -23,13 +23,21 @@ The app itself now has two layers:
   model), `shizuku/` (bridge + operation registry), `diagnostics/` (device
   health, operation log, report export), `ui/customization/`,
   `ui/settings/`. The Compose navigation lives in
-  `ui/navigation/SonicCoreNavigation.kt`; screens are dispatched from the single
-  large `EqualizerScreen` composable in `MainActivity.kt`.
+  `ui/navigation/` (`SonicCoreNavigation.kt` for the model, `SonicCoreNavStack.kt`
+  for the back stack, `SonicCoreNavigator.kt` for the moves); screens are
+  dispatched from the single large `EqualizerScreen` composable in
+  `MainActivity.kt`.
 
-Every platform center is reachable from the bottom dock
-(`SonicCoreDestination.consoleDestinations`), and
-`SonicCoreNavigationTest` asserts that list exactly — adding a destination
-requires updating that test.
+The launcher starts in `SonicCoreNavHost` (`MainActivity.kt`), which owns the
+navigation stack and renders Home, a category hub, or one tool inside a
+category. Home shows **exactly six categories** — Audio, Device Center, Shizuku
+Center, Customization, Permissions & Privacy, Settings — and the bottom dock
+shows the same six, never internal tools. A tool either reuses a long-standing
+full-screen body (`SonicCoreTool.destination`, e.g. the equalizer) or has its own
+screen in `ui/navigation/SonicCoreToolScreens.kt`; nothing may have both or
+neither. `SonicCoreNavigationTest` asserts all of that (six categories in order,
+one rendering path per tool, no two tools claiming a destination) — adding a
+category or a tool requires updating that test.
 
 ## How the app is run / verified here
 

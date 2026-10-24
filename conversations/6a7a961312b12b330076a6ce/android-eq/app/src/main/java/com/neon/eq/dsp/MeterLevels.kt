@@ -1,6 +1,6 @@
 package com.neon.eq.dsp
 
-internal data class MeterLevels(
+data class MeterLevels(
     val db: FloatArray,
     val rms: FloatArray,
     val peaks: FloatArray
@@ -44,7 +44,7 @@ private const val METER_CHANNEL_COUNT = 4
 private const val METER_SNAPSHOT_SIZE = METER_CHANNEL_COUNT * 2
 private const val MAX_METER_VALUE = 1000
 
-internal fun computeMeterLevels(
+fun computeMeterLevels(
     values: IntArray?,
     previousPeaks: FloatArray?
 ): MeterLevels {

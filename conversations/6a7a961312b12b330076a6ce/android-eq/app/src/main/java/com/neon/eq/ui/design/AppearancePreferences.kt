@@ -124,28 +124,17 @@ fun motionDurationMillis(baseMillis: Int, scale: Float): Int {
 
 object AppearanceState {
 
+    // Plain Compose state: writing a value recomposes every screen that reads
+    // it, and `save()` persists the whole group. No duplicate setter functions —
+    // a `setAccent(...)` beside `var accent` collides with the property's own
+    // setter on the JVM and fails the build.
     var accent by mutableStateOf(AccentChoice.CYAN)
-        private set
     var homeColumns by mutableStateOf(HomeColumnChoice.AUTO)
-        private set
     var density by mutableStateOf(CardDensityChoice.COMFORTABLE)
-        private set
     var corners by mutableStateOf(CardCornerChoice.ROUNDED)
-        private set
     var border by mutableStateOf(CardBorderChoice.STANDARD)
-        private set
     var motion by mutableStateOf(MotionChoice.FULL)
-        private set
     var dockVisible by mutableStateOf(true)
-        private set
-
-    fun setAccent(value: AccentChoice) { accent = value }
-    fun setHomeColumns(value: HomeColumnChoice) { homeColumns = value }
-    fun setDensity(value: CardDensityChoice) { density = value }
-    fun setCorners(value: CardCornerChoice) { corners = value }
-    fun setBorder(value: CardBorderChoice) { border = value }
-    fun setMotion(value: MotionChoice) { motion = value }
-    fun setDockVisible(value: Boolean) { dockVisible = value }
 
     fun load(context: Context) {
         val prefs = readPrefs(context) ?: return
