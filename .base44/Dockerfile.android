@@ -1,0 +1,39 @@
+# Build toolchain for the SonicCore / Neon EQ Android app.
+#
+# This image contains ONLY the toolchain (JDK 17 + Android SDK/NDK + CMake +
+# a host compiler for the native self-test). The application source is bind
+# mounted at runtime, so every build compiles the current working tree and
+# source edits are picked up on the next build run.
+#
+# Android SDK package versions match .github/workflows/android-apk.yml.
+FROM eclipse-temurin:17-jdk-jammy
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    ANDROID_HOME=/opt/android-sdk
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      curl unzip ca-certificates g++ \
+ && rm -rf /var/lib/apt/lists/*
+
+# Android command-line tools
+RUN mkdir -p /opt/android-sdk/cmdline-tools \
+ && curl -fsSL -o /tmp/cmdline-tools.zip \
+      https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+ && unzip -q /tmp/cmdline-tools.zip -d /opt/android-sdk/cmdline-tools \
+ && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
+ && rm /tmp/cmdline-tools.zip
+
+ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH
+
+# Platform 34 + build-tools 34.0.0 + NDK r25b + CMake 3.22.1 (as used by CI)
+RUN yes | sdkmanager --licenses > /dev/null \
+ && sdkmanager --install \
+      "platform-tools" \
+      "platforms;android-34" \
+      "build-tools;34.0.0" \
+      "ndk;25.1.8937393" \
+      "cmake;3.22.1" > /dev/null
+
+WORKDIR /workspace

@@ -1,0 +1,53 @@
+# Base44 sandbox stack for SonicCore / Neon EQ.
+#
+# The repository is a native Android app (Kotlin/Compose + C++ DSP), so there is
+# no web dev server to hot-reload. This stack compiles the app from the working
+# tree and serves the resulting debug APK plus a build/test report on port 3000,
+# which is what the browser preview shows.
+#
+#   apk — one-shot build job: native DSP self-test, JVM unit tests, assembleDebug.
+#         Source is bind mounted, so restarting it rebuilds the current edit:
+#         docker compose -f docker-compose.base44.yml restart apk
+#   web — nginx serving the build output on host port 3000.
+name: soniccore
+
+services:
+  apk:
+    build:
+      context: .
+      dockerfile: .base44/Dockerfile.android
+    labels:
+      base44.project: "SonicCore · Neon EQ (APK build)"
+      base44.kind: worker
+    working_dir: /workspace/conversations/6a7a961312b12b330076a6ce/android-eq
+    volumes:
+      - .:/workspace
+      - gradle-cache:/root/.gradle
+      - dist:/dist
+    environment:
+      - BASE44_PREVIEW_MODE
+      - GRADLE_USER_HOME=/root/.gradle
+    command: ["sh", "/workspace/.base44/build-and-report.sh"]
+    restart: "no"
+
+  web:
+    image: nginx:alpine
+    labels:
+      base44.project: "SonicCore · Neon EQ (preview)"
+      base44.kind: web
+      base44.port: "3000"
+    ports:
+      - "3000:80"
+    volumes:
+      - dist:/usr/share/nginx/html:ro
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 15s
+
+volumes:
+  dist:
+  gradle-cache:
