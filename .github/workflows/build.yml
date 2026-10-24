@@ -50,3 +50,4 @@ jobs:
       with:
         name: app-debug-apk
         path: conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk
+        if-no-files-found: error

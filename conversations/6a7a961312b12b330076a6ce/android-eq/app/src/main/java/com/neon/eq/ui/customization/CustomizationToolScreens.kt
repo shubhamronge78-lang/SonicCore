@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -140,7 +141,7 @@ fun CustomizationAccentScreen(context: Context, modifier: Modifier = Modifier) {
                     selected = AppearanceState.accent == accent,
                     swatch = accent.color,
                     onClick = {
-                        AppearanceState.setAccent(accent)
+                        AppearanceState.accent = accent
                         AppearanceState.save(context)
                     }
                 )
@@ -243,7 +244,7 @@ fun CustomizationLayoutScreen(context: Context, modifier: Modifier = Modifier) {
                     },
                     selected = AppearanceState.homeColumns == choice,
                     onClick = {
-                        AppearanceState.setHomeColumns(choice)
+                        AppearanceState.homeColumns = choice
                         AppearanceState.save(context)
                     }
                 )
@@ -266,7 +267,7 @@ fun CustomizationCardScreen(context: Context, modifier: Modifier = Modifier) {
                     title = choice.label,
                     description = "${choice.radius.value.toInt()} dp corner radius",
                     selected = AppearanceState.corners == choice,
-                    onClick = { AppearanceState.setCorners(choice); AppearanceState.save(context) }
+                    onClick = { AppearanceState.corners = choice; AppearanceState.save(context) }
                 )
             }
             Text("BORDER", color = SonicCoreColors.SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
@@ -276,7 +277,7 @@ fun CustomizationCardScreen(context: Context, modifier: Modifier = Modifier) {
                     title = choice.label,
                     description = "%.1f dp outline".format(choice.width.value),
                     selected = AppearanceState.border == choice,
-                    onClick = { AppearanceState.setBorder(choice); AppearanceState.save(context) }
+                    onClick = { AppearanceState.border = choice; AppearanceState.save(context) }
                 )
             }
             Text("DENSITY", color = SonicCoreColors.SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
@@ -286,7 +287,7 @@ fun CustomizationCardScreen(context: Context, modifier: Modifier = Modifier) {
                     title = choice.label,
                     description = "${choice.verticalPadding.value.toInt()} dp vertical padding per card",
                     selected = AppearanceState.density == choice,
-                    onClick = { AppearanceState.setDensity(choice); AppearanceState.save(context) }
+                    onClick = { AppearanceState.density = choice; AppearanceState.save(context) }
                 )
             }
         }
@@ -318,7 +319,7 @@ fun CustomizationMotionScreen(context: Context, modifier: Modifier = Modifier) {
                         MotionChoice.OFF -> "No animated transitions at all; values change immediately."
                     },
                     selected = AppearanceState.motion == choice,
-                    onClick = { AppearanceState.setMotion(choice); AppearanceState.save(context) }
+                    onClick = { AppearanceState.motion = choice; AppearanceState.save(context) }
                 )
             }
             LimitNote(
