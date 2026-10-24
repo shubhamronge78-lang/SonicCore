@@ -20,12 +20,50 @@ jobs:
         java-version: "17"
         distribution: "temurin"
 
-    - name: Set up Android SDK and NDK
+    # android-actions/setup-android@v3 accepts exactly four inputs —
+    # cmdline-tools-version, accept-android-sdk-licenses,
+    # log-accepted-android-sdk-licenses and packages
+    # (https://github.com/android-actions/setup-android/blob/v3/action.yml).
+    #
+    # Two things used to break this workflow, both in this step:
+    #  * it passed `api-level`, `build-tools` and `ndk`, which are NOT v3
+    #    inputs. Unknown inputs are ignored, so the step silently fell back to
+    #    the action's default `packages: "tools platform-tools"`;
+    #  * the `tools` package no longer exists in the runner's cmdline-tools 16,
+    #    so `sdkmanager tools` exits 1 and the action treats that as fatal:
+    #      Warning: Failed to find package 'tools'
+    #      Error: The process '.../sdkmanager' failed with exit code 1
+    #    That killed the job after ~21 s on every run (40070746189, 40071309858,
+    #    40072560294), before Gradle, the tests or the APK build ever ran.
+    #
+    # So this step requests no obsolete package, and asks the action to accept
+    # the SDK licences non-interactively (`accept-android-sdk-licenses` feeds
+    # "y" to `sdkmanager --licenses`). The packages this project actually needs
+    # are installed in the next step, by sdkmanager itself, so the command, its
+    # full output and its exit code are all visible in the log.
+    - name: Set up Android SDK tools
       uses: android-actions/setup-android@v3
       with:
-        api-level: 34
-        build-tools: "34.0.0"
-        ndk: "25.1.8937393"
+        packages: "platform-tools"
+        accept-android-sdk-licenses: true
+
+    - name: Install Android SDK packages (platform 34, build-tools 34.0.0, NDK 25.1.8937393, CMake 3.22.1)
+      run: |
+        set -euo pipefail
+        SDKMANAGER="$(command -v sdkmanager || true)"
+        if [ -z "$SDKMANAGER" ]; then
+          SDKMANAGER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools" -type f -name sdkmanager -print -quit)"
+        fi
+        test -n "$SDKMANAGER"
+        echo "Using sdkmanager: $SDKMANAGER"
+        "$SDKMANAGER" --version
+        # Nothing is piped in and no error is suppressed: sdkmanager's own exit
+        # code fails this step, and the licences were accepted above.
+        "$SDKMANAGER" --install \
+          "platforms;android-34" \
+          "build-tools;34.0.0" \
+          "ndk;25.1.8937393" \
+          "cmake;3.22.1"
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3

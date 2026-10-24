@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon EQ — SonicCore build</title>
+<!-- Inline icon so the browser never requests /favicon.ico (which this static
+     server does not have, and which used to 404 in the preview). -->
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCA2NCA2NCc+PHJlY3Qgd2lkdGg9JzY0JyBoZWlnaHQ9JzY0JyByeD0nMTQnIGZpbGw9J3JnYig2LDEwLDE4KScvPjxyZWN0IHg9JzExJyB5PSczMCcgd2lkdGg9JzcnIGhlaWdodD0nMjMnIHJ4PSczJyBmaWxsPSdyZ2IoMzQsMjExLDIzOCknLz48cmVjdCB4PScyMicgeT0nMTcnIHdpZHRoPSc3JyBoZWlnaHQ9JzM2JyByeD0nMycgZmlsbD0ncmdiKDE2OCw4NSwyNDcpJy8+PHJlY3QgeD0nMzMnIHk9JzI2JyB3aWR0aD0nNycgaGVpZ2h0PScyNycgcng9JzMnIGZpbGw9J3JnYigyMzYsNzIsMTUzKScvPjxyZWN0IHg9JzQ0JyB5PScxMycgd2lkdGg9JzcnIGhlaWdodD0nNDAnIHJ4PSczJyBmaWxsPSdyZ2IoMzQsMjExLDIzOCknLz48L3N2Zz4=">
+<style>
+  :root {
+    --cyan: #22d3ee;
+    --purple: #a855f7;
+    --pink: #ec4899;
+    --ink: #e5f6ff;
+    --muted: #7d8ea3;
+    --card: rgba(255,255,255,0.04);
+    --line: rgba(120,200,255,0.16);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px 72px;
+    background: #000;
+    color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-image:
+      radial-gradient(900px 420px at 15% -10%, rgba(34,211,238,0.13), transparent),
+      radial-gradient(700px 380px at 90% 0%, rgba(168,85,247,0.13), transparent);
+    background-repeat: no-repeat;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--cyan); margin: 0 0 10px;
+  }
+  h1 {
+    margin: 0 0 6px; font-size: 34px; line-height: 1.15; font-weight: 700;
+    background: linear-gradient(92deg, var(--cyan), var(--purple) 55%, var(--pink));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { margin: 0 0 28px; color: var(--muted); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 20px 22px; margin: 0 0 18px;
+    backdrop-filter: blur(6px);
+  }
+  .card h2 {
+    margin: 0 0 12px; font-size: 15px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--cyan); font-weight: 600;
+  }
+  .card p { margin: 0 0 12px; }
+  .card p:last-child { margin-bottom: 0; }
+  .notice { border-color: rgba(236,72,153,0.4); background: rgba(236,72,153,0.07); }
+  .notice h2 { color: var(--pink); }
+  .status { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;
+    box-shadow: 0 0 10px currentColor; color: #f59e0b; flex: none;
+  }
+  .dot.ready { background: #22c55e; color: #22c55e; }
+  .btn {
+    display: inline-block; padding: 12px 22px; border-radius: 10px;
+    border: none; cursor: pointer; text-decoration: none;
+    font-weight: 600; font-size: 15px; color: #001318;
+    background: linear-gradient(92deg, var(--cyan), var(--purple));
+    box-shadow: 0 0 22px rgba(34,211,238,0.28);
+  }
+  .btn[aria-disabled="true"] { opacity: .45; pointer-events: none; box-shadow: none; }
+  ul { margin: 0; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  a { color: var(--cyan); }
+  ol { margin: 0; padding-left: 20px; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px; background: rgba(255,255,255,0.06);
+    padding: 1px 6px; border-radius: 5px;
+  }
+  .muted { color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">SonicCore &middot; v3.6.0</p>
+  <h1>Neon EQ</h1>
+  <p class="sub">System-wide audio equalizer for Android — neon AMOLED UI, 10 presets,
+     5/10/15/31 bands, native C++ DSP engine.</p>
+
+  <div class="card notice">
+    <h2>This is an Android app</h2>
+    <p>Neon EQ runs on an Android phone, so it can't render inside this browser
+       preview — Android apps have no web surface. What you see here is the build
+       environment: it compiles the app from source and hands you the APK.</p>
+    <p class="muted">Install the APK on an Android 8.0+ (API 26+) device to actually use the app.</p>
+  </div>
+
+  <div class="card">
+    <h2>Download</h2>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="status-text">Checking build…</span>
+    </div>
+    <a class="btn" id="apk" href="NeonEQ-debug.apk" download target="_blank" rel="noopener" aria-disabled="true">Download debug APK</a>
+    <p class="muted" style="margin-top:14px">
+      This page is served once the first from-source build finishes — a few
+      minutes on a cold Gradle cache, then cached after that.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Build &amp; test results</h2>
+    <ul>
+      <li><a href="tests/index.html">JVM unit-test report</a> — preset validation, band map and output-route contracts</li>
+      <li><a href="dsp-test.log">Native DSP self-test log</a> — production engine compiled with ASan/UBSan</li>
+      <li><a href="build.log">Full Gradle build log</a></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Install on your phone</h2>
+    <ol>
+      <li>Download the APK above (open this page on the phone, or transfer the file).</li>
+      <li>Allow installing from unknown sources when Android asks.</li>
+      <li>Open Neon EQ, toggle the EQ on, pick a preset or drag the bands.</li>
+      <li>Keep the foreground service running so the EQ stays active in other apps.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Rebuild after a code change</h2>
+    <p><code>docker compose -f docker-compose.base44.yml restart app</code></p>
+    <p class="muted">The source is mounted into the container, so restarting re-runs the
+       self-test, the unit tests and the APK build against your current code.
+       <code>up -d --build</code> is only needed after changing the compose file or
+       the builder image.</p>
+    <p class="muted">Source lives in <code>conversations/6a7a961312b12b330076a6ce/android-eq</code>.</p>
+  </div>
+
+</div>
+
+<script>
+  // The APK only exists once the one-shot build service has finished, so probe
+  // for it instead of promising a download that would 404.
+  fetch('NeonEQ-debug.apk', { method: 'HEAD' })
+    .then(function (r) {
+      var ready = r.ok;
+      document.getElementById('dot').classList.toggle('ready', ready);
+      document.getElementById('status-text').textContent =
+        ready ? 'APK ready to install' : 'Build still running — reload in a few minutes';
+      document.getElementById('apk').setAttribute('aria-disabled', ready ? 'false' : 'true');
+    })
+    .catch(function () {
+      document.getElementById('status-text').textContent = 'Build still running — reload in a few minutes';
+    });
+</script>
+</body>
+</html>

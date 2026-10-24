@@ -1,0 +1,96 @@
+# Base44 dev environment for the Neon EQ / SonicCore Android app.
+#
+# IMPORTANT — there is no web frontend or server anywhere in this repository.
+# The only project is an Android application (Kotlin + Jetpack Compose + native
+# C++ DSP) stored under conversations/<conversation-id>/android-eq, together
+# with the GitHub Actions workflows that build its APK.
+#
+# An Android app has no browser surface, so it cannot be rendered inside the
+# preview iframe. This stack therefore builds the app from the cloned source and
+# serves the result on host port 3000: a status page with the debug APK to
+# install on a phone, the Gradle unit-test report and the native DSP test log.
+#
+# The build/test/serve steps all live in ONE long-running service on purpose.
+# Build and test are one-shot jobs, and a compose service that exits — even with
+# exit code 0 — reads as a failed application service to health monitoring. So
+# the service runs the checks to completion and then stays up serving the
+# artifacts, which is also the only component that needs to stay alive.
+#
+# Bring up:  docker compose -f docker-compose.base44.yml up -d --build
+# Wait:      docker compose -f docker-compose.base44.yml ps   # until "healthy"
+# Logs:      docker compose -f docker-compose.base44.yml logs -f app
+
+services:
+  # User-facing entry point (host port 3000). On start it runs the native DSP
+  # regression gate, builds the APK and the unit tests from source, then serves
+  # the artifacts plus the status page. First run takes a few minutes (Gradle and
+  # Maven downloads); later runs reuse the gradle-home volume.
+  app:
+    image: neoneq-android-builder
+    build:
+      context: .base44/android
+    working_dir: /src
+    ports:
+      - "3000:80"
+    volumes:
+      - ./conversations/6a7a961312b12b330076a6ce/android-eq:/src
+      - ./.base44/preview:/preview:ro
+      - ./build-output:/out
+      - gradle-home:/gradle
+    environment:
+      GRADLE_USER_HOME: /gradle
+    command:
+      - bash
+      - -ec
+      - |
+        # 0. Start serving the status page FIRST. Port 3000 must answer from the
+        #    very first seconds: the from-source build below takes minutes, and a
+        #    port that stays silent until it finishes reads as "the app failed to
+        #    start" — to the preview and to the platform's health check. The page
+        #    probes for the APK itself and says "build still running" until then.
+        #    Stale artifacts from a previous run are removed so a failed build can
+        #    never be reported as a ready one.
+        mkdir -p /out
+        rm -f /out/NeonEQ-debug.apk /out/dsp-test.log /out/build.log
+        rm -rf /out/tests
+        cp /preview/index.html /out/index.html
+        # `$$` escapes Compose interpolation — without it Compose substitutes the
+        # shell's own variables away and the `wait` at the end gets an empty pid.
+        python3 -m http.server 80 --directory /out &
+        SERVER_PID=$$!
+        # `set -e` aborts on any failure below and this trap takes the server down
+        # with it, so a broken build exits non-zero (restart: on-failure) instead
+        # of serving a healthy-looking page forever.
+        trap 'kill "$$SERVER_PID" 2>/dev/null || true' EXIT
+
+        # 1. Native DSP host self-test — the project's own regression gate.
+        #    Compiles the REAL production DSP (the harness #includes neondsp.cpp)
+        #    under ASan+UBSan and asserts the engine stays finite and bounded.
+        set -o pipefail
+        g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+          -I tools/dspharness -I . tools/dspharness/harness.cpp \
+          -o /tmp/dsp_harness -lpthread
+        /tmp/dsp_harness 2>&1 | tee /out/dsp-test.log
+
+        # 2. Build the app from source: JVM unit tests, then the debug APK.
+        chmod +x gradlew
+        ./gradlew :app:testDebugUnitTest :app:assembleDebug \
+          --no-daemon --console=plain > /out/build.log 2>&1
+        cp app/build/outputs/apk/debug/app-debug.apk /out/NeonEQ-debug.apk
+        cp -r app/build/reports/tests/testDebugUnitTest /out/tests
+
+        # 3. The APK is in place, so the status page now reports "ready to install".
+        echo "artifacts ready — serving on :80"
+        wait "$$SERVER_PID"
+    healthcheck:
+      # The served page is what the preview consumes, so probe that over HTTP.
+      # The server is up within seconds (step 0), so only a short grace is needed.
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    restart: on-failure
+
+volumes:
+  gradle-home:
