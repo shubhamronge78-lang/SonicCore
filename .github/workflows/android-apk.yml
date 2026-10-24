@@ -20,33 +20,32 @@ jobs:
         java-version: "17"
         distribution: "temurin"
 
-    # The runner image already ships the Android SDK, so the packages this
-    # project needs are installed with its own sdkmanager.
+    # android-actions/setup-android@v3 accepts exactly four inputs —
+    # cmdline-tools-version, accept-android-sdk-licenses,
+    # log-accepted-android-sdk-licenses and packages
+    # (https://github.com/android-actions/setup-android/blob/v3/action.yml).
     #
-    # android-actions/setup-android@v3 is deliberately NOT used: it always runs
-    # `sdkmanager tools`, and `tools` no longer exists in the runner's
-    # cmdline-tools 16, so the action exits 1 with
+    # This step used to pass `api-level`, `build-tools` and `ndk`. None of those
+    # inputs exist, so they were ignored and the action fell back to its default
+    # `packages: "tools platform-tools"`; `sdkmanager tools` fails on the
+    # runner's cmdline-tools 16, where the `tools` package was removed, and the
+    # action treats that as fatal:
     #   Warning: Failed to find package 'tools'
     #   Error: The process '.../sdkmanager' failed with exit code 1
-    # which is what broke every run of this workflow on main (runs 40070746189
-    # and 40071309858). Installing the packages explicitly is also what the
-    # working build.yml relies on.
+    # That killed the workflow after ~21 s on every run (40070746189,
+    # 40071309858), before Gradle, the unit tests or the APK build ever ran.
+    #
+    # Passing the packages this project needs through `packages` is the fix:
+    # platform 34 + build-tools 34.0.0 for AGP 8.2.2, and NDK 25.1.8937393 +
+    # CMake 3.22.1 for the native DSP module. `accept-android-sdk-licenses`
+    # (default true) answers the licence prompts non-interactively, and the
+    # action installs the packages one by one, so a genuine SDK failure still
+    # fails the step instead of being swallowed.
     - name: Set up Android SDK and NDK
-      run: |
-        set -euo pipefail
-        SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-        if [ ! -x "$SDKMANAGER" ]; then
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
-        fi
-        test -n "$SDKMANAGER"
-        # `yes` closes the pipe early, so sdkmanager exits non-zero on SIGPIPE.
-        (yes | "$SDKMANAGER" --licenses > /dev/null) || true
-        "$SDKMANAGER" --install \
-          "platform-tools" \
-          "platforms;android-34" \
-          "build-tools;34.0.0" \
-          "ndk;25.1.8937393" \
-          "cmake;3.22.1"
+      uses: android-actions/setup-android@v3
+      with:
+        packages: "platform-tools platforms;android-34 build-tools;34.0.0 ndk;25.1.8937393 cmake;3.22.1"
+        accept-android-sdk-licenses: true
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3

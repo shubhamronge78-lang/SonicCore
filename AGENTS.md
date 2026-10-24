@@ -106,12 +106,26 @@ own and behave identically outside the sandbox. Specifically:
   binaries in git: `.gitattributes` routes most binary types through LFS but
   `.base44`-unrelated rule `.../android-eq/app/src/main/res/** -filter` exempts
   the resource tree, so AAPT can compile them.
-- The CI workflow `android-apk.yml` used to fail deterministically on `main`:
-  `android-actions/setup-android@v3` runs `sdkmanager tools`, and `tools` was
-  removed from the runner's cmdline-tools 16, so the action exited 1 before
-  anything was built (runs 40070746189 / 40071309858). It now installs
-  `platform-tools`, `platforms;android-34`, `build-tools;34.0.0`,
-  `ndk;25.1.8937393` and `cmake;3.22.1` directly with the runner's sdkmanager.
-  `build.yml` never used that action and always passed.
+- The CI workflow `android-apk.yml` used to fail deterministically on `main`
+  after ~21 s, at the SDK step, before Gradle ever ran. The step passed
+  `api-level`, `build-tools` and `ndk` to `android-actions/setup-android@v3`,
+  but v3 declares only `cmdline-tools-version`, `accept-android-sdk-licenses`,
+  `log-accepted-android-sdk-licenses` and `packages`; unknown inputs are
+  ignored, so the action fell back to its default
+  `packages: "tools platform-tools"` and ran `sdkmanager tools`. The `tools`
+  package no longer exists in the runner's cmdline-tools 16 and the action
+  treats that as fatal (`Warning: Failed to find package 'tools'` →
+  `Error: The process '.../sdkmanager' failed with exit code 1`), which is what
+  broke runs 40070746189 / 40071309858. The step now names the packages this
+  project needs through `packages`
+  (`platform-tools platforms;android-34 build-tools;34.0.0 ndk;25.1.8937393 cmake;3.22.1`)
+  with `accept-android-sdk-licenses: true`, so licences are accepted
+  non-interactively. `build.yml` never used that action and always passed.
+- `android-apk.yml` only triggers on pushes to `main` and on manual dispatch,
+  so pushing a feature branch produces **no** run. Validate a workflow change
+  here instead: parse it (`python3` + pyyaml), then run the same Gradle goals
+  the workflow runs (see "How to check it works"). Live run logs can be read
+  from this sandbox (`gh run list`, `gh run view <id> --log-failed`), which is
+  how the root cause above was confirmed.
 - The native DSP build needs NDK 25.1.8937393 and CMake 3.22.1 (AGP 8.2.2
   defaults); both come from the SDK, not from the host.
