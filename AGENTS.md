@@ -116,11 +116,17 @@ own and behave identically outside the sandbox. Specifically:
   package no longer exists in the runner's cmdline-tools 16 and the action
   treats that as fatal (`Warning: Failed to find package 'tools'` →
   `Error: The process '.../sdkmanager' failed with exit code 1`), which is what
-  broke runs 40070746189 / 40071309858. The step now names the packages this
-  project needs through `packages`
-  (`platform-tools platforms;android-34 build-tools;34.0.0 ndk;25.1.8937393 cmake;3.22.1`)
-  with `accept-android-sdk-licenses: true`, so licences are accepted
-  non-interactively. `build.yml` never used that action and always passed.
+  broke runs 40070746189 / 40071309858 / 40072560294. The action step now asks
+  only for `platform-tools` and accepts the licences non-interactively, and a
+  second step installs `platforms;android-34`, `build-tools;34.0.0`,
+  `ndk;25.1.8937393` and `cmake;3.22.1` with `sdkmanager --install` itself, so
+  the install command, its output and its exit code are visible in the log.
+  `build.yml` never used that action and always passed.
+- A workflow fix is only live on the branch that triggers it. The fix lived on
+  `fix-main-482fc2707b92` while `main` still had the broken YAML, and GitHub
+  takes the workflow file from the ref that runs — so re-dispatching the
+  workflow on `main` re-ran the old file and failed exactly the same way
+  (run 40072560294). Reach `main` (merge) before expecting a green run.
 - `android-apk.yml` only triggers on pushes to `main` and on manual dispatch,
   so pushing a feature branch produces **no** run. Validate a workflow change
   here instead: parse it (`python3` + pyyaml), then run the same Gradle goals
