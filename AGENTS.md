@@ -34,8 +34,10 @@ docker compose -f docker-compose.base44.yml up -d --build   # first boot
 docker compose -f docker-compose.base44.yml restart apk     # after a source edit
 ```
 
-The `apk` container exits when the build finishes (exit 0 on success); that is
-expected, not a crash. Read its one-line summary with
+The `apk` container builds, publishes the page and APK, then idles (`sleep
+infinity`) so the stack stays up. Its healthcheck waits for `/dist/index.html`
+plus the `/dist/.build-complete` marker the script writes when the build phase
+ends, so a long first compile does not flap. The one-line result is in
 `docker compose -f docker-compose.base44.yml logs apk`.
 
 A cold run takes roughly 5 minutes (SDK image build, Gradle distribution and

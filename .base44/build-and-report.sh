@@ -24,6 +24,8 @@ SDK=${ANDROID_SDK_ROOT:-/opt/android-sdk}
 CMAKE_PROP="-Pandroid.cmake.path=$SDK/cmake/3.22.1"
 
 mkdir -p "$DIST" "$WORK"
+# Marks a finished build; the compose healthcheck waits for this file.
+rm -f "$DIST/.build-complete"
 
 esc() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
@@ -200,3 +202,9 @@ cat > "$DIST/index.html" <<HTML
 HTML
 
 echo "preview page written to $DIST/index.html (harness=$HARNESS_RC tests=$TESTS_RC apk=$APK_RC)"
+
+# Mark the build as finished (success or failure) and stay alive: the service is
+# a long-running worker so the preview host and its healthcheck keep running.
+# Rebuild after a source edit with: docker compose ... restart apk
+printf 'harness=%s tests=%s apk=%s\n' "$HARNESS_RC" "$TESTS_RC" "$APK_RC" > "$DIST/.build-complete"
+exec sleep infinity

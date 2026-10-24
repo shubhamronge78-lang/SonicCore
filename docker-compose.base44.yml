@@ -5,9 +5,9 @@
 # tree and serves the resulting debug APK plus a build/test report on port 3000,
 # which is what the browser preview shows.
 #
-#   apk — one-shot build job: native DSP self-test, JVM unit tests, assembleDebug.
-#         Source is bind mounted, so restarting it rebuilds the current edit:
-#         docker compose -f docker-compose.base44.yml restart apk
+#   apk — build worker: native DSP self-test, JVM unit tests, assembleDebug, then
+#         idles. Source is bind mounted, so restarting it rebuilds the current
+#         edit: docker compose -f docker-compose.base44.yml restart apk
 #   web — nginx serving the build output on host port 3000.
 name: soniccore
 
@@ -28,7 +28,15 @@ services:
       - BASE44_PREVIEW_MODE
       - GRADLE_USER_HOME=/root/.gradle
     command: ["sh", "/workspace/.base44/build-and-report.sh"]
-    restart: "no"
+    restart: on-failure
+    healthcheck:
+      # Healthy once the build has published the preview page and finished
+      # (marker file). A cold build takes several minutes, hence start_period.
+      test: ["CMD-SHELL", "test -s /dist/index.html && test -f /dist/.build-complete"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 900s
 
   web:
     image: nginx:alpine
