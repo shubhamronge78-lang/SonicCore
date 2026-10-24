@@ -26,6 +26,16 @@ object ShizukuBridge {
         return isPackageInstalled(pm, SHIZUKU_PACKAGE_V3) || isPackageInstalled(pm, SHIZUKU_PACKAGE_MANAGER)
     }
 
+    /** Which Shizuku package is present, if any — used for honest status reporting. */
+    fun installedPackage(context: Context): String? {
+        val pm = context.packageManager
+        return when {
+            isPackageInstalled(pm, SHIZUKU_PACKAGE_V3) -> SHIZUKU_PACKAGE_V3
+            isPackageInstalled(pm, SHIZUKU_PACKAGE_MANAGER) -> SHIZUKU_PACKAGE_MANAGER
+            else -> null
+        }
+    }
+
     private fun isPackageInstalled(pm: PackageManager, packageName: String): Boolean {
         return try {
             pm.getPackageInfo(packageName, 0)

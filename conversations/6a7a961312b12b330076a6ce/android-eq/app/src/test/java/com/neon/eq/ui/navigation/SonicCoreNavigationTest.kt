@@ -30,6 +30,42 @@ class SonicCoreNavigationTest {
         assertFalse(SonicCoreDestination.CAPABILITIES.isPrimary)
         assertFalse(SonicCoreDestination.DEVICE_TOOLS.isPrimary)
         assertFalse(SonicCoreDestination.APP_MANAGER.isPrimary)
+        assertFalse(SonicCoreDestination.SHIZUKU.isPrimary)
+        assertFalse(SonicCoreDestination.CUSTOMIZATION.isPrimary)
+        assertFalse(SonicCoreDestination.PERMISSIONS.isPrimary)
+        assertFalse(SonicCoreDestination.SETTINGS.isPrimary)
+    }
+
+    @Test
+    fun everyPlannedPlatformCenterIsReachableFromNavigation() {
+        val destinations = SonicCoreDestination.consoleDestinations
+        // The seven centers named by the platform specification must each be a
+        // real, selectable destination — not a decorative card somewhere.
+        listOf(
+            SonicCoreDestination.DASHBOARD,
+            SonicCoreDestination.EQUALIZER,
+            SonicCoreDestination.DEVICE_TOOLS,
+            SonicCoreDestination.SHIZUKU,
+            SonicCoreDestination.CUSTOMIZATION,
+            SonicCoreDestination.DIAGNOSTICS,
+            SonicCoreDestination.SETTINGS
+        ).forEach { required ->
+            assertTrue("$required must be in the console navigation", destinations.contains(required))
+        }
+    }
+
+    @Test
+    fun everyDestinationHasUsableLabelsForTheDock() {
+        SonicCoreDestination.consoleDestinations.forEach { destination ->
+            assertTrue(destination.title.isNotBlank())
+            assertTrue(destination.subtitle.isNotBlank())
+            assertTrue(destination.icon.isNotBlank())
+            // The dock chip is 72dp wide at 10sp: a long label would be clipped.
+            assertTrue(
+                "${destination.label} is too long for the dock chip",
+                destination.label.length <= 8
+            )
+        }
     }
 
     @Test
@@ -44,14 +80,18 @@ class SonicCoreNavigationTest {
                 SonicCoreDestination.SESSIONS,
                 SonicCoreDestination.SIGNAL_PATH,
                 SonicCoreDestination.PRO_FX,
+                SonicCoreDestination.DEVICE_TOOLS,
+                SonicCoreDestination.SHIZUKU,
+                SonicCoreDestination.CUSTOMIZATION,
+                SonicCoreDestination.PERMISSIONS,
                 SonicCoreDestination.DIAGNOSTICS,
                 SonicCoreDestination.CAPABILITIES,
-                SonicCoreDestination.DEVICE_TOOLS,
-                SonicCoreDestination.APP_MANAGER
+                SonicCoreDestination.APP_MANAGER,
+                SonicCoreDestination.SETTINGS
             ),
             SonicCoreDestination.consoleDestinations
         )
-        assertEquals(12, SonicCoreDestination.consoleDestinations.size)
+        assertEquals(16, SonicCoreDestination.consoleDestinations.size)
         assertEquals("Pro FX", SonicCoreDestination.PRO_FX.title)
         assertEquals("Diagnostics", SonicCoreDestination.DIAGNOSTICS.title)
         assertEquals("Capabilities", SonicCoreDestination.CAPABILITIES.title)

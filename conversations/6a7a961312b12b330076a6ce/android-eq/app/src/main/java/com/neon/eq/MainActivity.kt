@@ -3789,6 +3789,69 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             )
         }
 
+        if (activeDestination == SonicCoreDestination.SHIZUKU) {
+            com.neon.eq.shizuku.ShizukuCenterScreen()
+        }
+
+        if (activeDestination == SonicCoreDestination.CUSTOMIZATION) {
+            com.neon.eq.ui.customization.CustomizationCenterScreen(
+                themes = Themes.ALL,
+                currentThemeId = appThemeState.value.id,
+                onThemeSelect = { theme -> appThemeState.value = theme },
+                onThemeApply = { theme ->
+                    appThemeState.value = theme
+                    try {
+                        context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                            .edit().putString("theme", theme.id).apply()
+                    } catch (_: Throwable) { }
+                },
+                glassLevel = appGlassState.value,
+                onGlassLevelChange = { level ->
+                    appGlassState.value = level
+                    try {
+                        context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                            .edit()
+                            .putString(GlassIntensityPreference.KEY, GlassIntensityPreference.serialize(level))
+                            .apply()
+                    } catch (_: Throwable) { }
+                },
+                appearanceMode = when (appModeState.value) {
+                    SurfaceModes.LIGHT -> "light"
+                    SurfaceModes.DARK -> "dark"
+                    else -> "system"
+                },
+                onAppearanceModeChange = { mode ->
+                    appModeState.value = SurfaceModes.byId(mode)
+                    try {
+                        context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                            .edit().putString("mode", mode).apply()
+                    } catch (_: Throwable) { }
+                },
+                onOpenFullSettings = { showSettings = true }
+            )
+        }
+
+        if (activeDestination == SonicCoreDestination.PERMISSIONS) {
+            com.neon.eq.ui.PermissionsPrivacyCenter()
+        }
+
+        if (activeDestination == SonicCoreDestination.SETTINGS) {
+            val versionLabel = remember {
+                try {
+                    context.packageManager
+                        .getPackageInfo(context.packageName, 0)
+                        .versionName ?: "Unknown"
+                } catch (_: Throwable) {
+                    "Unknown"
+                }
+            }
+            com.neon.eq.ui.settings.SettingsHubScreen(
+                appVersion = versionLabel,
+                onOpenFullSettings = { showSettings = true },
+                onNavigate = { openSecondaryDestination(it) }
+            )
+        }
+
 
         Spacer(Modifier.height(24.dp))
         }
