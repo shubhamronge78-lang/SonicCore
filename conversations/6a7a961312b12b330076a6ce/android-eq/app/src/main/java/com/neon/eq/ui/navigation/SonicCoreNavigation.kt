@@ -187,12 +187,15 @@ object SonicCoreToolRegistry {
         tool("audio.output", SonicCoreCategory.AUDIO, "Output & Signal Path",
             "Detected output route, pipeline stages and measured processing status",
             "↗", SonicCoreDestination.SIGNAL_PATH, "route latency stage pipeline"),
-        tool("audio.profx", SonicCoreCategory.AUDIO, "Pro FX",
-            "Noise gate and limiter controls with their measured effect",
-            "✦", SonicCoreDestination.PRO_FX, "noise gate limiter threshold dynamics"),
         tool("audio.diagnostics", SonicCoreCategory.AUDIO, "Audio Diagnostics",
             "Audio session state, available counters, errors and report export",
             "⚑", null, "session counters underrun clip export report"),
+        tool("audio.sessions", SonicCoreCategory.AUDIO, "Capture Sessions",
+            "Recorded session records, their verdicts, comparison and per-app profiles",
+            "▤", SonicCoreDestination.SESSIONS, "session history compare app profile verdict"),
+        tool("audio.profx", SonicCoreCategory.AUDIO, "Pro FX",
+            "Noise gate and limiter controls on the capture pipeline",
+            "✦", SonicCoreDestination.PRO_FX, "gate limiter dynamics threshold"),
 
         // ── DEVICE CENTER ──
         tool("device.overview", SonicCoreCategory.DEVICE, "Device Overview",
@@ -222,6 +225,18 @@ object SonicCoreToolRegistry {
         tool("device.health", SonicCoreCategory.DEVICE, "Device Health Summary",
             "Consolidated health checks with restricted and unavailable data labelled",
             "✚", null, "health summary report redacted"),
+        tool("device.diagnostics", SonicCoreCategory.DEVICE, "Device Diagnostics",
+            "Full diagnostics console: memory, battery, thermal, services and report export",
+            "⚙", SonicCoreDestination.DIAGNOSTICS, "diagnostics console report thermal services"),
+        tool("device.capabilities", SonicCoreCategory.DEVICE, "Capability Registry",
+            "Every declared capability with its real support state and restriction",
+            "✓", SonicCoreDestination.CAPABILITIES, "capability registry support restriction"),
+        tool("device.tools", SonicCoreCategory.DEVICE, "System Audio Shortcuts",
+            "Platform audio, equalizer and output settings that affect SonicCore",
+            "🛠", SonicCoreDestination.DEVICE_TOOLS, "system audio settings shortcut"),
+        tool("device.apps", SonicCoreCategory.DEVICE, "App Manager & Profiles",
+            "Installed apps, package visibility and per-app preset profiles",
+            "㗊", SonicCoreDestination.APP_MANAGER, "apps packages per-app profile"),
 
         // ── SHIZUKU CENTER ──
         tool("shizuku.connection", SonicCoreCategory.SHIZUKU, "Connection Status",
@@ -242,6 +257,9 @@ object SonicCoreToolRegistry {
         tool("shizuku.troubleshooting", SonicCoreCategory.SHIZUKU, "Troubleshooting",
             "Failure codes mapped to causes, with what each one would actually need",
             "⚠", null, "failure error code cause restricted"),
+        tool("shizuku.console", SonicCoreCategory.SHIZUKU, "Elevated Bridge Console",
+            "Bridge state, the whole operation registry and recent results on one screen",
+            "⌸", SonicCoreDestination.SHIZUKU, "console binder registry results elevated"),
 
         // ── CUSTOMIZATION ──
         tool("custom.themes", SonicCoreCategory.CUSTOMIZE, "Theme Gallery",
@@ -318,10 +336,19 @@ object SonicCoreToolRegistry {
 
     private val byId: Map<String, SonicCoreTool> = all.associateBy { it.id }
 
+    /** The tool that renders [destination], or null when no tool owns it. */
+    private val byDestination: Map<SonicCoreDestination, SonicCoreTool> =
+        all.mapNotNull { tool -> tool.destination?.let { it to tool } }.toMap()
+
     fun forCategory(category: SonicCoreCategory): List<SonicCoreTool> =
         all.filter { it.category == category }
 
     fun find(id: String): SonicCoreTool? = byId[id]
+
+    fun firstFor(destination: SonicCoreDestination): SonicCoreTool? = byDestination[destination]
+
+    /** Tools that have no dedicated screen of their own. */
+    fun withoutDestination(): List<SonicCoreTool> = all.filter { it.destination == null }
 
     /** Case-insensitive search across every category — never flattens the tree. */
     fun search(query: String): List<SonicCoreTool> {

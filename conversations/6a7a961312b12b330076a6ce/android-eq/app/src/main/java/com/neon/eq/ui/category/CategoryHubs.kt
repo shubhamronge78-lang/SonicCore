@@ -51,7 +51,6 @@ import com.neon.eq.ui.navigation.SonicCoreCategory
 import com.neon.eq.ui.navigation.SonicCoreTool
 import com.neon.eq.ui.navigation.SonicCoreToolRegistry
 import com.neon.eq.ui.navigation.color
-import rikka.shizuku.Shizuku
 
 /** Shared data the category hubs need from the host screen. */
 data class CategoryHubHost(
@@ -101,10 +100,7 @@ fun ToolCapabilityResolver(category: SonicCoreCategory): (SonicCoreTool) -> Soni
             runCatching { PermissionCenter.probe(context) }.getOrDefault(emptyList())
         } else emptyList()
         val deniedCount = permissionEntries.count { it.state == com.neon.eq.permissions.PermissionState.DENIED }
-        // The resolver is declared as a typed local, then returned: a bare lambda
-        // as the last expression of `remember { … }` is parsed as a second trailing
-        // lambda argument and does not compile.
-        val resolver: (SonicCoreTool) -> SonicCoreCapability = { tool ->
+        val resolve: (SonicCoreTool) -> SonicCoreCapability = { tool ->
             when {
                 tool.id.startsWith("shizuku.") -> when (shizukuState) {
                     ShizukuState.CONNECTED -> SonicCoreCapability.AVAILABLE
@@ -118,7 +114,7 @@ fun ToolCapabilityResolver(category: SonicCoreCategory): (SonicCoreTool) -> Soni
                 else -> SonicCoreCapability.AVAILABLE
             }
         }
-        resolver
+        resolve
     }
 }
 
@@ -342,11 +338,11 @@ private fun ShizukuCategoryHub(
     }
 
     DisposableEffect(Unit) {
-        val received = Shizuku.OnBinderReceivedListener {
+        val received = rikka.shizuku.Shizuku.OnBinderReceivedListener {
             state = runCatching { ShizukuBridge.checkState(context) }.getOrDefault(state)
             environment = runCatching { ShizukuBridge.environment(context) }.getOrNull()
         }
-        val dead = Shizuku.OnBinderDeadListener {
+        val dead = rikka.shizuku.Shizuku.OnBinderDeadListener {
             state = runCatching { ShizukuBridge.checkState(context) }.getOrDefault(state)
             environment = runCatching { ShizukuBridge.environment(context) }.getOrNull()
         }
@@ -434,7 +430,7 @@ private fun ShizukuCategoryHub(
             }
             LimitNote(
                 "SonicCore performs read-only elevated diagnostics only. It never writes secure settings, grants permissions or reroutes audio through Shizuku.",
-                SonicCoreCategory.SHIZUKU.tone
+                tone.tone
             )
         }
         ToolList(SonicCoreCategory.SHIZUKU, onToolClick, capabilityFor, "SHIZUKU WORKSPACE")
@@ -506,7 +502,7 @@ private fun CustomizationCategoryHub(
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .clickable {
-                                AppearanceState.setAccent(accent)
+                                AppearanceState.accent = accent
                                 AppearanceState.save(context)
                             }
                             .semantics { contentDescription = "Accent ${accent.label}" }

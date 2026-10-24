@@ -146,9 +146,20 @@ import com.neon.eq.ui.home.HomeQuickPresetSection
 import com.neon.eq.ui.home.HomeResponsiveColumns
 import com.neon.eq.ui.home.HomeSpectrumCard
 import com.neon.eq.ui.home.HomeTopBar
+import com.neon.eq.ui.category.CategoryHubHost
+import com.neon.eq.ui.category.SonicCoreCategoryHub
+import com.neon.eq.ui.category.SonicCoreToolHost
+import com.neon.eq.ui.home.SonicCoreHomeScreen
+import com.neon.eq.ui.home.rememberLiveAudioSummary
 import com.neon.eq.ui.navigation.SonicCoreBottomNavigation
+import com.neon.eq.ui.navigation.SonicCoreBreadcrumbHeader
 import com.neon.eq.ui.navigation.SonicCoreDestination
-import com.neon.eq.ui.navigation.SonicCoreScreenHeader
+import com.neon.eq.ui.navigation.SonicCoreNavState
+import com.neon.eq.ui.navigation.SonicCoreNavigator
+import com.neon.eq.ui.navigation.SonicCoreToolScreen
+import com.neon.eq.diagnostics.LocalDataStore
+import com.neon.eq.diagnostics.OperationLog
+import androidx.compose.runtime.saveable.Saver
 
 private const val UI_PREFS = "ui_prefs"
 
@@ -237,7 +248,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             NeonEQTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    EqualizerScreen(engine)
+                    SonicCoreNavHost(engine)
                 }
             }
         }
@@ -518,8 +529,36 @@ fun NeonEQTheme(content: @Composable () -> Unit) {
     )
 }
 
+/**
+ * Survives process death as one encoded string: `home`, `cat:AUDIO`,
+ * `tool:audio.equalizer` — see [SonicCoreNavState].
+ */
+private val navStateSaver: Saver<SonicCoreNavState, String> = Saver(
+    save = { it.encode() },
+    restore = { encoded -> SonicCoreNavState.decode(encoded) }
+)
+
+/**
+ * Root navigation host of the SonicCore launcher.
+ *
+ * This is what `MainActivity` starts: it owns the six-category navigation stack
+ * ([SonicCoreNavState]) and the system back handling, and renders the launcher
+ * screen with that navigation — Home (the SonicCore home screen), a category
+ * hub, or one tool inside a category. Nothing else in the app holds navigation
+ * state, so back always walks tool → hub → Home and never leaves the app on a
+ * screen it cannot return from.
+ */
 @Composable
-fun EqualizerScreen(engine: EqualizerEngine) {
+fun SonicCoreNavHost(engine: EqualizerEngine) {
+    var navState by rememberSaveable(stateSaver = navStateSaver) {
+        mutableStateOf(SonicCoreNavState())
+    }
+    val navigator = SonicCoreNavigator(navState) { next -> navState = next }
+    EqualizerScreen(engine = engine, navigation = navigator)
+}
+
+@Composable
+fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -740,20 +779,89 @@ fun EqualizerScreen(engine: EqualizerEngine) {
     var spHold by remember { mutableStateOf(FloatArray(48)) }
     // FOCUS EQ is an EQ-only presentation mode; destination navigation is separate.
     var focusEq by remember { mutableStateOf(false) }
-    var activeDestination by rememberSaveable {
-        mutableStateOf(SonicCoreDestination.DASHBOARD)
+    // Home's own search field. Typing never navigates; picking a result does.
+    var homeSearch by rememberSaveable { mutableStateOf("") }
+    // Limited mode is a device-wide fact, so it is polled once for every screen.
+    var limitedNow by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            limitedNow = engine.limitedMode()
+            delay(2000)
+        }
     }
-    var secondaryReturnDestination by rememberSaveable {
-        mutableStateOf(SonicCoreDestination.DASHBOARD)
-    }
-    fun openSecondaryDestination(destination: SonicCoreDestination) {
-        secondaryReturnDestination = activeDestination
-        activeDestination = destination
+
+    // Navigation is owned by SonicCoreNavHost; this screen only reads it and
+    // asks the host to move. `navState` is the state of the current frame.
+    val navState = navigation.state
+    val activeTool = navState.tool
+
+    /** True when [destination] is the tool that is currently open. */
+    fun toolTargets(destination: SonicCoreDestination): Boolean =
+        activeTool?.destination == destination
+
+    /** Opens the tool that owns [destination] — see [SonicCoreToolRegistry]. */
+    fun openDestination(destination: SonicCoreDestination) {
         focusEq = false
+        navigation.openDestination(destination)
     }
-    BackHandler(enabled = !activeDestination.isPrimary && !showSettings) {
-        activeDestination = secondaryReturnDestination
+
+    /** Cycles light/dark and persists it, without rebuilding the theme table. */
+    fun cycleMode() {
+        val next = if (appModeState.value != SurfaceModes.LIGHT) SurfaceModes.LIGHT else SurfaceModes.DARK
+        appModeState.value = next
+        try {
+            context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                .edit().putString("mode", if (next == SurfaceModes.LIGHT) "light" else "dark").apply()
+        } catch (_: Throwable) { }
     }
+
+    /** Applies and persists the glass intensity (rendering only). */
+    fun applyGlassLevel(level: Int) {
+        appGlassState.value = level
+        try {
+            context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(GlassIntensityPreference.KEY, GlassIntensityPreference.serialize(level))
+                .apply()
+        } catch (_: Throwable) { }
+    }
+
+    /** Applies and persists a theme from the built-in gallery. */
+    fun applyTheme(theme: NeonTheme) {
+        appThemeState.value = theme
+        try {
+            context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                .edit().putString("theme", theme.id).apply()
+        } catch (_: Throwable) { }
+    }
+
+    /**
+     * Imports a preset bundle produced by [buildPresetJson]. Out-of-range values
+     * are clamped, malformed input is rejected and changes nothing. Returns the
+     * number of presets saved — 1 on success, 0 when nothing was imported.
+     */
+    fun importPresetJson(json: String): Int = try {
+        val o = JSONObject(json.trim())
+        require(o.optInt("neoneq_preset", 0) == 1) { "not a SonicCore preset" }
+        val arr = o.getJSONArray("levels")
+        require(arr.length() in 10..31) { "bad band count" }
+        val lv = ShortArray(31) { i -> (if (i < arr.length()) arr.optInt(i) else 0).coerceIn(-15, 20).toShort() }
+        val name = "Imported " + java.text.SimpleDateFormat("HHmm", java.util.Locale.ROOT)
+            .format(java.util.Date())
+        engine.saveCustomPreset(
+            name,
+            lv,
+            o.optInt("bassBoost", 0).coerceIn(0, 300),
+            o.optInt("virtualizer", 0).coerceIn(0, 300),
+            o.optInt("loudness", 0).coerceIn(0, 300)
+        )
+        customPresets = engine.listCustomPresets()
+        1
+    } catch (_: Throwable) {
+        0
+    }
+
+    BackHandler(enabled = !navState.isHome && !showSettings) { navigation.back() }
     var spSmoothAmt by remember { mutableStateOf(when (favPrefs.getInt("an_smooth", 1)) { 0 -> 0.35f; 2 -> 0.75f; else -> 0.55f }) }
     var spFrozen by remember { mutableStateOf(false) }
     var presetFavs by remember { mutableStateOf(favPrefs.getStringSet("preset_favs", emptySet<String>()) ?: emptySet()) }
@@ -851,6 +959,13 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         } catch (_: Throwable) { false }
     }
 
+    // The installed version string, shown by Settings and the About tool.
+    val appVersion = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "Unknown"
+        } catch (_: Throwable) { "Unknown" }
+    }
+
     val mainContent = remember { movableContentOf {
     Column(
         modifier = Modifier.fillMaxSize().background(Color.Transparent),
@@ -864,23 +979,135 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-        var limitedNow by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            while (true) {
-                limitedNow = engine.limitedMode()
-                delay(2000)
-            }
-        }
-        if (activeDestination != SonicCoreDestination.DASHBOARD) {
-            SonicCoreScreenHeader(
-                destination = activeDestination,
-                onSettingsClick = { showSettings = true },
-                onBackClick = if (activeDestination.isPrimary) null else {
-                    { activeDestination = secondaryReturnDestination }
-                }
+        // ── Navigation chrome: a breadcrumb on every screen but Home ──
+        val hubCategory = navState.category
+        if (hubCategory != null) {
+            SonicCoreBreadcrumbHeader(
+                category = hubCategory,
+                tool = activeTool,
+                onBack = { navigation.back() }
             )
         }
-        if (activeDestination == SonicCoreDestination.DASHBOARD) {
+
+        // Measured audio state, shared by Home, the hubs and Live Overview.
+        val liveAudioSummary = rememberLiveAudioSummary(
+            engineEnabled = enabled,
+            limitedMode = limitedNow,
+            active = navState.isHome || navState.onCategoryHub ||
+                toolTargets(SonicCoreDestination.AUDIO_OVERVIEW),
+            routeName = outputUi.activeName
+        )
+
+        // Everything a category tool screen is allowed to observe or trigger.
+        // Tool screens never touch the engine directly — they call these.
+        val toolHost = SonicCoreToolHost(
+            appVersion = appVersion,
+            audioSummary = liveAudioSummary,
+            currentPreset = selectedPreset,
+            builtinPresetNames = Presets.presets.map { it.name },
+            customPresetNames = customPresets.map { it.name },
+            presetsExportJson = { buildPresetJson() },
+            onImportPresets = { json -> importPresetJson(json) },
+            onApplyPreset = { name -> tryApplyPresetByName(name) },
+            onSaveCustomPreset = { name ->
+                engine.saveCustomPreset(
+                    name,
+                    ShortArray(31) { i ->
+                        round(bandLevels.getOrElse(i) { 0f }).toInt().coerceIn(-15, 20).toShort()
+                    },
+                    bassBoost, virtualizer, loudness
+                )
+                customPresets = engine.listCustomPresets()
+            },
+            onDeleteCustomPreset = { name ->
+                engine.deleteCustomPreset(name)
+                customPresets = engine.listCustomPresets()
+            },
+            glassLevel = appGlassState.value,
+            onGlassLevelChange = { level -> applyGlassLevel(level) },
+            themes = Themes.ALL,
+            currentThemeId = appThemeState.value.id,
+            // The host speaks in theme ids — resolve to the theme it names.
+            onThemeApply = { id -> applyTheme(Themes.byId(id)) },
+            operationLogSize = { OperationLog.snapshot().size },
+            onClearOperationLog = { OperationLog.clear() },
+            sessionHistorySize = { LocalDataStore.sessionCount(context) },
+            onClearSessionHistory = { LocalDataStore.clearSessions(context) },
+            locallyStoredBytes = { LocalDataStore.locallyStoredBytes(context) },
+            onOpenFullSettings = { showSettings = true },
+            onShareText = { title, text ->
+                runCatching {
+                    context.startActivity(
+                        Intent.createChooser(
+                            Intent(Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_SUBJECT, title)
+                                .putExtra(Intent.EXTRA_TEXT, text),
+                            title
+                        )
+                    )
+                }
+            },
+            onNavigate = { destination -> openDestination(destination) }
+        )
+
+        // ── HOME: the six categories ──
+        if (navState.isHome) {
+            SonicCoreHomeScreen(
+                summary = liveAudioSummary,
+                onCategoryClick = { navigation.openCategory(it) },
+                onToolClick = { navigation.openTool(it) },
+                onToggleEngine = {
+                    val next = !enabled
+                    enabled = next
+                    engine.setEnabled(next)
+                    if (context is MainActivity) context.onEnabledToggled(next)
+                },
+                onToggleBypass = { CaptureEqService.bypass = !CaptureEqService.bypass },
+                onSettingsClick = { showSettings = true },
+                onModeToggle = { cycleMode() },
+                modeLabel = when (appModeState.value) {
+                    SurfaceModes.DARK -> "☾"
+                    SurfaceModes.LIGHT -> "☀"
+                    else -> "◐"
+                },
+                searchQuery = homeSearch,
+                onSearchChange = { homeSearch = it }
+            )
+        }
+
+        // ── CATEGORY HUB: the tools inside one category ──
+        if (navState.onCategoryHub && hubCategory != null) {
+            SonicCoreCategoryHub(
+                category = hubCategory,
+                host = CategoryHubHost(
+                    audioSummary = liveAudioSummary,
+                    appVersion = appVersion,
+                    glassLevel = appGlassState.value,
+                    onGlassLevelChange = { level -> applyGlassLevel(level) },
+                    themes = Themes.ALL,
+                    currentThemeId = appThemeState.value.id,
+                    // The hub host speaks in theme ids — resolve to the theme it names.
+                    onThemeApply = { id -> applyTheme(Themes.byId(id)) },
+                    onToggleEngine = {
+                        val next = !enabled
+                        enabled = next
+                        engine.setEnabled(next)
+                        if (context is MainActivity) context.onEnabledToggled(next)
+                    },
+                    onOpenFullSettings = { showSettings = true }
+                ),
+                onToolClick = { navigation.openTool(it) }
+            )
+        }
+
+        // ── TOOL SCREEN: tools with a screen of their own ──
+        if (activeTool != null && activeTool.destination == null) {
+            SonicCoreToolScreen(tool = activeTool, host = toolHost)
+        }
+
+        // ── TOOL BODIES: tools that reuse a full-screen implementation ──
+        if (toolTargets(SonicCoreDestination.AUDIO_OVERVIEW)) {
         // Build #100: limited-mode banner — when the device's audio policy
         // blocks the EQ engine entirely (Vivo V2553: Error -3), say it plainly
         // instead of letting the EQ silently look broken. Loudness still
@@ -930,8 +1157,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             onDispose { homeLifecycleOwner.lifecycle.removeObserver(observer) }
         }
         var homeTick by remember { mutableStateOf(0) }
-        LaunchedEffect(activeDestination, homeIsResumed) {
-            if (activeDestination == SonicCoreDestination.DASHBOARD && homeIsResumed) {
+        LaunchedEffect(homeIsResumed) {
+            if (homeIsResumed) {
                 while (true) {
                     delay(1000)
                     homeTick++
@@ -956,17 +1183,16 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         )
         var meterTick by remember { mutableStateOf(0) }
         var meterLevels by remember { mutableStateOf(MeterLevels.silent()) }
-        LaunchedEffect(activeDestination, homeIsResumed) {
-            if (activeDestination == SonicCoreDestination.DASHBOARD && homeIsResumed) {
+        LaunchedEffect(homeIsResumed) {
+            if (homeIsResumed) {
                 while (true) {
                     delay(120)
                     meterTick++
                 }
             }
         }
-        LaunchedEffect(meterTick, activeDestination, homeIsResumed, hasCurrentSignalPath) {
+        LaunchedEffect(meterTick, homeIsResumed, hasCurrentSignalPath) {
             if (
-                activeDestination == SonicCoreDestination.DASHBOARD &&
                 homeIsResumed &&
                 meterTick > 0 &&
                 hasCurrentSignalPath &&
@@ -984,7 +1210,6 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 }
                 meterLevels = computeMeterLevels(values, meterLevels.peaks)
             } else if (
-                activeDestination != SonicCoreDestination.DASHBOARD ||
                 !homeIsResumed ||
                 !hasCurrentSignalPath
             ) {
@@ -1279,10 +1504,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                         },
                         secondary = {
                             HomeQuickActions(
-                                onEq = {
-                                    focusEq = false
-                                    activeDestination = SonicCoreDestination.EQUALIZER
-                                },
+                                onEq = { openDestination(SonicCoreDestination.EQUALIZER) },
                                 onDsp = { CaptureEqService.bypass = !CaptureEqService.bypass },
                                 onAb = { CaptureEqService.bypass = !CaptureEqService.bypass },
                                 onReset = { showResetDialog = true },
@@ -1398,7 +1620,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.EQUALIZER) {
+        if (toolTargets(SonicCoreDestination.EQUALIZER)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
@@ -1410,10 +1632,9 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(T.accent.copy(alpha = 0.12f))
-                    .clickable {
-                        secondaryReturnDestination = SonicCoreDestination.EQUALIZER
-                        activeDestination = SonicCoreDestination.SESSIONS
-                    }
+                    // Push the session tool on top of the EQ tool: back returns
+                    // here, which is what the old secondary-return pair meant.
+                    .clickable { openDestination(SonicCoreDestination.SESSIONS) }
                     .padding(horizontal = 12.dp, vertical = 8.dp)
                     .semantics { contentDescription = "Open saved session history" }
             )
@@ -2077,10 +2298,8 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         } // tab guard
         }
 
-        if (activeDestination != SonicCoreDestination.DASHBOARD &&
-            activeDestination != SonicCoreDestination.EQUALIZER
-        ) {
-        if (activeDestination == SonicCoreDestination.PLAYER) {
+        if (activeTool?.destination != null) {
+        if (toolTargets(SonicCoreDestination.PLAYER)) {
         // ── Build #110: VISUALIZER on the main screen — system capture when
         // the device allows it, software-player capture when it doesn't ──
         NeonCard {
@@ -2401,7 +2620,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.DSP_FX) {
+        if (toolTargets(SonicCoreDestination.DSP_FX)) {
         // ── Build #123: DSP STUDIO — master control + visual processing chain ──
         NeonCard {
             GradientText("DSP ENGINE", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -2702,7 +2921,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.SYSTEM_CAPTURE) {
+        if (toolTargets(SonicCoreDestination.SYSTEM_CAPTURE)) {
         // ── Build #117: SYSTEM CAPTURE — CAPTURE MODE with honest A/B ──
         NeonCard {
             GradientText("SYSTEM CAPTURE", 11.sp, Brush.horizontalGradient(listOf(T.secondary, T.accent)))
@@ -2880,7 +3099,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.SESSIONS) {
+        if (toolTargets(SonicCoreDestination.SESSIONS)) {
         // ── Build #121: SESSIONS — local history from the recorded session log ──
         NeonCard {
             GradientText("SESSIONS", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.secondary)))
@@ -2972,7 +3191,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.SIGNAL_PATH) {
+        if (toolTargets(SonicCoreDestination.SIGNAL_PATH)) {
         // ── Build #119: SIGNAL PATH — measured, stage-by-stage, never inferred ──
         NeonCard {
             GradientText("SIGNAL PATH", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.accent)))
@@ -3191,7 +3410,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.SESSIONS) {
+        if (toolTargets(SonicCoreDestination.SESSIONS)) {
         // ── EQ PRESETS — the single canonical preset manager ──
         // Consolidated in Build #129: exactly one preset section exists — here.
         // State lives at top level; storage is unchanged (same prefs, same
@@ -3401,7 +3620,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         Spacer(Modifier.height(16.dp))
         }
 
-        if (activeDestination == SonicCoreDestination.PRO_FX) {
+        if (toolTargets(SonicCoreDestination.PRO_FX)) {
         // Pro FX uses the existing effect state and engine callbacks.
         NeonCard {
             GradientText("PRO FX", 11.sp, Brush.horizontalGradient(listOf(T.accent, T.primary)))
@@ -3444,7 +3663,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.SIGNAL_PATH) {
+        if (toolTargets(SonicCoreDestination.SIGNAL_PATH)) {
         Spacer(Modifier.height(16.dp))
         // ── Build #130: ANALYZER — shared state with the SPECTRUM card ──
         NeonCard {
@@ -3698,7 +3917,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
 
         }
 
-        if (activeDestination == SonicCoreDestination.SESSIONS) {
+        if (toolTargets(SonicCoreDestination.SESSIONS)) {
         NeonCard {
             GradientText("APP PROFILES", 11.sp, Brush.horizontalGradient(listOf(T.primary, T.secondary)))
             Spacer(Modifier.height(6.dp))
@@ -3762,19 +3981,19 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             }
         }
 
-        if (activeDestination == SonicCoreDestination.DIAGNOSTICS) {
+        if (toolTargets(SonicCoreDestination.DIAGNOSTICS)) {
             com.neon.eq.diagnostics.DeviceDiagnosticsScreen()
         }
 
-        if (activeDestination == SonicCoreDestination.CAPABILITIES) {
+        if (toolTargets(SonicCoreDestination.CAPABILITIES)) {
             com.neon.eq.capabilities.CapabilityRegistryScreen()
         }
 
-        if (activeDestination == SonicCoreDestination.DEVICE_TOOLS) {
+        if (toolTargets(SonicCoreDestination.DEVICE_TOOLS)) {
             com.neon.eq.tools.DeviceToolsScreen()
         }
 
-        if (activeDestination == SonicCoreDestination.APP_MANAGER) {
+        if (toolTargets(SonicCoreDestination.APP_MANAGER)) {
             com.neon.eq.apps.AppManagerScreen(
                 currentlyPlayingPackage = playingApp,
                 perAppProfiles = appProfiles,
@@ -3789,11 +4008,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             )
         }
 
-        if (activeDestination == SonicCoreDestination.SHIZUKU) {
+        if (toolTargets(SonicCoreDestination.SHIZUKU)) {
             com.neon.eq.shizuku.ShizukuCenterScreen()
         }
 
-        if (activeDestination == SonicCoreDestination.CUSTOMIZATION) {
+        if (toolTargets(SonicCoreDestination.CUSTOMIZATION)) {
             com.neon.eq.ui.customization.CustomizationCenterScreen(
                 themes = Themes.ALL,
                 currentThemeId = appThemeState.value.id,
@@ -3831,11 +4050,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             )
         }
 
-        if (activeDestination == SonicCoreDestination.PERMISSIONS) {
+        if (toolTargets(SonicCoreDestination.PERMISSIONS)) {
             com.neon.eq.ui.PermissionsPrivacyCenter()
         }
 
-        if (activeDestination == SonicCoreDestination.SETTINGS) {
+        if (toolTargets(SonicCoreDestination.SETTINGS)) {
             val versionLabel = remember {
                 try {
                     context.packageManager
@@ -3848,7 +4067,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
             com.neon.eq.ui.settings.SettingsHubScreen(
                 appVersion = versionLabel,
                 onOpenFullSettings = { showSettings = true },
-                onNavigate = { openSecondaryDestination(it) }
+                onNavigate = { openDestination(it) }
             )
         }
 
@@ -3857,11 +4076,11 @@ fun EqualizerScreen(engine: EqualizerEngine) {
         }
         }
         }
+        // The dock selects one of the six categories, never an internal tool.
         SonicCoreBottomNavigation(
-            selected = activeDestination,
-            onSelect = {
-                if (!it.isPrimary) secondaryReturnDestination = activeDestination
-                activeDestination = it
+            selected = navState.category,
+            onSelect = { category ->
+                navigation.openCategory(category)
                 focusEq = false
             },
             landscape = LocalConfiguration.current.orientation ==
@@ -4983,7 +5202,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(S.cardDeep)
                                 .clickable {
-                                    openSecondaryDestination(SonicCoreDestination.SIGNAL_PATH)
+                                    openDestination(SonicCoreDestination.SIGNAL_PATH)
                                     showSettings = false
                                 }
                                 .semantics { contentDescription = "Open measured Signal Path diagnostics" }
@@ -5002,7 +5221,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(S.cardDeep)
                                 .clickable {
-                                    openSecondaryDestination(SonicCoreDestination.SYSTEM_CAPTURE)
+                                    openDestination(SonicCoreDestination.SYSTEM_CAPTURE)
                                     showSettings = false
                                 }
                                 .semantics { contentDescription = "Open system capture controls" }
@@ -5040,7 +5259,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(S.cardDeep)
                                 .clickable {
-                                    openSecondaryDestination(SonicCoreDestination.DIAGNOSTICS)
+                                    openDestination(SonicCoreDestination.DIAGNOSTICS)
                                     showSettings = false
                                 }
                                 .semantics { contentDescription = "Open Device Diagnostics" }
@@ -5059,7 +5278,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(S.cardDeep)
                                 .clickable {
-                                    openSecondaryDestination(SonicCoreDestination.CAPABILITIES)
+                                    openDestination(SonicCoreDestination.CAPABILITIES)
                                     showSettings = false
                                 }
                                 .semantics { contentDescription = "Open Capability Registry" }
@@ -5078,7 +5297,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(S.cardDeep)
                                 .clickable {
-                                    openSecondaryDestination(SonicCoreDestination.DEVICE_TOOLS)
+                                    openDestination(SonicCoreDestination.DEVICE_TOOLS)
                                     showSettings = false
                                 }
                                 .semantics { contentDescription = "Open Device Tools" }
@@ -5097,7 +5316,7 @@ fun EqualizerScreen(engine: EqualizerEngine) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(S.cardDeep)
                                 .clickable {
-                                    openSecondaryDestination(SonicCoreDestination.APP_MANAGER)
+                                    openDestination(SonicCoreDestination.APP_MANAGER)
                                     showSettings = false
                                 }
                                 .semantics { contentDescription = "Open App Audio Manager" }

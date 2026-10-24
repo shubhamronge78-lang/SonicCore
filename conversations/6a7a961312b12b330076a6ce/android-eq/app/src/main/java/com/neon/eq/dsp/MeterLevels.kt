@@ -1,10 +1,5 @@
 package com.neon.eq.dsp
 
-/**
- * Measured meter snapshot. Public because the home / category surfaces expose it
- * through [com.neon.eq.ui.home.HomeAudioSummary]; the factory helpers below stay
- * module-internal.
- */
 data class MeterLevels(
     val db: FloatArray,
     val rms: FloatArray,
@@ -49,7 +44,7 @@ private const val METER_CHANNEL_COUNT = 4
 private const val METER_SNAPSHOT_SIZE = METER_CHANNEL_COUNT * 2
 private const val MAX_METER_VALUE = 1000
 
-internal fun computeMeterLevels(
+fun computeMeterLevels(
     values: IntArray?,
     previousPeaks: FloatArray?
 ): MeterLevels {

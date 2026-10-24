@@ -246,7 +246,7 @@ fun SettingsNavigationScreen(context: Context, modifier: Modifier = Modifier) {
                 "Hides the six-category dock on devices where it is not wanted.",
                 AppearanceState.dockVisible
             ) { visible ->
-                AppearanceState.setDockVisible(visible)
+                AppearanceState.dockVisible = visible
                 AppearanceState.save(context)
             }
         }
