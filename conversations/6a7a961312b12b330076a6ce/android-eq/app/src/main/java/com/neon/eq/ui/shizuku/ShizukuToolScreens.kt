@@ -50,9 +50,8 @@ import com.neon.eq.ui.category.toSonicCoreCapability
 import com.neon.eq.ui.design.GlassCard
 import com.neon.eq.ui.design.LiquidGlassSurface
 import com.neon.eq.ui.design.SonicCoreColors
-import com.neon.eq.ui.design.color
 import com.neon.eq.ui.navigation.SonicCoreCategory
-import rikka.shizuku.Shizuku
+import dev.rikka.shizuku.Shizuku
 
 private val shizukuTone = SonicCoreCategory.SHIZUKU.tone
 

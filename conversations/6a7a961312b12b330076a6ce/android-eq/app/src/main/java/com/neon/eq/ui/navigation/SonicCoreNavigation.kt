@@ -6,12 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -50,60 +48,33 @@ enum class SonicCoreDestination(
     val title: String,
     val label: String,
     val subtitle: String,
-    val icon: String,
-    val isPrimary: Boolean = true
+    val icon: String
 ) {
-    // Home
-    DASHBOARD("Home", "HOME", "Live engine status and audio overview", "◉"),
-
     // Audio
     EQUALIZER("Equalizer", "EQ", "Graphic and parametric equalization", "∿"),
     PLAYER("Player", "PLAYER", "Supported local playback and transport", "▶"),
     DSP_FX("DSP Studio", "DSP", "Processing stages, bypass and parameters", "⌘"),
-    SYSTEM_CAPTURE("System Capture", "CAPTURE", "Capture eligibility, consent and status", "◎", false),
-    SIGNAL_PATH("Signal Path", "PATH", "Output route and measured pipeline status", "↗", false),
-    AUDIO_OVERVIEW("Live Overview", "OVERVIEW", "Live meters, spectrum and engine health", "◉", false),
-    SESSIONS("Sessions", "SESSIONS", "Recorded capture sessions and verdicts", "▤", false),
-    PRO_FX("Pro FX", "PRO FX", "Noise gate and limiter controls", "✦", false),
+    SYSTEM_CAPTURE("System Capture", "CAPTURE", "Capture eligibility, consent and status", "◎"),
+    SIGNAL_PATH("Signal Path", "PATH", "Output route and measured pipeline status", "↗"),
+    AUDIO_OVERVIEW("Live Overview", "OVERVIEW", "Live meters, spectrum and engine health", "◉"),
+    SESSIONS("Sessions", "SESSIONS", "Recorded capture sessions and verdicts", "▤"),
+    PRO_FX("Pro FX", "PRO FX", "Noise gate and limiter controls", "✦"),
 
     // Device / platform
-    DIAGNOSTICS("Diagnostics", "DIAG", "Memory, battery, thermal and service health", "⚙", false),
-    CAPABILITIES("Capabilities", "CAPS", "Capability registry and platform restrictions", "✓", false),
-    DEVICE_TOOLS("Device Tools", "TOOLS", "System audio shortcuts and settings", "🛠", false),
-    APP_MANAGER("App Manager", "APPS", "App profiles, package visibility and launch", "㗊", false),
+    DIAGNOSTICS("Device Diagnostics", "DIAG", "Memory, battery, thermal and service health", "⚙"),
+    CAPABILITIES("Capabilities", "CAPS", "Capability registry and platform restrictions", "✓"),
+    DEVICE_TOOLS("Device Tools", "TOOLS", "System audio shortcuts and settings", "🛠"),
+    APP_MANAGER("App Manager", "APPS", "App profiles, package visibility and launch", "㗊"),
 
     // Other workspaces
-    SHIZUKU("Shizuku Center", "SHIZUKU", "Elevated bridge status and operation registry", "⇄", false),
-    CUSTOMIZATION("Customization Center", "CUSTOM", "Themes, glass intensity and appearance", "◈", false),
-    PERMISSIONS("Permissions & Privacy", "PERMS", "Runtime permissions, consent and privacy", "🔒", false),
-    SETTINGS("Settings", "SET", "Preferences hub and app information", "≡", false);
+    SHIZUKU("Shizuku Center", "SHIZUKU", "Elevated bridge status and operation registry", "⇄"),
+    CUSTOMIZATION("Customization Center", "CUSTOM", "Themes, glass intensity and appearance", "◈"),
+    PERMISSIONS("Permissions & Privacy", "PERMS", "Runtime permissions, consent and privacy", "🔒"),
+    SETTINGS("Settings", "SET", "Preferences hub and app information", "≡");
 
     companion object {
         /** Every destination that still has a dedicated full-screen body. */
         val all: List<SonicCoreDestination> = entries.toList()
-
-        /** Destinations shown as cards on Home and opened without a back stack. */
-        val primaryDestinations = listOf(DASHBOARD, EQUALIZER, PLAYER, DSP_FX)
-
-        /** The destinations the bottom dock renders, in dock order. */
-        val consoleDestinations = listOf(
-            DASHBOARD,
-            EQUALIZER,
-            PLAYER,
-            DSP_FX,
-            SYSTEM_CAPTURE,
-            SESSIONS,
-            SIGNAL_PATH,
-            PRO_FX,
-            DEVICE_TOOLS,
-            SHIZUKU,
-            CUSTOMIZATION,
-            PERMISSIONS,
-            DIAGNOSTICS,
-            CAPABILITIES,
-            APP_MANAGER,
-            SETTINGS
-        )
     }
 }
 
@@ -455,13 +426,13 @@ fun SonicCoreBreadcrumbHeader(
 }
 
 /**
- * Contextual dock: the destinations the console renders
- * ([SonicCoreDestination.consoleDestinations]), nothing else.
+ * Contextual dock: the SIX categories, nothing else. Internal tools are reached
+ * through their category, so the dock never turns into a flat tool list.
  */
 @Composable
 fun SonicCoreBottomNavigation(
-    selected: SonicCoreDestination,
-    onSelect: (SonicCoreDestination) -> Unit,
+    selected: SonicCoreCategory?,
+    onSelect: (SonicCoreCategory) -> Unit,
     landscape: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -469,39 +440,38 @@ fun SonicCoreBottomNavigation(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = if (landscape) 28.dp else 24.dp, vertical = 8.dp),
+            .padding(horizontal = if (landscape) 18.dp else 10.dp, vertical = 8.dp),
         contentPadding = 7.dp,
         shape = RoundedCornerShape(30.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            SonicCoreDestination.consoleDestinations.forEach { destination ->
-                val active = selected == destination
+            SonicCoreCategory.entries.forEach { category ->
+                val active = selected == category
                 val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
+                val tone = category.color()
                 val activeSurface by animateColorAsState(
-                    targetValue = if (active) SonicCoreColors.Cyan.copy(alpha = material.tintAlpha + 0.10f)
+                    targetValue = if (active) tone.copy(alpha = material.tintAlpha + 0.10f)
                     else Color.Transparent,
-                    label = "liquidDockSelection"
+                    label = "dockSelection"
                 )
                 Surface(
-                    onClick = { onSelect(destination) },
+                    onClick = { onSelect(category) },
                     modifier = Modifier
-                        .width(72.dp)
+                        .weight(1f)
                         .height(56.dp)
                         .semantics {
-                            contentDescription = destination.title
+                            contentDescription = category.title
                             stateDescription = if (active) "Selected" else "Not selected"
                         },
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(22.dp),
                     color = activeSurface,
-                    contentColor = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText,
+                    contentColor = if (active) tone else SonicCoreColors.SecondaryText,
                     border = BorderStroke(
                         0.8.dp,
-                        (if (active) SonicCoreColors.Cyan else SonicCoreColors.Border)
+                        (if (active) tone else SonicCoreColors.Border)
                             .copy(alpha = if (active) material.edgeAlpha else 0f)
                     ),
                     shadowElevation = if (active) 4.dp else 0.dp
@@ -511,15 +481,15 @@ fun SonicCoreBottomNavigation(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            destination.icon,
+                            category.icon,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            color = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText
+                            color = if (active) tone else SonicCoreColors.SecondaryText
                         )
                         Text(
-                            destination.label,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            category.label,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1,
                             color = if (active) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText
