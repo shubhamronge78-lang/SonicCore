@@ -1,7 +1,12 @@
 package com.neon.eq.ui.home
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
@@ -72,21 +77,27 @@ class SonicCoreHomeNavigationTest {
         rule.setContent {
             SonicCoreTheme(glassLevel = 1) {
                 val state = frame.value
-                if (state.isHome) {
-                    SonicCoreHomeScreen(
-                        summary = summary,
-                        onCategoryClick = { navigator.openCategory(it) },
-                        onToolClick = { navigator.openTool(it) },
-                        onToggleEngine = {},
-                        onToggleBypass = {},
-                        onSettingsClick = {},
-                        onModeToggle = {},
-                        modeLabel = "☾",
-                        searchQuery = "",
-                        onSearchChange = {}
-                    )
-                } else {
-                    Text(screenOf(state))
+                // The launcher body renders its screens inside a vertically
+                // scrollable column (`mainContent` in MainActivity.kt), and the
+                // cards sit below the fold on a real phone — so the test scrolls
+                // them into view exactly like the app does.
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    if (state.isHome) {
+                        SonicCoreHomeScreen(
+                            summary = summary,
+                            onCategoryClick = { navigator.openCategory(it) },
+                            onToolClick = { navigator.openTool(it) },
+                            onToggleEngine = {},
+                            onToggleBypass = {},
+                            onSettingsClick = {},
+                            onModeToggle = {},
+                            modeLabel = "☾",
+                            searchQuery = "",
+                            onSearchChange = {}
+                        )
+                    } else {
+                        Text(screenOf(state))
+                    }
                 }
             }
         }
