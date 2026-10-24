@@ -35,8 +35,6 @@ int main() {
 
     jshort pcm[FRAMES * 2];
     jshortArray buf = (jshortArray) &g_hostArrays[hostReg(pcm, FRAMES * 2, 0)];
-    auto finitePcm = [&]{ for (int i = 0; i < FRAMES*2; i++) if (pcm[i] != pcm[i] && (pcm[i] > 32767 || pcm[i] < -32768)) return false; return true; };
-
     printf("[1] silence\n");
     memset(pcm, 0, sizeof(pcm));
     Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, buf, FRAMES);
@@ -620,6 +618,43 @@ int main() {
         CHECK(!bad, "2500-block churn: bounded, finite, zero new NaN under ASan+UBSan");
         CHECK(Java_com_neon_eq_dsp_NeonDsp_processedFrames(&env, thiz) > 2500L * 480L, "frames counter advanced through the stress run");
     }
+
+    printf("[boundary] reject invalid process buffers without indexing or state changes\n");
+    jshort tinyPcm[3] = { 11, 22, 33 };
+    jshortArray tinyBuf = (jshortArray) &g_hostArrays[hostReg(tinyPcm, 3, 0)];
+    jlong framesBefore = Java_com_neon_eq_dsp_NeonDsp_jniFrames(&env, thiz);
+    jlong processedBefore = Java_com_neon_eq_dsp_NeonDsp_processedFrames(&env, thiz);
+    int acquiresBefore = env.criticalAcquires;
+    Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, tinyBuf, 0);
+    Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, tinyBuf, -1);
+    Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, tinyBuf, 2);
+    Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, nullptr, 1);
+    CHECK(env.criticalAcquires == acquiresBefore, "zero, negative, oversized, and null inputs do not acquire array storage");
+    CHECK(Java_com_neon_eq_dsp_NeonDsp_jniFrames(&env, thiz) == framesBefore &&
+          Java_com_neon_eq_dsp_NeonDsp_processedFrames(&env, thiz) == processedBefore,
+          "rejected inputs do not advance valid-call counters");
+    CHECK(tinyPcm[0] == 11 && tinyPcm[1] == 22 && tinyPcm[2] == 33,
+          "rejected inputs leave the short array unchanged");
+
+    env.arrayLengthFailure = true;
+    Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, tinyBuf, 1);
+    env.arrayLengthFailure = false;
+    env.exceptionPending = false;
+    CHECK(env.criticalAcquires == acquiresBefore, "array-length JNI failure returns before pinning storage");
+
+    jshortArray unavailableBuf = (jshortArray) &g_hostArrays[hostReg(nullptr, 2, 0)];
+    Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, unavailableBuf, 1);
+    CHECK(env.criticalReleases == env.criticalAcquires,
+          "failed array pin is handled without releasing an unacquired resource");
+
+    jshort oneFramePcm[2] = { 0, 0 };
+    jshortArray oneFrameBuf = (jshortArray) &g_hostArrays[hostReg(oneFramePcm, 2, 0)];
+    framesBefore = Java_com_neon_eq_dsp_NeonDsp_jniFrames(&env, thiz);
+    Java_com_neon_eq_dsp_NeonDsp_process(&env, thiz, oneFrameBuf, 1);
+    CHECK(Java_com_neon_eq_dsp_NeonDsp_jniFrames(&env, thiz) == framesBefore + 1,
+          "exactly sized one-frame array remains a valid call");
+    CHECK(env.criticalReleases == env.criticalAcquires,
+          "all successfully acquired array storage is released");
 
     printf("\n%s (%d failures)\n", fails ? "HARNESS FAIL" : "HARNESS PASS", fails);
     return fails ? 1 : 0;

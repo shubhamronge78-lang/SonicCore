@@ -24,9 +24,21 @@ inline int hostReg(void* data, jsize len, int floatIs) {
 }
 
 struct JNIEnv {
-    jsize GetArrayLength(jarray a) { return ((HostArr*)a)->len; }
-    void* GetPrimitiveArrayCritical(jarray a, jboolean*) { return ((HostArr*)a)->data; }
-    void ReleasePrimitiveArrayCritical(jarray, void*, jint) {}
+    bool arrayLengthFailure = false;
+    bool exceptionPending = false;
+    int criticalAcquires = 0;
+    int criticalReleases = 0;
+    jsize GetArrayLength(jarray a) {
+        if (arrayLengthFailure) { exceptionPending = true; return 0; }
+        return ((HostArr*)a)->len;
+    }
+    jboolean ExceptionCheck() { return exceptionPending ? JNI_TRUE : JNI_FALSE; }
+    void* GetPrimitiveArrayCritical(jarray a, jboolean*) {
+        void* data = ((HostArr*)a)->data;
+        if (data != nullptr) criticalAcquires++;
+        return data;
+    }
+    void ReleasePrimitiveArrayCritical(jarray, void*, jint) { criticalReleases++; }
     jfloat* GetFloatArrayElements(jfloatArray a, jboolean*) { return (jfloat*)((HostArr*)a)->data; }
     void ReleaseFloatArrayElements(jfloatArray a, jfloat*, jint) {}
 };

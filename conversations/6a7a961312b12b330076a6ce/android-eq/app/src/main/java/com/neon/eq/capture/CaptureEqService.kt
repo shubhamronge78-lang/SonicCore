@@ -90,21 +90,66 @@ class CaptureEqService : Service() {
         const val CHANNEL_ID = "neoneq_capture"
         const val NOTIF_ID = 42
 
-        fun statusReport(): String =
-            "CAPTURE API: " + (if (Build.VERSION.SDK_INT >= 29) "SUPPORTED" else "UNSUPPORTED") + "\n" +
+        fun statusReport(): String {
+            val now = android.os.SystemClock.elapsedRealtime()
+            val recentCapture = CaptureFlowStatus.hasRecentCaptureData(
+                running, paused, framesCaptured, lastDataAt, now
+            )
+            val recentOutput = CaptureFlowStatus.hasRecentOutputData(
+                running, paused, framesCaptured, framesDone, lastDataAt, now
+            )
+            val captureState = when {
+                !running -> "INACTIVE"
+                paused -> "PAUSED"
+                noEligiblePlayback -> "NO ELIGIBLE PLAYBACK"
+                recentCapture -> "ACTIVE"
+                else -> "WAITING FOR PCM"
+            }
+            val sourceState = when {
+                !running -> "-"
+                paused -> "PAUSED"
+                noEligiblePlayback -> "NOT DETECTED (source app may block capture)"
+                recentCapture -> "DETECTED"
+                else -> "WAITING FOR PCM"
+            }
+            val dspState = when {
+                !NeonDsp.available -> "ERROR (native lib unavailable)"
+                !running -> "INACTIVE"
+                paused -> "PAUSED"
+                bypass -> if (recentCapture) "BYPASSED (A)" else "BYPASS ENABLED · WAITING FOR PCM"
+                recentCapture -> "ACTIVE"
+                else -> "WAITING FOR PCM"
+            }
+            val outputState = when {
+                !running -> "INACTIVE"
+                paused -> "PAUSED"
+                noEligiblePlayback -> "WAITING FOR PLAYBACK"
+                recentOutput -> "ACTIVE"
+                else -> "WAITING FOR OUTPUT FRAMES"
+            }
+            return "CAPTURE API: " + (if (Build.VERSION.SDK_INT >= 29) "SUPPORTED" else "UNSUPPORTED") + "\n" +
                 "MEDIA PROJECTION: " + (if (running) "GRANTED" else if (lastError?.startsWith(AudioErrors.CAPTURE_PERMISSION_DENIED) == true) "DENIED" else "NOT REQUESTED") + "\n" +
-                "AUDIO CAPTURE: " + (if (!running) "INACTIVE" else if (noEligiblePlayback) "NO ELIGIBLE PLAYBACK" else "ACTIVE") + "\n" +
-                "SOURCE PLAYBACK: " + (if (!running) "-" else if (noEligiblePlayback) "NOT DETECTED (source app may block capture)" else "DETECTED") + "\n" +
-                "DSP: " + (if (!NeonDsp.available) "ERROR (native lib unavailable)" else if (bypass) "BYPASSED (A)" else "ACTIVE") + "\n" +
-                "OUTPUT: " + (if (running && !noEligiblePlayback) "ACTIVE" else if (running) "WAITING FOR PLAYBACK" else "INACTIVE")
+                "AUDIO CAPTURE: $captureState\n" +
+                "SOURCE PLAYBACK: $sourceState\n" +
+                "DSP: $dspState\n" +
+                "OUTPUT: $outputState"
+        }
     }
 
     private var thread: Thread? = null
     private var devCallback: AudioDeviceCallback? = null
+    @Volatile private var activeRecorder: AudioRecord? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            requestStop = true
+            stopActiveRecorder()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         createChannel()
         val notif = buildRichNotification()
         try {
@@ -113,16 +158,15 @@ class CaptureEqService : Service() {
             } else {
                 startForeground(NOTIF_ID, notif)
             }
-        } catch (t: Throwable) {
+        } catch (t: Exception) {
             lastError = "foreground service failed: " + (t.message ?: t.toString())
+            requestStop = true
+            stopActiveRecorder()
+            stopSelfResult(startId)
+            return START_NOT_STICKY
         }
 
         when (intent?.action) {
-            ACTION_STOP -> {
-                requestStop = true
-                stopSelf()
-                return START_NOT_STICKY
-            }
             ACTION_PAUSE -> {
                 paused = !paused
                 return START_NOT_STICKY
@@ -225,6 +269,10 @@ class CaptureEqService : Service() {
                 .build()
 
             val minIn = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+            if (minIn <= 0) {
+                lastError = AudioErrors.UNSUPPORTED_SAMPLE_RATE + ": AudioRecord buffer query returned $minIn for ${sr}Hz"
+                return
+            }
             recorder = AudioRecord.Builder()
                 .setAudioFormat(
                     AudioFormat.Builder()
@@ -239,8 +287,14 @@ class CaptureEqService : Service() {
                 lastError = AudioErrors.AUDIO_RECORD_INITIALIZATION_FAILED + ": capture record session could not start"
                 return
             }
+            activeRecorder = recorder
+            if (requestStop) return
 
             val minOut = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+            if (minOut <= 0) {
+                lastError = AudioErrors.UNSUPPORTED_SAMPLE_RATE + ": AudioTrack buffer query returned $minOut for ${sr}Hz"
+                return
+            }
             track = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -321,7 +375,9 @@ class CaptureEqService : Service() {
                 }
                 val n = recorder.read(chunk, 0, chunk.size)
                 if (n < 0) {
-                    lastError = AudioErrors.CAPTURE_READ_FAILED + ": system returned code $n — capture path stopped"
+                    if (!requestStop) {
+                        lastError = AudioErrors.CAPTURE_READ_FAILED + ": system returned code $n — capture path stopped"
+                    }
                     break
                 }
                 if (n == 0) {
@@ -350,8 +406,14 @@ class CaptureEqService : Service() {
                 } else {
                     dspMs = 0.0; dspLoadPct = 0.0
                 }
-                track?.write(chunk, 0, n)
-                framesDone += n / 2
+                val writeResult = writeStereoPcmFully(chunk, n) { offset, sampleCount ->
+                    track?.write(chunk, offset, sampleCount) ?: -1
+                }
+                framesDone += writeResult.framesWritten
+                if (writeResult.error != null) {
+                    lastError = "OUTPUT_WRITE_FAILED: ${writeResult.error} — capture path stopped"
+                    break
+                }
                 totalLatencyMs = capLatencyMs + dspMs + outLatencyMs
                 if (framesDone % 48000L < chunkFrames * 2L) {
                     try { track?.let { underruns = it.underrunCount } } catch (t: Throwable) { }
@@ -476,6 +538,7 @@ class CaptureEqService : Service() {
             if (loopSession == mySession) running = false
             try { recorder?.stop() } catch (t: Throwable) { }
             try { recorder?.release() } catch (t: Throwable) { }
+            if (activeRecorder === recorder) activeRecorder = null
             try { track?.stop() } catch (t: Throwable) { }
             try { track?.release() } catch (t: Throwable) { }
             try { projection?.stop() } catch (t: Throwable) { }
@@ -538,6 +601,16 @@ class CaptureEqService : Service() {
                     .addAction(0, "Stop", actionPi(ACTION_STOP))
                     .build())
         } catch (_: Throwable) { }
+    }
+
+    private fun stopActiveRecorder() {
+        try {
+            activeRecorder?.stop()
+        } catch (_: IllegalStateException) {
+            // The recorder may not have reached or may have left the recording state.
+        } catch (t: RuntimeException) {
+            lastError = "AUDIO_RECORD_STOP_FAILED: " + (t.message ?: t.toString())
+        }
     }
 
     // ── Build #121: rich notification (spec 32) — technical facts only,
@@ -630,6 +703,7 @@ private fun createChannel() {
 
     override fun onDestroy() {
         requestStop = true
+        stopActiveRecorder()
         super.onDestroy()
     }
 }

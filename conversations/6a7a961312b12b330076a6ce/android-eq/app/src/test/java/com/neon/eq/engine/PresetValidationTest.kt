@@ -72,6 +72,17 @@ class PresetValidationTest {
     }
 
     @Test
+    fun `oversized documents and preset collections are rejected before import`() {
+        val oversizedDocument = " ".repeat(256 * 1024 + 1)
+        val oversizedPresetList = """{"presets":[${List(501) {
+            """{"name":"p$it","levels":[]}"""
+        }.joinToString(",")}]}"""
+
+        assertEquals(emptyList<Presets.CustomPreset>(), Presets.importFromJson(oversizedDocument))
+        assertEquals(emptyList<Presets.CustomPreset>(), Presets.importFromJson(oversizedPresetList))
+    }
+
+    @Test
     fun `short levels arrays pad with zero and long ones are truncated to 31 slots`() {
         val short = Presets.importFromJson(validPresetJson(name = "short", levels = "[7,8]"))
         assertEquals(31, short[0].levels.size)
