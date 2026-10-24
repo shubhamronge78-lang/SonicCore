@@ -527,7 +527,6 @@ fun HomeQuickPresetSection(
 fun HomeQuickActions(
     onEq: () -> Unit,
     onDsp: () -> Unit,
-    onAb: () -> Unit,
     onReset: () -> Unit,
     onDiagnostics: () -> Unit,
     modifier: Modifier = Modifier
@@ -542,7 +541,6 @@ fun HomeQuickActions(
                 listOf(
                     "EQ" to onEq,
                     "DSP" to onDsp,
-                    "A/B" to onAb,
                     "RESET" to onReset,
                     "DIAGNOSTICS" to onDiagnostics
                 )
@@ -550,7 +548,7 @@ fun HomeQuickActions(
                 GlassButton(
                     text = label,
                     onClick = action,
-                    secondary = label == "A/B" || label == "DIAGNOSTICS"
+                    secondary = label == "DIAGNOSTICS"
                 )
             }
         }

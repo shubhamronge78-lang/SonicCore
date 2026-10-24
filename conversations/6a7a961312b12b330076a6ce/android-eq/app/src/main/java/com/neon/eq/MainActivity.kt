@@ -1525,7 +1525,6 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                             HomeQuickActions(
                                 onEq = { openDestination(SonicCoreDestination.EQUALIZER) },
                                 onDsp = { CaptureEqService.bypass = !CaptureEqService.bypass },
-                                onAb = { CaptureEqService.bypass = !CaptureEqService.bypass },
                                 onReset = { showResetDialog = true },
                                 onDiagnostics = {
                                     try {
