@@ -8,3 +8,6 @@ conversations/b137/
 logs.zip
 logs[0-9].zip
 conversations/b*/
+
+# Base44 dev environment build artifacts (served by the preview container)
+build-output/

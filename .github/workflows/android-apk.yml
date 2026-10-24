@@ -20,12 +20,33 @@ jobs:
         java-version: "17"
         distribution: "temurin"
 
+    # The runner image already ships the Android SDK, so the packages this
+    # project needs are installed with its own sdkmanager.
+    #
+    # android-actions/setup-android@v3 is deliberately NOT used: it always runs
+    # `sdkmanager tools`, and `tools` no longer exists in the runner's
+    # cmdline-tools 16, so the action exits 1 with
+    #   Warning: Failed to find package 'tools'
+    #   Error: The process '.../sdkmanager' failed with exit code 1
+    # which is what broke every run of this workflow on main (runs 40070746189
+    # and 40071309858). Installing the packages explicitly is also what the
+    # working build.yml relies on.
     - name: Set up Android SDK and NDK
-      uses: android-actions/setup-android@v3
-      with:
-        api-level: 34
-        build-tools: "34.0.0"
-        ndk: "25.1.8937393"
+      run: |
+        set -euo pipefail
+        SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+        if [ ! -x "$SDKMANAGER" ]; then
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+        fi
+        test -n "$SDKMANAGER"
+        # `yes` closes the pipe early, so sdkmanager exits non-zero on SIGPIPE.
+        (yes | "$SDKMANAGER" --licenses > /dev/null) || true
+        "$SDKMANAGER" --install \
+          "platform-tools" \
+          "platforms;android-34" \
+          "build-tools;34.0.0" \
+          "ndk;25.1.8937393" \
+          "cmake;3.22.1"
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
