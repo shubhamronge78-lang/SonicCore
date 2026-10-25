@@ -21,8 +21,7 @@ fun GlassIconButton(
 ) {
     IconButton(
         modifier = modifier.size(44.dp).clickable(onClick = onClick),
-        onClick = onClick,
-        contentDescription = contentDescription
+        onClick = onClick
     ) {
         content()
     }

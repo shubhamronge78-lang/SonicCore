@@ -39,11 +39,11 @@ import com.soniccore.app.permissions.PermissionCenter
 import com.soniccore.app.permissions.PermissionEntry
 import com.soniccore.app.permissions.PermissionState
 import com.soniccore.app.permissions.PermissionTarget
-import com.soniccore.app.ui.design.LiquidGlassDepth
-import com.soniccore.app.ui.design.LiquidGlassSurface
-import com.soniccore.app.ui.design.PlatformSectionLabel
+import com.soniccore.app.ui.components.LiquidGlassDepth
+import com.soniccore.app.ui.components.LiquidGlassSurface
+import com.soniccore.app.ui.components.PlatformSectionLabel
 import com.soniccore.app.ui.design.SonicCoreColors
-import com.soniccore.app.ui.design.StatusPill
+import com.soniccore.app.ui.components.StatusPill
 
 /**
  * Permissions & Privacy Center.

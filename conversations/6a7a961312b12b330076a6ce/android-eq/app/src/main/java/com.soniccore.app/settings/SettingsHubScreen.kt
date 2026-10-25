@@ -20,13 +20,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.soniccore.app.ui.design.LiquidGlassDepth
-import com.soniccore.app.ui.design.LiquidGlassSurface
-import com.soniccore.app.ui.design.PlatformInfoRow
-import com.soniccore.app.ui.design.PlatformSectionLabel
-import com.soniccore.app.ui.design.SettingRow
+import com.soniccore.app.ui.components.LiquidGlassDepth
+import com.soniccore.app.ui.components.PlatformInfoRow
+import com.soniccore.app.ui.components.PlatformSectionLabel
+import com.soniccore.app.ui.components.SettingRow
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.navigation.SonicCoreDestination
+import com.soniccore.app.ui.design.LiquidGlassSurface
 
 /**
  * Settings hub. Every row performs a real action: opening the existing settings

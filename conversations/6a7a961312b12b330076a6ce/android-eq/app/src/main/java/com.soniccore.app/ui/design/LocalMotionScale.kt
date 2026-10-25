@@ -3,7 +3,6 @@ package com.soniccore.app.ui.design
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.unit.FloatProp
 
 /**
  * Composition local for motion scale factor (1.0 = normal, 0.0 = reduced motion).

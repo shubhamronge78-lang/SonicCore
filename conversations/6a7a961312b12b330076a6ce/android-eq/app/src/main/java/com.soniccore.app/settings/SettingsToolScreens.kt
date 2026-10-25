@@ -35,24 +35,24 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.soniccore.app.NeonTheme
-import com.soniccore.app.SurfaceModes
+import com.soniccore.app.AppearanceState
 import com.soniccore.app.appModeState
-import com.soniccore.app.capture.CaptureEqService
+import com.soniccore.app.SonicCoreCapability
+import com.soniccore.app.SonicCoreCategory
+import com.soniccore.app.SurfaceModes
+import com.soniccore.app.NeonTheme
+import com.soniccore.app.audio.CaptureEqService
 import com.soniccore.app.diagnostics.OperationLog
 import com.soniccore.app.dsp.NeonDsp
-import com.soniccore.app.engine.EqualizerEngine
+import com.soniccore.app.EqualizerEngine
 import com.soniccore.app.permissions.PermissionCenter
-import com.soniccore.app.ui.category.CapabilityLegend
-import com.soniccore.app.ui.category.LimitNote
-import com.soniccore.app.ui.category.SettingsGroup
-import com.soniccore.app.SonicCoreCapability
-import com.soniccore.app.ui.category.SonicCoreDataRow
-import com.soniccore.app.ui.category.SonicCoreToolHost
+import com.soniccore.app.ui.components.CapabilityLegend
+import com.soniccore.app.ui.components.LimitNote
+import com.soniccore.app.ui.components.SettingsGroup
+import com.soniccore.app.ui.components.SonicCoreDataRow
+import com.soniccore.app.ui.components.SonicCoreToolHost
 import com.soniccore.app.ui.customization.ThemeSwatchStrip
-import com.soniccore.app.ui.design.AppearanceState
 import com.soniccore.app.ui.design.SonicCoreColors
-import com.soniccore.app.ui.navigation.SonicCoreCategory
 
 private val settingsTone = SonicCoreCategory.SETTINGS.tone
 
