@@ -1,0 +1,154 @@
+package com.soniccore.app.engine
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Build #136 hardening — preset validation tests (spec 26).
+ *
+ * These are real JVM unit tests: importFromJson runs off-device, so every
+ * malformed-preset rule can be verified without hardware.
+ */
+class PresetValidationTest {
+
+    private fun validPresetJson(name: String = "Bass", levels: String = "[5,3,0,0,0,0,0,0,0,0]",
+                                bass: String = "100", virt: String = "0", loud: String = "50"): String =
+        """{"app":"SonicCore","version":1,"presets":[
+            {"name":"$name","levels":$levels,"bass":$bass,"virt":$virt,"loud":$loud}]}"""
+
+    @Test
+    fun `valid preset imports with exact values`() {
+        val out = Presets.importFromJson(validPresetJson())
+        assertEquals(1, out.size)
+        assertEquals("Bass", out[0].name)
+        assertEquals(5, out[0].levels[0].toInt())
+        assertEquals(3, out[0].levels[1].toInt())
+        assertEquals(0, out[0].levels[9].toInt())
+        assertEquals(100, out[0].bassBoost)
+        assertEquals(50, out[0].loudness)
+    }
+
+    @Test
+    fun `out of range band levels are clamped to the UI contract`() {
+        val json = validPresetJson(name = "Wild", levels = "[999,-999,12,20,21,32767,-32768,0,0,0]")
+        val out = Presets.importFromJson(json)
+        assertEquals(1, out.size)
+        assertEquals(20, out[0].levels[0].toInt())   // +999 dB -> +20
+        assertEquals(-15, out[0].levels[1].toInt())  // -999 dB -> -15
+        assertEquals(20, out[0].levels[3].toInt())
+        assertEquals(20, out[0].levels[4].toInt())   // 21 -> 20
+        assertEquals(20, out[0].levels[5].toInt())
+        assertEquals(-15, out[0].levels[6].toInt())
+        assertEquals(0, out[0].levels[9].toInt())
+    }
+
+    @Test
+    fun `effect strengths are clamped`() {
+        val json = validPresetJson(bass = "5000", virt = "-40", loud = "99999")
+        val out = Presets.importFromJson(json)
+        assertEquals(1000, out[0].bassBoost)
+        assertEquals(0, out[0].virtualizer)
+        assertEquals(300, out[0].loudness)
+    }
+
+    @Test
+    fun `malformed preset is skipped but healthy presets import`() {
+        val json = """{"presets":[
+            {"name":"good","levels":[1,2,3,4,5,6,7,8,9,10]},
+            {"noname":"broken","levels":[1,2,3]},
+            {"name":"","levels":[0,0,0,0,0,0,0,0,0,0]},
+            "not-an-object"]}"""
+        val out = Presets.importFromJson(json)
+        assertEquals(1, out.size)
+        assertEquals("good", out[0].name)
+    }
+
+    @Test
+    fun `garbage document returns empty list`() {
+        assertEquals(emptyList<Presets.CustomPreset>(), Presets.importFromJson("not json at all"))
+        assertEquals(emptyList<Presets.CustomPreset>(), Presets.importFromJson("{}"))
+        assertEquals(emptyList<Presets.CustomPreset>(), Presets.importFromJson("""{"wrong":[]}"""))
+    }
+
+    @Test
+    fun `oversized documents and preset collections are rejected before import`() {
+        val oversizedDocument = " ".repeat(256 * 1024 + 1)
+        val oversizedPresetList = """{"presets":[${List(501) {
+            """{"name":"p$it","levels":[]}"""
+        }.joinToString(",")}]}"""
+
+        assertEquals(emptyList<Presets.CustomPreset>(), Presets.importFromJson(oversizedDocument))
+        assertEquals(emptyList<Presets.CustomPreset>(), Presets.importFromJson(oversizedPresetList))
+    }
+
+    @Test
+    fun `short levels arrays pad with zero and long ones are truncated to 31 slots`() {
+        val short = Presets.importFromJson(validPresetJson(name = "short", levels = "[7,8]"))
+        assertEquals(31, short[0].levels.size)
+        assertEquals(7, short[0].levels[0].toInt())
+        assertEquals(8, short[0].levels[1].toInt())
+        assertEquals(0, short[0].levels[30].toInt())
+
+        val longLevels = (1..60).joinToString(",", "[", "]")
+        val long = Presets.importFromJson(validPresetJson(name = "long", levels = longLevels))
+        assertEquals(31, long[0].levels.size)
+        assertEquals(1, long[0].levels[0].toInt())
+        // value 31 sits above the +20 dB UI ceiling — clamped on import
+        assertEquals(20, long[0].levels[30].toInt())
+    }
+
+    @Test
+    fun `boundary values normalize to the 15dB floor and 20dB ceiling`() {
+        // Directed boundary sweep: input -> expected stored value.
+        // The clamp is the safety boundary between imported JSON and the DSP.
+        val inputs = listOf(-20, -15, -14, 0, 19, 20, 21, 31, 999999, -999999)
+        val expected = listOf(-15, -15, -14, 0, 19, 20, 20, 20, 20, -15)
+        val levels = inputs.joinToString(",", "[", "]")
+        val out = Presets.importFromJson(validPresetJson(name = "bounds", levels = levels))
+        assertEquals(1, out.size)
+        for (i in inputs.indices) {
+            assertEquals("input ${inputs[i]} must normalize to ${expected[i]}",
+                expected[i], out[0].levels[i].toInt())
+        }
+    }
+
+    @Test
+    fun `NaN and Infinity can never reach the DSP through JSON import`() {
+        // NaN and Infinity handling differs between org.json builds (the JVM
+        // test classpath uses 20240303; devices use the Android framework's)
+        // and between bare tokens and quoted strings. The SAFETY CONTRACT is
+        // identical in every path: whatever the tokenizer produces, the stored
+        // level is a finite integer inside -15..+20 — a non-finite value can
+        // never reach the DSP. Assert exactly that, for both spellings.
+        val docs = listOf(
+            """{"presets":[{"name":"bare","levels":[NaN,Infinity,-Infinity,0,0,0,0,0,0,0]}]}""",
+            """{"presets":[{"name":"str","levels":["NaN","Infinity","-Infinity",0,0,0,0,0,0,0]}]}"""
+        )
+        for (doc in docs) {
+            val out = Presets.importFromJson(doc)
+            assertEquals(1, out.size)
+            for (i in 0..2) {
+                val v = out[0].levels[i].toInt()
+                assertTrue("slot $i must be finite and in range, was $v", v in -15..20)
+            }
+        }
+    }
+
+    @Test
+    fun `builtin resample never assigns sub bass gain above 16 kHz`() {
+        // Build #136 regression test: resampling to 15/31 bands used to read
+        // indexOfFirst == -1 (f > 16 kHz) as "sub-bass" and copy base[0].
+        val curve = shortArrayOf(12, 0, 0, 0, 0, 0, 0, 0, 0, -6)
+        for (count in intArrayOf(15, 31)) {
+            val out = Presets.resampleBase(curve.map { it.toInt() }.toIntArray(), count)
+            // The top band (~20 kHz) must hold the TREBLE value (-6), not +12.
+            assertEquals(-6, out[count - 1].toInt())
+            // and nothing above 16 kHz may carry the sub-bass boost
+            for (i in 0 until count) {
+                val f = 20.0 * Math.pow(1000.0, i.toDouble() / (count - 1).coerceAtLeast(1).toDouble())
+                if (f > 16000.0) assertTrue("band $i ($f Hz) held sub-bass gain", out[i].toInt() != 12)
+            }
+        }
+    }
+}

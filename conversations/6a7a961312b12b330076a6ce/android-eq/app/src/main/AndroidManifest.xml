@@ -46,16 +46,16 @@
         </activity>
 
         <service
-            android:name=".engine.EQService"
+            android:name=".EQService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
         <service
-            android:name=".capture.CaptureEqService"
+            android:name=".audio.CaptureEqService"
             android:foregroundServiceType="mediaProjection"
             android:exported="false" />
 
         <receiver
-            android:name=".engine.BootReceiver"
+            android:name=".BootReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -63,7 +63,7 @@
         </receiver>
 
         <service
-            android:name=".engine.EQTileService"
+            android:name=".EQTileService"
             android:label="SonicCore"
             android:icon="@mipmap/ic_launcher"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
@@ -74,7 +74,7 @@
         </service>
 
         <receiver
-            android:name=".engine.EQWidgetProvider"
+            android:name=".EQWidgetProvider"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

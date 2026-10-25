@@ -151,7 +151,7 @@ fun HomeTopBar(
                 contentDescription = "Toggle color mode",
                 onClick = onModeClick
             ) {
-                Text(modeLabel, color = SonicCoreColors.CustomizationAccent, fontSize = 17.sp)
+                Text(modeLabel, color = SonicCoreColors.Violet, fontSize = 17.sp)
             }
         }
 
@@ -176,7 +176,7 @@ fun HomeTopBar(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                Text("›", color = SonicCoreColors.AudioAccent, style = MaterialTheme.typography.titleMedium)
+                Text("›", color = SonicCoreColors.Cyan, style = MaterialTheme.typography.titleMedium)
             }
         }
         Text(
@@ -241,10 +241,10 @@ internal fun HomeEngineCard(
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                if (enabled) SonicCoreColors.AudioAccent.copy(alpha = 0.26f)
+                                if (enabled) SonicCoreColors.Cyan.copy(alpha = 0.26f)
                                 else SonicCoreColors.ElevatedSurface.copy(alpha = 0.85f),
                                 SonicCoreColors.ElevatedSurface.copy(alpha = 0.64f),
-                                SonicCoreColors.SolidCard.copy(alpha = 0.94f)
+                                SonicCoreColors.Surface.copy(alpha = 0.94f)
                             )
                         )
                     )
@@ -253,8 +253,8 @@ internal fun HomeEngineCard(
                         Brush.verticalGradient(
                             listOf(
                                 Color.White.copy(alpha = 0.38f),
-                                if (enabled) SonicCoreColors.AudioAccent.copy(alpha = 0.42f)
-                                else SonicCoreColors.SubtleBorder.copy(alpha = 0.16f)
+                                if (enabled) SonicCoreColors.Cyan.copy(alpha = 0.42f)
+                                else SonicCoreColors.Border.copy(alpha = 0.16f)
                             )
                         ),
                         CircleShape
@@ -265,7 +265,7 @@ internal fun HomeEngineCard(
             ) {
                 Text(
                     "⏻",
-                    color = if (enabled) SonicCoreColors.AudioAccent else SonicCoreColors.SecondaryText,
+                    color = if (enabled) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText,
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -303,7 +303,7 @@ private fun CompactMetric(label: String, value: String, modifier: Modifier = Mod
         Text(label, color = SonicCoreColors.SecondaryText, style = MaterialTheme.typography.labelSmall)
         Text(
             value,
-            color = SonicCoreColors.AudioAccent,
+            color = SonicCoreColors.Cyan,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 2.dp)
@@ -355,13 +355,13 @@ private fun HomeAudioMeters(meters: HomeMeterPresentation) {
                 ) {
                     val barHeight = size.height
                     drawRoundRect(
-                        color = SonicCoreColors.SubtleBorder.copy(alpha = 0.11f),
+                        color = SonicCoreColors.Border.copy(alpha = 0.11f),
                         size = size,
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(barHeight / 2f)
                     )
                     if (rmsLevel > 0f) {
                         drawRoundRect(
-                            color = if (index < 2) SonicCoreColors.AudioAccent else SonicCoreColors.CustomizationAccent,
+                            color = if (index < 2) SonicCoreColors.Cyan else SonicCoreColors.Violet,
                             size = androidx.compose.ui.geometry.Size(size.width * rmsLevel, barHeight),
                             cornerRadius = androidx.compose.ui.geometry.CornerRadius(barHeight / 2f)
                         )
@@ -776,7 +776,7 @@ fun HomeSpectrumCard(
             for (grid in 1..3) {
                 val y = topPad + (height - topPad) * grid / 4f
                 drawLine(
-                    SonicCoreColors.SubtleBorder.copy(alpha = 0.14f),
+                    SonicCoreColors.Border.copy(alpha = 0.14f),
                     androidx.compose.ui.geometry.Offset(0f, y),
                     androidx.compose.ui.geometry.Offset(width, y),
                     1f
@@ -787,7 +787,7 @@ fun HomeSpectrumCard(
                 val barHeight = (height - topPad) * magnitude.coerceIn(0f, 1f)
                 if (barHeight > 1f) {
                     drawRoundRect(
-                        color = SonicCoreColors.AudioAccent.copy(alpha = 0.88f),
+                        color = SonicCoreColors.Cyan.copy(alpha = 0.88f),
                         topLeft = androidx.compose.ui.geometry.Offset(index * barWidth + 1f, height - barHeight),
                         size = androidx.compose.ui.geometry.Size(barWidth - 2f, barHeight),
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
@@ -797,7 +797,7 @@ fun HomeSpectrumCard(
                 if (peakHoldSeconds > 0 && peak > 0.02f) {
                     val y = height - (height - topPad) * peak.coerceIn(0f, 1f)
                     drawLine(
-                        color = SonicCoreColors.CustomizationAccent,
+                        color = SonicCoreColors.Violet,
                         start = androidx.compose.ui.geometry.Offset(index * barWidth + 1f, y),
                         end = androidx.compose.ui.geometry.Offset((index + 1) * barWidth - 1f, y),
                         strokeWidth = 1.5f
