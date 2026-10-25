@@ -39,6 +39,7 @@ import com.soniccore.app.ui.design.PlatformInfoRow
 import com.soniccore.app.ui.design.PlatformSectionLabel
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.design.StatusPill
+import com.soniccore.app.ui.design.ThemeAccentPreference
 
 private data class SystemCustomization(
     val title: String,
@@ -57,6 +58,11 @@ fun CustomizationCenterScreen(
     currentThemeId: String,
     onThemeSelect: (NeonTheme) -> Unit,
     onThemeApply: (NeonTheme) -> Unit,
+    /** Saved swatch behind the "Custom Accent" theme. */
+    customAccent: Int,
+    onCustomAccentChange: (Int) -> Unit,
+    /** What the wallpaper probe found, or null while it is still running. */
+    wallpaperDetail: String?,
     glassLevel: Int,
     onGlassLevelChange: (Int) -> Unit,
     appearanceMode: String,
@@ -87,13 +93,15 @@ fun CustomizationCenterScreen(
         ),
         SystemCustomization(
             "System-wide accent color",
-            "Not available: Android does not let a third-party app override another app's accent color.",
+            "Not available: Android does not let a third-party app override another app's accent " +
+                "color. The Custom Accent theme below recolors SonicCore's own surfaces instead.",
             supported = false
         ),
         SystemCustomization(
             "Wallpaper-based color extraction",
-            "Not implemented: SonicCore has no Material You dynamic-color pipeline.",
-            supported = false
+            "Available as the Dynamic Wallpaper theme when Android hands this app the wallpaper " +
+                "colors; without the signature permission the theme falls back and says so.",
+            supported = true
         ),
         SystemCustomization(
             "Force dark mode in other apps",
@@ -223,6 +231,96 @@ fun CustomizationCenterScreen(
                     fontWeight = FontWeight.Bold
                 )
             }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "System Default follows the system appearance; Light Studio applies " +
+                    "the light appearance. The other themes keep the mode you chose.",
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText,
+                lineHeight = 14.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Dynamic Wallpaper",
+                        fontSize = 12.sp,
+                        color = SonicCoreColors.PrimaryText,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        wallpaperDetail ?: "Checking whether this device exposes wallpaper colours…",
+                        fontSize = 10.sp,
+                        color = SonicCoreColors.SecondaryText,
+                        lineHeight = 14.sp
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                StatusPill(
+                    if (wallpaperDetail == null) "Checking"
+                    else if (wallpaperDetail.startsWith("Tinted")) "Available" else "Fallback",
+                    if (wallpaperDetail?.startsWith("Tinted") == true) SonicCoreColors.Success
+                    else SonicCoreColors.SecondaryText
+                )
+            }
+        }
+
+        // Custom accent — the swatch behind the "Custom Accent" theme.
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), depth = LiquidGlassDepth.Inset) {
+            PlatformSectionLabel("Custom accent", color = SonicCoreColors.Violet)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Drives the Custom Accent theme and is saved with the other UI preferences. " +
+                    "Rendering only — never DSP, capture or buffers.",
+                fontSize = 11.sp,
+                color = SonicCoreColors.SecondaryText
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ThemeAccentPreference.SWATCHES.forEach { (name, argb) ->
+                    val selected = argb == customAccent
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clickable { onCustomAccentChange(argb) }
+                            .semantics { contentDescription = "Custom accent $name" }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (selected) 34.dp else 30.dp)
+                                .clip(CircleShape)
+                                .background(Color(argb))
+                                .border(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) SonicCoreColors.PrimaryText
+                                    else SonicCoreColors.Border.copy(alpha = 0.35f),
+                                    CircleShape
+                                )
+                        )
+                        Text(
+                            name,
+                            fontSize = 9.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selected) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Selected: ${ThemeAccentPreference.label(customAccent)}",
+                fontSize = 10.sp,
+                color = SonicCoreColors.SecondaryText
+            )
         }
 
         // Liquid glass intensity

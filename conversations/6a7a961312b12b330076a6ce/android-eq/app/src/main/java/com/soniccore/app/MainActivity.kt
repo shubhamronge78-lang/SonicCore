@@ -131,6 +131,10 @@ import com.soniccore.app.ui.design.LiquidGlassPanel
 import com.soniccore.app.ui.design.LiquidGlassSurface
 import com.soniccore.app.ui.design.SectionHeader
 import com.soniccore.app.ui.design.SonicCoreColors
+import com.soniccore.app.ui.design.SonicCoreSplashOverlay
+import com.soniccore.app.ui.design.ThemeAccentPreference
+import com.soniccore.app.system.WallpaperAccent
+import com.soniccore.app.system.WallpaperAccentProbe
 import com.soniccore.app.ui.home.HomeCaptureStatusCard
 import com.soniccore.app.ui.home.HomeEngineCard
 import com.soniccore.app.ui.home.HomeHealthCheck
@@ -192,6 +196,13 @@ class MainActivity : ComponentActivity() {
         }
 
         super.onCreate(savedInstanceState)
+        // Platform theme inputs: the saved accent swatch is restored before the
+        // theme, so a persisted "Custom Accent" theme comes back with the swatch
+        // the user picked instead of the default one.
+        try {
+            appCustomAccentState.value = ThemeAccentPreference.parse(
+                getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE).getString(ThemeAccentPreference.KEY, null))
+        } catch (_: Throwable) { }
         // Build #89: restore the persisted theme before the first frame.
         try {
             appThemeState.value = Themes.byId(
@@ -317,7 +328,14 @@ data class NeonTheme(
     val secondary: Color,
     val accent: Color,
     val darkSurfaces: SurfacePalette,
-    val lightSurfaces: SurfacePalette
+    val lightSurfaces: SurfacePalette,
+    /**
+     * Appearance mode this theme wants applied together with it ("system",
+     * "light", "dark"), or null when the theme leaves the user's mode alone.
+     * Only the platform themes set it: System Default follows the system and
+     * Light Studio is a light-surface theme.
+     */
+    val preferredMode: String? = null
 )
 
 object Themes {
@@ -373,11 +391,107 @@ object Themes {
         dark(0xFF08101A, 0xFF0D1724, 0xFF142131, 0xFF1D2C3E, 0xFF304357),
         light(0xFFEAF1F6, 0xFFCCD9E3)
     )
-    val ALL = listOf(OBSIDIAN, AURORA, PURPLE_NEBULA, ARCTIC, EMERALD, CHAMPAGNE, MIDNIGHT, ADAPTIVE)
+    // ── Platform themes ──
+    // The eight palettes above are the original catalog and their ids are
+    // persisted user preferences, so they never change. These are the four
+    // platform themes that complete the twelve-theme catalog. Only the two
+    // that need a live input are built on demand.
+    const val SYSTEM_ID = "system"
+    const val LIGHT_STUDIO_ID = "light-studio"
+    const val CUSTOM_ACCENT_ID = "custom-accent"
+    const val DYNAMIC_WALLPAPER_ID = "dynamic-wallpaper"
+
+    /** Neutral palette that reads correctly in either appearance mode. */
+    val SYSTEM_DEFAULT = NeonTheme(
+        SYSTEM_ID, "System Default", Color(0xFF6FA8FF), Color(0xFF9BB0C9), Color(0xFF8FD3FF),
+        dark(0xFF070B12, 0xFF0C1119, 0xFF131A24, 0xFF1B2431, 0xFF303B4A),
+        light(0xFFE9EEF6, 0xFFC9D3E2),
+        preferredMode = "system"
+    )
+
+    /** Bright, low-contrast studio palette; ships with the light appearance. */
+    val LIGHT_STUDIO = NeonTheme(
+        LIGHT_STUDIO_ID, "Light Studio", Color(0xFF1F7AE0), Color(0xFF7A5AF8), Color(0xFF00A3B4),
+        dark(0xFF0B0F16, 0xFF12161F, 0xFF181D28, 0xFF202634, 0xFF38414F),
+        light(0xFFEAF1FA, 0xFFC4D4E6),
+        preferredMode = "light"
+    )
+
+    private fun blend(base: Color, other: Color, fraction: Float): Color {
+        val f = fraction.coerceIn(0f, 1f)
+        return Color(
+            red = base.red + (other.red - base.red) * f,
+            green = base.green + (other.green - base.green) * f,
+            blue = base.blue + (other.blue - base.blue) * f
+        )
+    }
+
+    private fun brighten(color: Color, amount: Float): Color {
+        val a = amount.coerceIn(0f, 1f)
+        return Color(
+            red = color.red + (1f - color.red) * a,
+            green = color.green + (1f - color.green) * a,
+            blue = color.blue + (1f - color.blue) * a
+        )
+    }
+
+    /** "Custom Accent": the user's own swatch drives the whole accent set. */
+    fun customAccent(argb: Int): NeonTheme {
+        val swatch = Color(argb)
+        return NeonTheme(
+            CUSTOM_ACCENT_ID, "Custom Accent",
+            swatch, blend(swatch, Color(0xFF9A8CFF), 0.45f), brighten(swatch, 0.22f),
+            dark(0xFF07090F, 0xFF0C1018, 0xFF121824, 0xFF1A2230, 0xFF303A4A),
+            light(0xFFEAF0F7, 0xFFC6D2E1)
+        )
+    }
+
+    /**
+     * "Dynamic Wallpaper": tinted by the system wallpaper's dominant colour.
+     * `wallpaperAccent` is null when Android will not hand the colour to this
+     * app, in which case the theme keeps the Adaptive palette and the
+     * Customization Center says so.
+     */
+    fun dynamicWallpaper(wallpaperAccent: Int?): NeonTheme {
+        val tint = Color(wallpaperAccent ?: 0xFF55CFE1.toInt())
+        return NeonTheme(
+            DYNAMIC_WALLPAPER_ID, "Dynamic Wallpaper",
+            tint, blend(tint, Color(0xFF8D82E8), 0.5f), brighten(tint, 0.20f),
+            dark(0xFF08101A, 0xFF0D1724, 0xFF142131, 0xFF1D2C3E, 0xFF304357),
+            light(0xFFEAF1F6, 0xFFCCD9E3)
+        )
+    }
+
+    /**
+     * The twelve-theme catalog in presentation order. The last two entries are
+     * built from live inputs, so the caller passes what it currently has.
+     */
+    fun catalog(
+        customAccent: Int = ThemeAccentPreference.DEFAULT,
+        wallpaperAccent: Int? = null
+    ): List<NeonTheme> = listOf(
+        OBSIDIAN, AURORA, PURPLE_NEBULA, ARCTIC, EMERALD, CHAMPAGNE, MIDNIGHT, ADAPTIVE,
+        SYSTEM_DEFAULT, LIGHT_STUDIO, customAccent(customAccent), dynamicWallpaper(wallpaperAccent)
+    )
+
+    /**
+     * The live catalog every screen reads: the trailing Custom Accent and Dynamic
+     * Wallpaper entries follow the saved swatch and the wallpaper probe, so a
+     * change to either is picked up without rebuilding the list anywhere else.
+     */
+    val ALL: List<NeonTheme> get() = catalog(
+        appCustomAccentState.value,
+        appWallpaperAccentState.value?.takeIf { it.available }?.argb
+    )
+
     fun byId(id: String?): NeonTheme = ALL.firstOrNull { it.id == id } ?: OBSIDIAN
 }
 
 val appThemeState = mutableStateOf(Themes.OBSIDIAN)
+/** Saved swatch behind the "Custom Accent" theme (presentation only). */
+val appCustomAccentState = mutableStateOf(ThemeAccentPreference.DEFAULT)
+/** What the wallpaper probe found, or null until it has run. */
+val appWallpaperAccentState = mutableStateOf<WallpaperAccent?>(null)
 internal val T: NeonTheme get() = appThemeState.value
 
 // Build #132: fixed status semantics — independent of the selectable brand
@@ -564,6 +678,20 @@ fun SonicCoreNavHost(engine: EqualizerEngine) {
 fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // ── Platform themes: the one live input of the twelve-theme catalogue ──
+    // Presentation only — neither the wallpaper tint nor the accent touches DSP,
+    // capture, buffers or sample rate. The probe reports "not readable" instead of
+    // inventing a colour when Android withholds WallpaperColors from this app.
+    LaunchedEffect(Unit) {
+        val probed = WallpaperAccentProbe.probe(context, appCustomAccentState.value)
+        appWallpaperAccentState.value = probed
+        // Rebuild the live theme once the wallpaper tint is known, so a restored
+        // "Dynamic Wallpaper" theme is tinted on the first frame it can be.
+        if (appThemeState.value.id == Themes.DYNAMIC_WALLPAPER_ID && probed.available) {
+            appThemeState.value = Themes.dynamicWallpaper(probed.argb)
+        }
+    }
 
     var enabled by remember { mutableStateOf(engine.isBoot()) }
     var bandCount by remember { mutableStateOf(engine.bandCount) }
@@ -833,6 +961,16 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
                 .edit().putString("theme", theme.id).apply()
         } catch (_: Throwable) { }
+        // A platform theme may own an appearance mode: System Default follows the
+        // system, Light Studio is a light-surface theme. The legacy themes leave
+        // whatever mode the user chose alone.
+        theme.preferredMode?.let { mode ->
+            appModeState.value = SurfaceModes.byId(mode)
+            try {
+                context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
+                    .edit().putString("mode", mode).apply()
+            } catch (_: Throwable) { }
+        }
     }
 
     /**
@@ -4035,13 +4173,25 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                 themes = Themes.ALL,
                 currentThemeId = appThemeState.value.id,
                 onThemeSelect = { theme -> appThemeState.value = theme },
-                onThemeApply = { theme ->
-                    appThemeState.value = theme
+                // Same commit path as the other galleries, so a platform theme also
+                // applies the appearance mode it owns.
+                onThemeApply = { theme -> applyTheme(theme) },
+                customAccent = appCustomAccentState.value,
+                onCustomAccentChange = { argb ->
+                    appCustomAccentState.value = argb
                     try {
                         context.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
-                            .edit().putString("theme", theme.id).apply()
+                            .edit()
+                            .putString(ThemeAccentPreference.KEY, ThemeAccentPreference.serialize(argb))
+                            .apply()
                     } catch (_: Throwable) { }
+                    // The Custom Accent theme is built from the swatch, so it follows
+                    // the pick immediately.
+                    if (appThemeState.value.id == Themes.CUSTOM_ACCENT_ID) {
+                        appThemeState.value = Themes.customAccent(argb)
+                    }
                 },
+                wallpaperDetail = appWallpaperAccentState.value?.detail,
                 glassLevel = appGlassState.value,
                 onGlassLevelChange = { level ->
                     appGlassState.value = level
@@ -4172,6 +4322,9 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             // The body reads the frame live from the navigator, so it renders the
             // screen the current stack names — never the one it started on.
             mainContent(navigation)
+            // Animated first-frame splash, drawn over the console and removed
+            // once it has played (immediately when system animations are off).
+            SonicCoreSplashOverlay()
             SnackbarHost(
                 hostState = snackbarHost,
                 modifier = Modifier

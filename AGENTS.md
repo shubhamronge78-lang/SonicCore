@@ -32,11 +32,15 @@ The app itself now has two layers:
   dispatched from the single large `EqualizerScreen` composable in
   `MainActivity.kt`.
 
-The launcher starts in `SonicCoreNavHost` (`MainActivity.kt`), which owns the
-navigation stack and renders Home, a category hub, or one tool inside a
-category. Home shows **exactly six categories** — Audio, Device Center, Shizuku
-Center, Customization, Permissions & Privacy, Settings — and the bottom dock
-shows the same six, never internal tools. A tool either reuses a long-standing
+Navigation is **six categories**, not a flat dock: `SonicCoreDestination` in
+`ui/navigation/SonicCoreNavigation.kt` names every destination and
+`SonicCoreCategory` groups them into Audio, Device Center, Shizuku Center,
+Customization, Permissions & Privacy and Settings. The launcher starts in
+`SonicCoreNavHost` (`MainActivity.kt`), which owns the navigation stack and
+renders Home, a category hub, or one tool inside a category. Home shows
+**exactly six categories** — Audio, Device Center, Shizuku Center,
+Customization, Permissions & Privacy, Settings — and the bottom dock shows the
+same six, never internal tools. A tool either reuses a long-standing
 full-screen body (`SonicCoreTool.destination`, e.g. the equalizer) or has its own
 screen in `ui/navigation/SonicCoreToolScreens.kt`; nothing may have both or
 neither. `SonicCoreNavigationTest` asserts all of that (six categories in order,
@@ -59,9 +63,13 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (186 tests across 27 classes: the platform expansion, the Shizuku IPC work
-   and the Home/layout contracts) plus the debug APK, built from the mounted
-   source. All 186 pass with 0 skipped.
+   (200 tests across 29 classes: the platform expansion, the Shizuku IPC work, the
+   Home/layout contracts, the twelve-theme catalogue and the splash) plus the
+   debug APK, built from the mounted source. All 200 pass with 0 skipped.
+   `:app:lintDebug` is **not** run here: it reports 6 pre-existing errors (the
+   capture path, `SettingsToolScreens`' API-28 signing-info read, and the two
+   Shizuku restricted-API calls), none of them in a file this work touches, so
+   adding it to the pipeline would make a green build impossible.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -103,6 +111,19 @@ tail -5 build-output/dsp-test.log                    # must end with "HARNESS PA
 tail -5 build-output/build.log                       # must end with "BUILD SUCCESSFUL"
 ```
 
+Two checks the project ships that are **not** part of the compose pipeline
+(each runs inside the app container, from the mounted source):
+
+```bash
+docker compose -f docker-compose.base44.yml exec -T app sh -c 'cd /src && python3 tools/license_check.py'
+docker compose -f docker-compose.base44.yml exec -T app sh -c 'cd /src && python3 tools/check_docs_links.py'
+```
+
+`license_check.py` reads the resolved dependency graph from Gradle and each
+artifact's licence from its published POM (a handful of artifacts publish no
+licence metadata and print `unknown`), and exits 1 on a copyleft licence.
+`check_docs_links.py` resolves every relative Markdown link in the project.
+
 `build-output/` is generated and gitignored.
 
 ## Sandbox-only overrides
@@ -142,6 +163,22 @@ own and behave identically outside the sandbox. Specifically:
   "never started". Adding a `ShizukuState` value breaks every exhaustive `when`
   over it — `CapabilityRegistry`, `DeviceToolsScreen` and `ShizukuCenterScreen`
   each handle it.
+- **The theme catalogue is twelve themes and `Themes.ALL` is a getter, not a
+  constant.** Eight legacy ids (`classic`, `aurora`, `synthwave`, `glacier`,
+  `emerald`, `ember`, `midnight`, `adaptive`) are persisted user preferences and
+  must never be renamed; `Themes.catalog(customAccent, wallpaperAccent)` adds
+  System Default, Light Studio, Custom Accent and Dynamic Wallpaper. The last two
+  are built from live inputs — the saved accent swatch
+  (`ui/design/ThemeAccentPreference.kt`) and `WallpaperAccentProbe`, which reads
+  `WallpaperManager.getWallpaperColors` behind a try/catch and reports "not
+  readable" on an ordinary install. `NeonTheme.preferredMode` is what makes
+  System Default follow the system and Light Studio apply the light appearance;
+  legacy themes leave the mode alone.
+- **The splash is an overlay, not a second activity.** `SonicCoreSplashOverlay`
+  renders itself over the console in `MainActivity`, hides itself after ~1.4 s,
+  swallows taps while visible, and disappears immediately when
+  `Settings.Global.ANIMATOR_DURATION_SCALE` is 0. It draws no resource, so there
+  is nothing to keep in sync with the launcher icon.
 - **Platform logic is split pure/Android so it can be unit-tested.** Anything
   needing a device lives behind a `probe(context)` function; the decision logic
   is a pure `evaluate(plainData)` that JVM tests call directly
