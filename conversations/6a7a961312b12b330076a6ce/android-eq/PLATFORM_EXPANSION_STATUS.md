@@ -60,13 +60,25 @@ Full detail and the device-validation checklist: `docs/shizuku-operations.md`.
 
 ## Customization Center — Implemented (app-level), Unavailable (system-level)
 
-- Appearance mode (system/light/dark), 8 themes with preview + apply, liquid
-  glass intensity: **Implemented**, persisted through the existing UI prefs.
+- Appearance mode (system/light/dark), **twelve themes** with preview + apply,
+  liquid glass intensity: **Implemented**, persisted through the existing UI
+  prefs. The eight original ids (`classic`, `aurora`, `synthwave`, `glacier`,
+  `emerald`, `ember`, `midnight`, `adaptive`) are unchanged; System Default
+  applies the system appearance, Light Studio the light one, Custom Accent is
+  rebuilt from a saved swatch, Dynamic Wallpaper is tinted by the wallpaper.
+- **Custom Accent**: six swatches, persisted, applied live —
+  **Implemented** (`ThemeAccentPreference`, pure parse/serialise, JVM-tested).
+- **Dynamic Wallpaper**: `WallpaperManager.getWallpaperColors` is read behind a
+  try/catch. A normal install does not hold `READ_WALLPAPER_INTERNAL`, so the
+  probe reports "not readable by this app on this device" and the theme keeps
+  its own palette: **Bounded** — the Customization Center shows which happened.
+- **Animated splash**: first-frame overlay, skipped when the system animation
+  scale is off: **Implemented**.
 - Quick Settings tile, home-screen widget, notification controls:
   **Implemented** (pre-existing services).
-- Launcher icon packs, system-wide accent color, wallpaper color extraction,
-  force-dark for other apps: **Unavailable** / **Not implemented** — Android
-  does not permit them for third-party apps; each row says so.
+- Launcher icon packs, system-wide accent color, force-dark for other apps:
+  **Unavailable** / **Not implemented** — Android does not permit them for
+  third-party apps; each row says so.
 
 ## Permissions & Privacy Center — Implemented
 
@@ -84,15 +96,54 @@ clearable), and an exportable report shared as a text file through the existing
 
 ## Navigation — Implemented
 
-16 destinations in the scrollable dock, including the seven requested centers:
-Dashboard, EQ (audio), Device Tools, Shizuku, Customization, Permissions,
-Diagnostics and the Settings hub. Asserted by `SonicCoreNavigationTest`.
+`SonicCoreCategory` groups all 16 destinations into the six categories the plan
+asks for — **Audio**, **Device Center**, **Shizuku Center**, **Customization**,
+**Permissions & Privacy**, **Settings** — and the dock shows those six, evenly
+weighted so it never scrolls sideways. The flat 16-chip scrolling dock is gone;
+a contextual row above the categories shows the destinations of the active one,
+so every destination stays reachable. `SonicCoreNavigationTest` asserts the
+category contract (six categories in order, every destination owned exactly
+once, no duplicate, each tab landing inside its own category).
 
-## Verification commands
+## Verification results (measured 2026-10-25)
 
 ```bash
 docker compose -f docker-compose.base44.yml restart app
-tail -3 build-output/dsp-test.log     # HARNESS PASS (0 failures)
-tail -3 build-output/build.log        # BUILD SUCCESSFUL
-curl -fsSI http://localhost:3000/NeonEQ-debug.apk
+```
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Native DSP harness | `g++ … tools/dspharness/harness.cpp` under ASan+UBSan | `HARNESS PASS (0 failures)` |
+| JVM unit tests | `./gradlew :app:testDebugUnitTest --no-daemon` | 28 suites, **176 tests, 0 failures, 0 skipped** |
+| Debug APK | `./gradlew :app:assembleDebug --no-daemon` | `BUILD SUCCESSFUL` — `build-output/NeonEQ-debug.apk`, 13.6 MB |
+| Dependency licences | `python3 tools/license_check.py` | **PASS** — 109 shipped / 112 test-only artifacts, no copyleft |
+| Documentation links | `python3 tools/check_docs_links.py` | **PASS** — every relative link resolves (10 files) |
+| Android lint | `./gradlew :app:lintDebug --no-daemon` | **BUILD FAILED: 4 errors, 55 warnings** — see below |
+| APK contents | `aapt2 dump badging`, `apksigner verify` | `com.neon.eq` 3.6.0, minSdk 26, targetSdk 34, 12 permissions as audited, `libneondsp.so` for `arm64-v8a` + `armeabi-v7a`, adaptive icon `mipmap-anydpi-v26/ic_launcher.xml`, signed with the pinned debug keystore (`CN=NeonEQ Debug`) |
+
+### Known lint findings (pre-existing)
+
+Lint is **not** part of CI (the workflows run the unit tests and the assembly),
+and all four errors are in files this platform work does not touch:
+
+| Location | Issue |
+| --- | --- |
+| `capture/AudioCapabilityManager.kt:63` | `MissingPermission` — `AudioRecord.Builder()` |
+| `capture/CaptureEqService.kt:276` | `MissingPermission` — same capture path |
+| `shizuku/ShizukuBridge.kt:161` | `RestrictedApi` — `Shizuku.getServerPatchVersion` |
+| `shizuku/ShizukuDiagnostics.kt:84` | `RestrictedApi` — the same call |
+
+The 55 warnings are dominated by `ObsoleteSdkInt` (20) and `InlinedApi` (6) from
+the app's long API-level history, plus `IconLauncherShape`, `UnusedResources` and
+`GradleDependency`. Fixing them is its own change: the two capture-path errors
+must not be "fixed" by loosening code in the path this work preserves.
+
+### Not verified here
+
+No Android device is attached to this environment, so capture consent, output
+routing, wallpaper colours, Shizuku authorization and the audible result are
+**not device-verified**. `docs/feature-matrix.md` marks each of those rows.
+
+```bash
+curl -fsSI http://localhost:3000/NeonEQ-debug.apk   # 200 OK
 ```

@@ -7,12 +7,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -61,24 +59,62 @@ enum class SonicCoreDestination(
 
     companion object {
         val primaryDestinations = listOf(DASHBOARD, EQUALIZER, PLAYER, DSP_FX)
-        val consoleDestinations = listOf(
-            DASHBOARD,
-            EQUALIZER,
-            PLAYER,
-            DSP_FX,
-            SYSTEM_CAPTURE,
-            SESSIONS,
-            SIGNAL_PATH,
-            PRO_FX,
-            DEVICE_TOOLS,
-            SHIZUKU,
-            CUSTOMIZATION,
-            PERMISSIONS,
-            DIAGNOSTICS,
-            CAPABILITIES,
-            APP_MANAGER,
-            SETTINGS
+    }
+}
+
+/**
+ * The six navigation categories of the platform. Every destination belongs to
+ * exactly one of them, so the dock stays a six-item bar instead of a scrolling
+ * duplicate of everything the dashboard already lists.
+ */
+enum class SonicCoreCategory(
+    val title: String,
+    val label: String,
+    val icon: String,
+    val destinations: List<SonicCoreDestination>
+) {
+    AUDIO(
+        "Audio",
+        "AUDIO",
+        "∿",
+        listOf(
+            SonicCoreDestination.DASHBOARD,
+            SonicCoreDestination.EQUALIZER,
+            SonicCoreDestination.PLAYER,
+            SonicCoreDestination.DSP_FX,
+            SonicCoreDestination.SYSTEM_CAPTURE,
+            SonicCoreDestination.SESSIONS,
+            SonicCoreDestination.SIGNAL_PATH,
+            SonicCoreDestination.PRO_FX
         )
+    ),
+    DEVICE(
+        "Device Center",
+        "DEVICE",
+        "⚙",
+        listOf(
+            SonicCoreDestination.DIAGNOSTICS,
+            SonicCoreDestination.CAPABILITIES,
+            SonicCoreDestination.DEVICE_TOOLS,
+            SonicCoreDestination.APP_MANAGER
+        )
+    ),
+    SHIZUKU("Shizuku Center", "SHIZUKU", "⇄", listOf(SonicCoreDestination.SHIZUKU)),
+    CUSTOMIZATION("Customization", "CUSTOM", "◈", listOf(SonicCoreDestination.CUSTOMIZATION)),
+    PRIVACY("Permissions & Privacy", "PRIVACY", "🔒", listOf(SonicCoreDestination.PERMISSIONS)),
+    SETTINGS("Settings", "SETTINGS", "≡", listOf(SonicCoreDestination.SETTINGS));
+
+    /** Where the category tab lands. */
+    val defaultDestination: SonicCoreDestination get() = destinations.first()
+
+    companion object {
+        val ALL: List<SonicCoreCategory> = values().toList()
+
+        /** Every destination, in category order — the reachability contract. */
+        val allDestinations: List<SonicCoreDestination> get() = ALL.flatMap { it.destinations }
+
+        fun forDestination(destination: SonicCoreDestination): SonicCoreCategory =
+            ALL.firstOrNull { it.destinations.contains(destination) } ?: AUDIO
     }
 }
 
@@ -125,8 +161,15 @@ fun SonicCoreScreenHeader(
     }
 }
 
+/**
+ * Six-category dock. The top row is contextual — only the active category's own
+ * destinations, so nothing is unreachable now that the flat 16-chip dock is
+ * gone — and the bottom row is the fixed set of six categories, evenly weighted
+ * so it never needs horizontal scrolling.
+ */
 @Composable
-fun SonicCoreBottomNavigation(
+fun SonicCoreCategoryNavigation(
+    category: SonicCoreCategory,
     selected: SonicCoreDestination,
     onSelect: (SonicCoreDestination) -> Unit,
     landscape: Boolean,
@@ -136,64 +179,149 @@ fun SonicCoreBottomNavigation(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = if (landscape) 28.dp else 24.dp, vertical = 8.dp),
+            .padding(horizontal = if (landscape) 28.dp else 14.dp, vertical = 8.dp),
         contentPadding = 7.dp,
         shape = RoundedCornerShape(30.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            SonicCoreDestination.consoleDestinations.forEach { destination ->
-                val active = selected == destination
-                val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
-                val activeSurface by animateColorAsState(
-                    targetValue = if (active) SonicCoreColors.Cyan.copy(alpha = material.tintAlpha + 0.10f)
-                    else Color.Transparent,
-                    label = "liquidDockSelection"
-                )
-                Surface(
-                    onClick = { onSelect(destination) },
+            if (category.destinations.size > 1) {
+                Row(
                     modifier = Modifier
-                        .width(72.dp)
-                        .height(56.dp)
-                        .semantics {
-                            contentDescription = destination.title
-                            stateDescription = if (active) "Selected" else "Not selected"
-                        },
-                    shape = RoundedCornerShape(24.dp),
-                    color = activeSurface,
-                    contentColor = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText,
-                    border = BorderStroke(
-                        0.8.dp,
-                        (if (active) SonicCoreColors.Cyan else SonicCoreColors.Border)
-                            .copy(alpha = if (active) material.edgeAlpha else 0f)
-                    ),
-                    shadowElevation = if (active) 4.dp else 0.dp
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            destination.icon,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            color = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText
-                        )
-                        Text(
-                            destination.label,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                            maxLines = 1,
-                            color = if (active) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText
+                    category.destinations.forEach { destination ->
+                        DestinationChip(
+                            destination = destination,
+                            active = destination == selected,
+                            onClick = { onSelect(destination) }
                         )
                     }
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                SonicCoreCategory.ALL.forEach { entry ->
+                    CategoryTab(
+                        category = entry,
+                        active = entry == category,
+                        onClick = { onSelect(entry.defaultDestination) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DestinationChip(
+    destination: SonicCoreDestination,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
+    val background by animateColorAsState(
+        targetValue = if (active) SonicCoreColors.Cyan.copy(alpha = material.tintAlpha + 0.10f)
+        else Color.Transparent,
+        label = "categoryDestinationSelection"
+    )
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .width(78.dp)
+            .height(38.dp)
+            .semantics {
+                contentDescription = destination.title
+                stateDescription = if (active) "Selected" else "Not selected"
+            },
+        shape = RoundedCornerShape(14.dp),
+        color = background,
+        contentColor = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText,
+        border = BorderStroke(
+            0.8.dp,
+            (if (active) SonicCoreColors.Cyan else SonicCoreColors.Border)
+                .copy(alpha = if (active) material.edgeAlpha else 0f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                destination.icon,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                color = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText
+            )
+            Text(
+                destination.label,
+                fontSize = 9.sp,
+                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                color = if (active) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText,
+                modifier = Modifier.padding(start = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryTab(
+    category: SonicCoreCategory,
+    active: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
+    val background by animateColorAsState(
+        targetValue = if (active) SonicCoreColors.Violet.copy(alpha = material.tintAlpha + 0.12f)
+        else Color.Transparent,
+        label = "categoryTabSelection"
+    )
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .height(50.dp)
+            .semantics {
+                contentDescription = category.title
+                stateDescription = if (active) "Selected" else "Not selected"
+            },
+        shape = RoundedCornerShape(20.dp),
+        color = background,
+        contentColor = if (active) SonicCoreColors.Violet else SonicCoreColors.SecondaryText,
+        border = BorderStroke(
+            0.8.dp,
+            (if (active) SonicCoreColors.Violet else SonicCoreColors.Border)
+                .copy(alpha = if (active) material.edgeAlpha else 0f)
+        )
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                category.icon,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                color = if (active) SonicCoreColors.Violet else SonicCoreColors.SecondaryText
+            )
+            Text(
+                category.label,
+                fontSize = 8.sp,
+                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                color = if (active) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText
+            )
         }
     }
 }

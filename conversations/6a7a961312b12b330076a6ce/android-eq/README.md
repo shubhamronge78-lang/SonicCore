@@ -32,8 +32,14 @@ requested, or an active UI control as proof that audio is currently flowing.
 
 ## Current features in source
 
-- Four primary destinations: Home, Equalizer, Player, and DSP + FX.
-- Secondary capture, signal-path, and session destinations.
+- Six navigation categories — **Audio**, **Device Center**, **Shizuku Center**,
+  **Customization**, **Permissions & Privacy**, **Settings** — in a fixed
+  six-item dock, with a contextual row showing the destinations of whichever
+  category is active. The previous flat, horizontally scrolling 16-chip dock is
+  gone: every destination is still reachable, but the dock no longer duplicates
+  the dashboard.
+- Four primary audio destinations (Home, Equalizer, Player, DSP + FX) plus the
+  secondary capture, signal-path, session and Pro FX destinations.
 - Graphic EQ configurations and parametric EQ controls, presets, A/B comparison,
   undo/redo, and import/export workflows where supported by the selected path.
 - Native processing stages documented in `app/src/main/cpp/CMakeLists.txt`:
@@ -44,7 +50,16 @@ requested, or an active UI control as proof that audio is currently flowing.
 - Capture, DSP, and output status only report live activity while recent PCM
   input and accepted output frames are present; A/B meter snapshots are not
   presented as separate measurements when no independent history exists.
-- Persisted themes and LOW / MEDIUM / HIGH glass intensity in Settings.
+- **Twelve themes** in one catalogue with their legacy ids preserved (Obsidian
+  Glass, Aurora, Purple Nebula, Arctic Crystal, Emerald Studio, Champagne
+  Titanium, Midnight AMOLED, Adaptive, System Default, Light Studio, Custom
+  Accent, Dynamic Wallpaper). System Default follows the system appearance and
+  Light Studio applies the light one; Custom Accent is driven by a saved accent
+  swatch; Dynamic Wallpaper uses the system wallpaper colour when Android
+  exposes it and says so when it does not.
+- Persisted LOW / MEDIUM / HIGH glass intensity in Settings.
+- Animated first-frame splash (skipped automatically when system animations are
+  off).
 - Adaptive launcher icon assets, including a monochrome layer.
 
 The UI exposes platform-dependent features honestly; availability and measured
@@ -67,8 +82,16 @@ observations and validation limits.
 ```bash
 ./gradlew testDebugUnitTest --no-daemon --max-workers=2
 ./gradlew assembleDebug --no-daemon --max-workers=2
+./gradlew :app:lintDebug --no-daemon --max-workers=2
+python3 tools/license_check.py      # dependency licences; fails on copyleft
+python3 tools/check_docs_links.py   # every relative link in the docs
 git diff --check
 ```
+
+`tools/license_check.py` reads the resolved dependency set out of Gradle and the
+licence of each artifact out of its published POM, so the licence audit can be
+re-run rather than trusted. `tools/check_docs_links.py` resolves every relative
+Markdown link in this project.
 
 The debug APK is written to:
 
@@ -100,3 +123,8 @@ changes, latency, or audible output.
 
 - [Android platform notes and official references](./ANDROID_PLATFORM_NOTES.md)
 - [Changelog](./CHANGELOG.md)
+- [Feature matrix — what each destination actually does](./docs/feature-matrix.md)
+- [Repository integration and licence provenance](./docs/repository-integration.md)
+- [Permissions and privacy audit](./docs/permissions-audit.md)
+- [Shizuku operations and why most are not implemented](./docs/shizuku-operations.md)
+- [Platform expansion status](./PLATFORM_EXPANSION_STATUS.md)
