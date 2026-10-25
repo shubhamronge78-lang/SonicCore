@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.neon.eq"
+    namespace = "com.soniccore.app"
     compileSdk = 34
 
     // CI (GitHub Actions) runs on a fresh VM every time, so without a fixed keystore
@@ -25,7 +25,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.neon.eq"
+        applicationId = "com.soniccore.app"
         minSdk = 26
         targetSdk = 34
         // Tie versionCode/versionName to the CI run so it's easy to confirm on-device
