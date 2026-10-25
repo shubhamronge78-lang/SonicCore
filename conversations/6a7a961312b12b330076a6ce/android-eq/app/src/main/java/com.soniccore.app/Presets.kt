@@ -1,0 +1,197 @@
+package com.soniccore.app.engine
+
+object Presets {
+
+    private const val MAX_IMPORT_JSON_CHARS = 256 * 1024
+    private const val MAX_IMPORTED_PRESETS = 500
+
+    data class Preset(val name: String, val levels: ShortArray)
+
+    // Extended preset that includes effect settings (bass, virtualizer, loudness)
+    // alongside band levels — used for user-saved custom presets.
+    data class CustomPreset(
+        val name: String,
+        val levels: ShortArray,
+        val bassBoost: Int = 0,
+        val virtualizer: Int = 0,
+        val loudness: Int = 0
+    )
+
+    // Build #93: EQ is fixed at 10 bands — every preset is now a dedicated
+    // 10-slot curve (was: 31-slot index math downsampled to the band count).
+    // Values use the raised ceiling: boosts go up to +15 dB where the old
+    // curves topped out around +8. Slot freqs ~ 31/62/125/250/500/1k/2k/4k/8k/16k.
+    val presets: List<Preset> = listOf(
+        Preset("Flat", shortArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+        // ── Bass family ──
+        Preset("Bass Boost", shortArrayOf(15, 13, 11, 7, 3, 0, 0, 0, 0, 0)),
+        Preset("Bass Extreme", shortArrayOf(15, 15, 13, 9, 4, 0, 0, 0, 0, 0)),
+        Preset("Sub Bass", shortArrayOf(15, 12, 6, 0, -2, -2, 0, 0, 0, 0)),
+        // ── Treble family ──
+        Preset("Treble Boost", shortArrayOf(0, 0, 0, 0, 0, 0, 3, 7, 11, 15)),
+        Preset("Air", shortArrayOf(0, 0, 0, 0, 0, 0, 0, 2, 6, 12)),
+        // ── Genre presets ──
+        Preset("Rock", shortArrayOf(10, 8, 5, 2, 0, 0, 3, 5, 7, 8)),
+        Preset("Pop", shortArrayOf(-2, -1, 2, 4, 5, 4, 1, -1, -2, -3)),
+        Preset("Jazz", shortArrayOf(6, 5, 3, 1, 0, 0, 2, 3, 5, 6)),
+        Preset("EDM", shortArrayOf(13, 11, 6, 0, -2, -2, 0, 3, 5, 7)),
+        Preset("Classical", shortArrayOf(5, 4, 2, 0, 0, 0, -1, 1, 3, 4)),
+        Preset("Dance", shortArrayOf(13, 11, 5, 0, 0, 3, 5, 7, 6, 5)),
+        Preset("Vocal", shortArrayOf(-3, -2, 0, 2, 4, 5, 4, 2, 0, -1)),
+        Preset("Loudness", shortArrayOf(15, 12, 4, 0, -1, -1, 0, 2, 5, 8)),
+        Preset("Hip Hop", shortArrayOf(14, 12, 5, 0, -1, -1, 0, 2, 3, 4)),
+        Preset("Gaming", shortArrayOf(8, 6, 0, -2, -2, 0, 4, 6, 8, 9)),
+        // ── New presets ──
+        Preset("Acoustic", shortArrayOf(5, 4, 2, 1, 1, 2, 2, 4, 4, 3)),
+        Preset("R&B", shortArrayOf(12, 10, 4, 0, 1, 2, 2, 3, 4, 4)),
+        Preset("Metal", shortArrayOf(11, 8, 2, -2, -2, 0, 1, 4, 6, 7)),
+        Preset("Electronic", shortArrayOf(14, 11, 4, -2, -3, -1, 0, 4, 7, 9)),
+        Preset("Latin", shortArrayOf(9, 7, 4, 1, 1, 2, 3, 4, 5, 5)),
+        Preset("Podcast", shortArrayOf(-3, -2, 0, 3, 5, 6, 4, 2, 0, -1)),
+        Preset("Movie", shortArrayOf(14, 11, 3, 0, -1, 0, 3, 5, 8, 10)),
+        Preset("Night Mode", shortArrayOf(-6, -4, -1, 0, 1, 0, -1, -3, -5, -7)),
+        Preset("Concert", shortArrayOf(8, 6, 0, -1, 0, 1, 3, 4, 6, 8)),
+        Preset("Phone", shortArrayOf(-4, -3, -1, 1, 4, 6, 6, 3, 0, -2))
+    )
+
+    // Build #93: with the EQ fixed at 10 bands this normally returns the
+    // preset as-is. The resample path stays for user-saved custom presets
+    // created under the old variable band counts (5-31 slots) so they map
+    // cleanly onto the 10-band curve instead of truncating.
+    // ── Build #121: safe built-in quick presets (10-band dB levels) ──
+    val BUILTIN_QUICK: List<Pair<String, IntArray>> = listOf(
+        "Flat" to intArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        "Bass Boost" to intArrayOf(7, 6, 5, 2, 0, 0, 0, 0, 0, 0),
+        "Treble Boost" to intArrayOf(0, 0, 0, 0, 0, 1, 2, 4, 5, 6),
+        "Vocal" to intArrayOf(-2, -1, 0, 2, 4, 4, 3, 2, 0, -1),
+        "Rock" to intArrayOf(5, 4, 3, 1, -1, -1, 1, 3, 4, 5),
+        "Pop" to intArrayOf(0, 1, 3, 4, 4, 3, 1, 0, -1, -2),
+        "Classical" to intArrayOf(4, 3, 2, 1, -1, -1, 0, 2, 3, 4),
+        "Electronic" to intArrayOf(6, 5, 3, 0, -2, 1, 0, 3, 4, 5),
+        "Acoustic" to intArrayOf(3, 2, 1, 1, 2, 1, 2, 3, 2, 1),
+        "Podcast" to intArrayOf(-3, -2, 0, 2, 4, 4, 3, 1, -1, -2),
+        "Movie" to intArrayOf(5, 4, 2, 1, 0, 0, 1, 2, 3, 3)
+    )
+
+    /** v143: cyclic preset stepping for prev/next — total on empty lists,
+     *  negative indices (not found) and both directions. -1 = no presets. */
+    @JvmStatic fun stepIndex(count: Int, current: Int, dir: Int): Int {
+        if (count <= 0) return -1
+        if (current < 0) return 0   // not found -> start at the first preset
+        return ((current + dir) % count + count) % count
+    }
+
+    /** Resample a 10-band built-in to any band count (log-frequency spacing). */
+    fun builtinForCount(name: String, count: Int): ShortArray {
+        val base = BUILTIN_QUICK.firstOrNull { it.first == name }?.second ?: return ShortArray(count)
+        return resampleBase(base, count)
+    }
+
+    // Build #136 hardening: the testable core of the resampler (spec 26) —
+    // PresetValidationTest pins the >16 kHz branch directly.
+    fun resampleBase(base: IntArray, count: Int): ShortArray {
+        val freqs10 = doubleArrayOf(31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)
+        val out = ShortArray(count)
+        for (i in 0 until count) {
+            val f = 20.0 * Math.pow(1000.0, i.toDouble() / (count - 1).coerceAtLeast(1).toDouble())
+            val lo = freqs10.indexOfFirst { it >= f }
+            out[i] = when {
+                // Build #136: indexOfFirst returns -1 ABOVE 16 kHz (15/31-band tops
+                // reach 20 kHz) — the old `lo <= 0` read that as "sub-bass" and
+                // assigned the 31 Hz gain to high-treble bands.
+                lo < 0 -> base[9].toShort()
+                lo == 0 -> base[0].toShort()
+                lo >= 10 -> base[9].toShort()
+                else -> {
+                    val t = (f - freqs10[lo - 1]) / (freqs10[lo] - freqs10[lo - 1])
+                    (base[lo - 1] + t * (base[lo] - base[lo - 1])).toInt().toShort()
+                }
+            }
+        }
+        return out
+    }
+
+    fun levelsForCount(preset: Preset, count: Int): ShortArray {
+        val src = preset.levels
+        if (src.isEmpty()) return ShortArray(count)
+        if (src.size == count) return src.copyOf()
+        val result = ShortArray(count)
+        val step = src.size.toFloat() / count
+        for (i in 0 until count) {
+            val srcIdx = (i * step).toInt().coerceAtMost(src.size - 1)
+            result[i] = src[srcIdx]
+        }
+        return result
+    }
+
+    // Build #135: custom presets store the live UI curve in the FIRST slots
+    // (UI-band index space — slot i = UI band i; matches applyPresetByName →
+    // applyBands, which samples slots 0..bandCount-1 directly). The old
+    // 31→count log-resample read DEAD slots (zeros or stale values beyond
+    // bandCount) and corrupted preview, compare, and compare-APPLY for every
+    // 10-band save.
+    fun levelsForCount(preset: CustomPreset, count: Int): ShortArray =
+        ShortArray(count) { i -> preset.levels.getOrElse(i) { 0 } }
+
+    // ── Export/import helpers ──
+
+    // Serialize ALL custom presets to a JSON string — shareable via any intent.
+    fun exportToJson(customPresets: List<CustomPreset>): String {
+        val arr = org.json.JSONArray()
+        for (p in customPresets) {
+            val obj = org.json.JSONObject()
+            obj.put("name", p.name)
+            val levels = org.json.JSONArray()
+            for (lvl in p.levels) levels.put(lvl.toInt())
+            obj.put("levels", levels)
+            obj.put("bass", p.bassBoost)
+            obj.put("virt", p.virtualizer)
+            obj.put("loud", p.loudness)
+            arr.put(obj)
+        }
+        val meta = org.json.JSONObject()
+        meta.put("app", "SonicCore")
+        meta.put("version", 1)
+        meta.put("presets", arr)
+        return meta.toString(2)
+    }
+
+    // Parse an exported JSON string back into CustomPreset objects.
+    // Build #136 hardening: per-preset validation — one malformed preset is
+    // skipped while the healthy ones import; every field is range-clamped so
+    // an impossible value can never reach the DSP; a broken document yields
+    // an empty list (the previous valid configuration is always retained).
+    fun importFromJson(json: String): List<CustomPreset> {
+        if (json.length > MAX_IMPORT_JSON_CHARS) return emptyList()
+
+        val out = mutableListOf<CustomPreset>()
+        try {
+            val root = org.json.JSONObject(json)
+            val arr = root.optJSONArray("presets") ?: return emptyList()
+            if (arr.length() > MAX_IMPORTED_PRESETS) return emptyList()
+            for (i in 0 until arr.length()) {
+                try {
+                    val obj = arr.getJSONObject(i)
+                    val name = obj.optString("name", "").trim()
+                    if (name.isEmpty()) continue
+                    val levelsArr = obj.optJSONArray("levels") ?: continue
+                    // Band levels: UI contract is -15..+20 dB per band.
+                    val levels = ShortArray(31) { idx ->
+                        levelsArr.optInt(idx, 0).coerceIn(-15, 20).toShort()
+                    }
+                    out.add(CustomPreset(
+                        name = name.take(40),
+                        levels = levels,
+                        // Effect strengths: app scale 0..1000, loudness 0..300.
+                        bassBoost = obj.optInt("bass", 0).coerceIn(0, 1000),
+                        virtualizer = obj.optInt("virt", 0).coerceIn(0, 1000),
+                        loudness = obj.optInt("loud", 0).coerceIn(0, 300)
+                    ))
+                } catch (_: Throwable) {
+                    // one bad preset must never abort the whole import
+                }
+            }
+        } catch (_: Throwable) { return emptyList() }
+        return out
+    }
+}
