@@ -21,6 +21,7 @@ import com.soniccore.app.ui.customization.CustomizationGlassScreen
 import com.soniccore.app.ui.customization.CustomizationLayoutScreen
 import com.soniccore.app.ui.customization.CustomizationMotionScreen
 import com.soniccore.app.ui.customization.CustomizationPreviewScreen
+import com.soniccore.app.ui.customization.RepositoryManagerScreen
 import com.soniccore.app.ui.device.DeviceBatteryScreen
 import com.soniccore.app.ui.device.DeviceCpuScreen
 import com.soniccore.app.ui.device.DeviceDisplayScreen
@@ -89,6 +90,7 @@ object SonicCoreToolRoutes {
     const val CUSTOM_CARDS = "custom.cards"
     const val CUSTOM_MOTION = "custom.motion"
     const val CUSTOM_PREVIEW = "custom.preview"
+    const val CUSTOM_REPOSITORIES = "custom.repositories"
 
     const val PRIVACY_SPECIAL = "privacy.special"
     const val PRIVACY_CONSENT = "privacy.consent"
@@ -112,6 +114,7 @@ object SonicCoreToolRoutes {
         SHIZUKU_CONNECTION, SHIZUKU_SETUP, SHIZUKU_AUTHORIZATION, SHIZUKU_OPERATIONS,
         SHIZUKU_HISTORY, SHIZUKU_TROUBLESHOOTING,
         CUSTOM_ACCENT, CUSTOM_GLASS, CUSTOM_LAYOUT, CUSTOM_CARDS, CUSTOM_MOTION, CUSTOM_PREVIEW,
+        CUSTOM_REPOSITORIES,
         PRIVACY_SPECIAL, PRIVACY_CONSENT, PRIVACY_NOTIFICATIONS, PRIVACY_INFO,
         PRIVACY_EXPORTS, PRIVACY_RESET,
         SETTINGS_AUDIO, SETTINGS_NAVIGATION, SETTINGS_NOTIFICATIONS, SETTINGS_BEHAVIOR,
@@ -167,6 +170,7 @@ fun SonicCoreToolScreen(
             SonicCoreToolRoutes.CUSTOM_CARDS -> CustomizationCardScreen(context)
             SonicCoreToolRoutes.CUSTOM_MOTION -> CustomizationMotionScreen(context)
             SonicCoreToolRoutes.CUSTOM_PREVIEW -> CustomizationPreviewScreen(host, context)
+            SonicCoreToolRoutes.CUSTOM_REPOSITORIES -> RepositoryManagerScreen()
 
             SonicCoreToolRoutes.PRIVACY_SPECIAL -> SpecialAppAccessScreen()
             SonicCoreToolRoutes.PRIVACY_CONSENT -> AudioCaptureConsentScreen()

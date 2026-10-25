@@ -373,6 +373,9 @@ object SonicCoreToolRegistry {
         tool("custom.preview", SonicCoreCategory.CUSTOMIZE, "Preview & Reset",
             "Live preview of the current appearance, with a full reset",
             "◉", null, "preview reset restore default"),
+        tool("custom.repositories", SonicCoreCategory.CUSTOMIZE, "Repository Manager",
+            "Every audited open-source project with its licence, privilege and integration status",
+            "⧉", null, "repository catalog inventory licence fork upstream attribution open source"),
 
         // ── PERMISSIONS & PRIVACY ──
         tool("privacy.runtime", SonicCoreCategory.PRIVACY, "Runtime Permissions",

@@ -508,7 +508,9 @@ fun SettingsAboutScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) 
             SonicCoreDataRow("Jetpack Compose", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
             SonicCoreDataRow("AndroidX", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
             SonicCoreDataRow("Kotlin", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
-            SonicCoreDataRow("Shizuku client (dev.rikka.shizuku)", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
+            // Shizuku-API is MIT (its repository LICENSE and the published Maven POM
+            // both say so), not Apache-2.0 — see docs/repository-integration.md.
+            SonicCoreDataRow("Shizuku client (dev.rikka.shizuku)", "MIT License", SonicCoreCapability.AVAILABLE)
             SonicCoreDataRow("SonicCore DSP", "Part of this repository", SonicCoreCapability.AVAILABLE)
             LimitNote(
                 "Full license texts ship with their respective projects; SonicCore itself is distributed under the licence in the repository.",

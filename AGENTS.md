@@ -204,6 +204,18 @@ own and behave identically outside the sandbox. Specifically:
 - `ACCESS_NETWORK_STATE` was added for the device dashboard's network card. It
   is a normal permission (granted at install), so it never shows a runtime
   prompt.
+- **The repository inventory is data, and a test guards its compliance rule.**
+  `repository/RepositoryInventory.kt` holds every audited third-party project
+  (licence, privileges, maintenance, coverage) with no Android imports, and
+  `RepositoryInventoryTest` asserts that nothing copyleft, proprietary or
+  unverified is ever reported as `Integrated` or queued as `Ready to Integrate`.
+  The in-app **Customization → Repository Manager** screen renders that same list
+  and is wired like any other Customization tool: a `custom.repositories` entry in
+  `SonicCoreToolRegistry` plus a route in `SonicCoreToolRoutes.ids` and the router
+  `when`, which is what `SonicCoreNavigationTest.everyToolHasExactlyOneRenderingPath`
+  requires. `docs/repository-inventory.md` mirrors the data — upstream facts there
+  were read from the GitHub REST API on 2026-10-25, so re-verify them (and re-run
+  `tools/license_check.py`) before repeating a licence claim.
 - `gradle.properties` carries the original author's
   `android.cmake.path = /opt/soniccore-tools/cmake-3.22.6`. That directory does
   not exist here — and it does not need to: `android.cmake.path` is not an AGP
