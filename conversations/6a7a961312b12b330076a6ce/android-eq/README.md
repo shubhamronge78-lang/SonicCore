@@ -83,16 +83,16 @@ changes, latency, or audible output.
 
 ## Project map
 
-- `app/src/main/java/com/neon/eq/MainActivity.kt` — Compose host and existing
+- `app/src/main/java/com/soniccore/app/MainActivity.kt` — Compose host and existing
   application workflows.
-- `app/src/main/java/com/neon/eq/ui/` — SonicCore design components, dashboard,
+- `app/src/main/java/com/soniccore/app/ui/` — SonicCore design components, dashboard,
   and navigation.
-- `app/src/main/java/com/neon/eq/capture/` — playback-capture service and
+- `app/src/main/java/com/soniccore/app/capture/` — playback-capture service and
   capture capability/path handling.
-- `app/src/main/java/com/neon/eq/dsp/` — JNI declarations, DSP parameters, and
+- `app/src/main/java/com/soniccore/app/dsp/` — JNI declarations, DSP parameters, and
   meter presentation helpers.
 - `app/src/main/cpp/` — native DSP and CMake configuration.
-- `app/src/main/java/com/neon/eq/engine/` — engine, presets, output routes,
+- `app/src/main/java/com/soniccore/app/engine/` — engine, presets, output routes,
   service, widget, and Quick Settings tile.
 - `app/src/test/` — JVM contract and regression tests.
 
