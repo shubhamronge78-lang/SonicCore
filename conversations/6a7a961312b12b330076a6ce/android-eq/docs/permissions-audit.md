@@ -29,7 +29,7 @@ docker compose -f docker-compose.base44.yml exec -T app sh -c \
 | `BLUETOOTH_CONNECT` | **dangerous** (API 31+, runtime prompt, optional) | Reads Bluetooth output device names for route reporting. Denying it only hides names. | `CapabilityRegistry`, `PermissionCenterModel` |
 | `ACCESS_NETWORK_STATE` | normal | Read-only network state for the device dashboard's network card. | `DeviceCapabilityProbe` (`ConnectivityManager`) |
 | `moe.shizuku.manager.permission.API_V23` | signature, held by the Shizuku manager | Required by the Shizuku API for an app to talk to the manager. Grants nothing on its own and only applies when the user installed and authorized Shizuku. | `shizuku/ShizukuBridge` |
-| `com.neon.eq.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | signature (app-local) | **Merged from `androidx.core:core:1.12.0`**, not declared here. Keeps dynamically registered receivers non-exported. | AndroidX internals |
+| `com.soniccore.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | signature (app-local) | **Merged from `androidx.core:core:1.12.0`**, not declared here. Keeps dynamically registered receivers non-exported. | AndroidX internals |
 
 `android:protectionLevel` for the merged entry is confirmed as `signature` in
 `app/build/outputs/logs/manifest-merger-debug-report.txt`.

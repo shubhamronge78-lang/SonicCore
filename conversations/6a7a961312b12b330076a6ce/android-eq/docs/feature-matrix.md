@@ -58,7 +58,7 @@ stays outside the app. `docs/shizuku-operations.md` has the per-operation detail
 | --- | --- | --- | --- |
 | Customization | Implemented | Twelve themes (legacy ids preserved), preview + apply, custom-accent swatches, liquid-glass intensity, appearance mode | No |
 | Customization | Bounded | Dynamic Wallpaper theme uses the wallpaper colour only when `WallpaperManager` exposes it to this app; otherwise it keeps its own palette and says so | No |
-| Customization | Unavailable | Launcher icon packs, system-wide accent override, force-dark in other apps — Android does not permit a third-party app to do these; each row says so | — |
+| Customization | Unavailable | Launcher icon packs, system-wide accent override, force-dark in other apps — Android does not permit a third-party app to do these; each row says so, and the Custom Accent theme recolors SonicCore's own surfaces instead | — |
 | Quick Settings tile, home-screen widget, notification controls | Implemented | Pre-existing services | No |
 | Launcher icon | Implemented | Adaptive cyan/violet SC monogram (`mipmap-anydpi-v26` + vector foreground, monochrome layer) | No |
 
@@ -83,10 +83,10 @@ never shown as a working toggle.
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Navigation | Implemented | Six categories, evenly weighted dock (no scrolling 16-chip dock), contextual destination row per category |
+| Navigation | Implemented | Six categories on Home and in the bottom dock (which never lists an internal tool); a category opens a hub listing its tools, so the scrolling 16-chip dock is gone and every destination is reachable |
 | Splash | Implemented | Animated first-frame overlay; skipped when system animations are off |
-| Tests | Implemented | 176 JVM tests, 0 failures (`:app:testDebugUnitTest`) |
+| Tests | Implemented | 200 JVM tests across 29 classes, 0 failures, 0 skipped (`:app:testDebugUnitTest`) |
 | Native DSP regression | Implemented | ASan+UBSan host harness over the production DSP |
-| Lint | Known findings | `:app:lintDebug` reports 4 errors + 55 warnings, all pre-existing and in files this work does not touch — listed in `PLATFORM_EXPANSION_STATUS.md`. Lint is not part of CI |
+| Lint | Known findings | `:app:lintDebug` reports 6 errors + 68 warnings, none of them in a file this work touches — listed in `PLATFORM_EXPANSION_STATUS.md`. Lint is not part of CI |
 | Licence audit | Implemented | `tools/license_check.py` + `docs/repository-integration.md` |
 | Documentation links | Implemented | `tools/check_docs_links.py` |

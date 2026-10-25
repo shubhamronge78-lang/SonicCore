@@ -3,6 +3,9 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+  # Pull requests are built too: the branch that changes the app has to prove
+  # itself before it can be merged into main, where the release build runs.
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -50,3 +53,4 @@ jobs:
       with:
         name: app-debug-apk
         path: conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk
+        if-no-files-found: error

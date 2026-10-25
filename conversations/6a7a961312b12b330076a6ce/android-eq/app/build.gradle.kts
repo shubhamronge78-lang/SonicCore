@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.neon.eq"
+    namespace = "com.soniccore.app"
     compileSdk = 34
 
     // CI (GitHub Actions) runs on a fresh VM every time, so without a fixed keystore
@@ -25,7 +25,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.neon.eq"
+        applicationId = "com.soniccore.app"
         minSdk = 26
         targetSdk = 34
         // Tie versionCode/versionName to the CI run so it's easy to confirm on-device
@@ -33,6 +33,10 @@ android {
         // build you think you're running.
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = "3.6.0"
+        // On-device tap tests (app/src/androidTest): the only place the launcher's
+        // interactions can actually be pressed. Run with
+        // `./gradlew :app:connectedDebugAndroidTest` on a connected device.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
@@ -93,4 +97,10 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // org.json runs on the JVM for tests (framework stubs throw on-device mocks)
     testImplementation("org.json:json:20240303")
+    // On-device tap tests for the launcher (app/src/androidTest) — Compose UI
+    // testing needs its own BOM and the manifest that supplies the host activity.
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

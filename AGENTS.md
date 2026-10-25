@@ -7,7 +7,11 @@ This is a **Base44 agent workspace**, not a web application. It holds:
 - `.agents/` — the agent's platform docs, memory and identity.
 - `conversations/6a7a961312b12b330076a6ce/android-eq/` — the only real project:
   **Neon EQ / SonicCore**, an Android app (Kotlin + Jetpack Compose + native C++
-  DSP; `versionName 3.6.0`, minSdk 26, targetSdk 34, applicationId `com.neon.eq`).
+  DSP; `versionName 3.6.0`, minSdk 26, targetSdk 34, applicationId and namespace
+  `com.soniccore.app`). The Kotlin tree is the historical package layout,
+  mechanically renamed from `com.neon.eq` to `com.soniccore.app`, so `capture/`,
+  `engine/`, `ui/category/`, `ui/navigation/` and the rest keep their shape and
+  only the package prefix differs.
 - `.github/workflows/` — the app's CI: `build.yml`, `android-apk.yml`, `release.yml`.
 - `.base44/` — this sandbox setup: the builder image and the served status page.
 
@@ -23,19 +27,25 @@ The app itself now has two layers:
   model), `shizuku/` (bridge + operation registry), `diagnostics/` (device
   health, operation log, report export), `ui/customization/`,
   `ui/settings/`. The Compose navigation lives in
-  `ui/navigation/SonicCoreNavigation.kt`; screens are dispatched from the single
-  large `EqualizerScreen` composable in `MainActivity.kt`.
+  `ui/navigation/` (`SonicCoreNavigation.kt` for the model, `SonicCoreNavStack.kt`
+  for the back stack, `SonicCoreNavigator.kt` for the moves); screens are
+  dispatched from the single large `EqualizerScreen` composable in
+  `MainActivity.kt`.
 
-Navigation is now **six categories**, not a flat dock: `SonicCoreCategory` in
-`ui/navigation/SonicCoreNavigation.kt` groups all 16 `SonicCoreDestination`
-values into Audio, Device Center, Shizuku Center, Customization, Permissions &
-Privacy, Settings. `SonicCoreCategoryNavigation` shows those six evenly weighted
-(so it never scrolls sideways) plus a contextual row for the active category's
-own destinations — that row is what keeps every destination reachable now that
-the flat 16-chip dock is gone. Adding a destination means adding it to a
-category's list **and** to `SonicCoreNavigationTest`, which asserts the category
-order, that every destination is owned exactly once, and that each category tab
-lands inside its own category.
+Navigation is **six categories**, not a flat dock: `SonicCoreDestination` in
+`ui/navigation/SonicCoreNavigation.kt` names every destination and
+`SonicCoreCategory` groups them into Audio, Device Center, Shizuku Center,
+Customization, Permissions & Privacy and Settings. The launcher starts in
+`SonicCoreNavHost` (`MainActivity.kt`), which owns the navigation stack and
+renders Home, a category hub, or one tool inside a category. Home shows
+**exactly six categories** — Audio, Device Center, Shizuku Center,
+Customization, Permissions & Privacy, Settings — and the bottom dock shows the
+same six, never internal tools. A tool either reuses a long-standing
+full-screen body (`SonicCoreTool.destination`, e.g. the equalizer) or has its own
+screen in `ui/navigation/SonicCoreToolScreens.kt`; nothing may have both or
+neither. `SonicCoreNavigationTest` asserts all of that (six categories in order,
+one rendering path per tool, no two tools claiming a destination) — adding a
+category or a tool requires updating that test.
 
 ## How the app is run / verified here
 
@@ -53,10 +63,13 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (176 tests: 120 from the platform expansion, 39 for the Shizuku IPC work and
-   17 for the navigation/theme work) plus the debug APK, built from the mounted
-   source. `:app:lintDebug` is **not** run here: it reports 4 pre-existing
-   errors, so adding it to this pipeline would make a green build impossible.
+   (200 tests across 29 classes: the platform expansion, the Shizuku IPC work, the
+   Home/layout contracts, the twelve-theme catalogue and the splash) plus the
+   debug APK, built from the mounted source. All 200 pass with 0 skipped.
+   `:app:lintDebug` is **not** run here: it reports 6 pre-existing errors (the
+   capture path, `SettingsToolScreens`' API-28 signing-info read, and the two
+   Shizuku restricted-API calls), none of them in a file this work touches, so
+   adding it to the pipeline would make a green build impossible.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -220,3 +233,22 @@ own and behave identically outside the sandbox. Specifically:
   how the root cause above was confirmed.
 - The native DSP build needs NDK 25.1.8937393 and CMake 3.22.1 (AGP 8.2.2
   defaults); both come from the SDK, not from the host.
+- **JNI symbol names are hard-wired to the Kotlin package.** `neondsp.cpp`
+  exports `Java_com_soniccore_app_dsp_NeonDsp_<fn>` and
+  `tools/dspharness/harness.cpp` calls those same C symbols directly, so
+  `dsp/NeonDsp.kt` must stay in `com.soniccore.app.dsp`. Renaming the package
+  requires renaming the exported symbols in **both** files together and
+  rebuilding — a mismatch compiles fine and only fails at runtime, or breaks the
+  DSP harness at link time. Verify after any rename:
+  `llvm-nm -D --defined-only libneondsp.so | grep Java_com_soniccore_app_dsp_`
+  (34 symbols, and no `Java_com_neon_eq_`).
+- **The `sync/mobile-harness` lineage was never buildable — do not re-merge it
+  as-is.** Commits `28aa75a`/`bd95978` (PR #16) restructured the app by deleting
+  the `capabilities/`, `diagnostics/`, `shizuku/`, `ui/category/`,
+  `ui/navigation/`, `ui/design/` theme and component modules and splicing
+  `MainActivity.kt` together from two source versions, leaving ~1200 Kotlin
+  compile errors — `bd95978` itself never compiled (`:app:compileDebugKotlin`
+  failed). Everything the restructure aimed at (six categories, Shizuku Center,
+  Customization, Audio/DSP, JNI) already exists in the renamed tree. Its only
+  genuinely reusable output was the namespace change to `com.soniccore.app` and
+  the matching JNI renames, both already applied here.

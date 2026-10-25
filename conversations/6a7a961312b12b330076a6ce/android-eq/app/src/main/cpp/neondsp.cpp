@@ -468,7 +468,7 @@ static inline void processFrame(jshort* p) {
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_init(JNIEnv* env, jobject thiz, jint rate, jint bands) {
+Java_com_soniccore_app_dsp_NeonDsp_init(JNIEnv* env, jobject thiz, jint rate, jint bands) {
     sr = rate > 0 ? (double) rate : 48000.0;
     nbands = bands >= 5 && bands <= 31 ? bands : 10;
     for (int i = 0; i < nbands; i++) {
@@ -511,7 +511,7 @@ Java_com_neon_eq_dsp_NeonDsp_init(JNIEnv* env, jobject thiz, jint rate, jint ban
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setPreamp(JNIEnv* env, jobject thiz, jfloat db) {
+Java_com_soniccore_app_dsp_NeonDsp_setPreamp(JNIEnv* env, jobject thiz, jfloat db) {
     double v = (double) db;
     if (!isfinite(v)) return;
     v = v < -30.0 ? -30.0 : (v > 30.0 ? 30.0 : v);
@@ -521,7 +521,7 @@ Java_com_neon_eq_dsp_NeonDsp_setPreamp(JNIEnv* env, jobject thiz, jfloat db) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setGraphicGains(JNIEnv* env, jobject thiz, jfloatArray gains) {
+Java_com_soniccore_app_dsp_NeonDsp_setGraphicGains(JNIEnv* env, jobject thiz, jfloatArray gains) {
     jfloat* g = env->GetFloatArrayElements(gains, NULL);
     jsize n = env->GetArrayLength(gains);
     int s = grafSeq;
@@ -540,7 +540,7 @@ Java_com_neon_eq_dsp_NeonDsp_setGraphicGains(JNIEnv* env, jobject thiz, jfloatAr
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setParametric(JNIEnv* env, jobject thiz, jint slot, jboolean on,
+Java_com_soniccore_app_dsp_NeonDsp_setParametric(JNIEnv* env, jobject thiz, jint slot, jboolean on,
                                            jfloat freq, jfloat gainDb, jfloat q) {
     if (slot < 0 || slot >= MAXPEQ) return;
     double f = (double) freq, g = (double) gainDb, qq = (double) q;
@@ -560,7 +560,7 @@ Java_com_neon_eq_dsp_NeonDsp_setParametric(JNIEnv* env, jobject thiz, jint slot,
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setShelves(JNIEnv* env, jobject thiz, jfloat bass, jfloat treble) {
+Java_com_soniccore_app_dsp_NeonDsp_setShelves(JNIEnv* env, jobject thiz, jfloat bass, jfloat treble) {
     double bv = (double) bass, tv = (double) treble;
     if (!isfinite(bv)) bv = 0.0;
     if (!isfinite(tv)) tv = 0.0;
@@ -577,7 +577,7 @@ Java_com_neon_eq_dsp_NeonDsp_setShelves(JNIEnv* env, jobject thiz, jfloat bass, 
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setCompressor(JNIEnv* env, jobject thiz, jboolean on, jfloat threshDb,
+Java_com_soniccore_app_dsp_NeonDsp_setCompressor(JNIEnv* env, jobject thiz, jboolean on, jfloat threshDb,
                                           jfloat ratio, jfloat atkMs, jfloat relMs) {
     double th = (double) threshDb;
     if (!isfinite(th)) th = -18.0;
@@ -602,7 +602,7 @@ Java_com_neon_eq_dsp_NeonDsp_setCompressor(JNIEnv* env, jobject thiz, jboolean o
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setStereo(JNIEnv* env, jobject thiz, jfloat width, jfloat balance,
+Java_com_soniccore_app_dsp_NeonDsp_setStereo(JNIEnv* env, jobject thiz, jfloat width, jfloat balance,
                                        jboolean swap, jboolean mono) {
     double wv = (double) width;
     if (!isfinite(wv)) wv = 1.0;
@@ -621,7 +621,7 @@ Java_com_neon_eq_dsp_NeonDsp_setStereo(JNIEnv* env, jobject thiz, jfloat width, 
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setLimiter(JNIEnv* env, jobject thiz, jboolean on, jfloat threshDb) {
+Java_com_soniccore_app_dsp_NeonDsp_setLimiter(JNIEnv* env, jobject thiz, jboolean on, jfloat threshDb) {
     double tv = (double) threshDb;
     if (!isfinite(tv)) tv = -1.0;
     if (tv < -60.0) tv = -60.0; else if (tv > 0.0) tv = 0.0;
@@ -633,7 +633,7 @@ Java_com_neon_eq_dsp_NeonDsp_setLimiter(JNIEnv* env, jobject thiz, jboolean on, 
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_setConvolverEnabled(JNIEnv* env, jobject thiz, jboolean on) {
+Java_com_soniccore_app_dsp_NeonDsp_setConvolverEnabled(JNIEnv* env, jobject thiz, jboolean on) {
     /* Build #136 hardening: the enable flag commits through the cfg seqlock;
        the history reset happens ON THE AUDIO THREAD at the OFF→ON transition
        (v136 reset convolver state from the UI thread mid-frame). */
@@ -643,7 +643,7 @@ Java_com_neon_eq_dsp_NeonDsp_setConvolverEnabled(JNIEnv* env, jobject thiz, jboo
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_loadIr(JNIEnv* env, jobject thiz, jfloatArray left, jfloatArray right) {
+Java_com_soniccore_app_dsp_NeonDsp_loadIr(JNIEnv* env, jobject thiz, jfloatArray left, jfloatArray right) {
     if (left == NULL || right == NULL) return;
     jsize nL = env->GetArrayLength(left);
     jsize nR = env->GetArrayLength(right);
@@ -678,7 +678,7 @@ Java_com_neon_eq_dsp_NeonDsp_loadIr(JNIEnv* env, jobject thiz, jfloatArray left,
 }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_process(JNIEnv* env, jobject thiz, jshortArray buf, jint frames) {
+Java_com_soniccore_app_dsp_NeonDsp_process(JNIEnv* env, jobject thiz, jshortArray buf, jint frames) {
     /* v146 §21: measures ONLY this process() body — pure DSP+meter time.
      * Capture and output buffering happen outside and are never included
      * in this number. Two clock reads per block: negligible. */
@@ -760,66 +760,66 @@ Java_com_neon_eq_dsp_NeonDsp_process(JNIEnv* env, jobject thiz, jshortArray buf,
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_neon_eq_dsp_NeonDsp_clipCount(JNIEnv* env, jobject thiz) { return (jlong) clipCount; }
+Java_com_soniccore_app_dsp_NeonDsp_clipCount(JNIEnv* env, jobject thiz) { return (jlong) clipCount; }
 
 /* v146 §11/§17/§21 diagnostics — measured values, cheap int reads for the UI */
 JNIEXPORT jint JNICALL
-Java_com_neon_eq_dsp_NeonDsp_limiterGrMs(JNIEnv* env, jobject thiz) {
+Java_com_soniccore_app_dsp_NeonDsp_limiterGrMs(JNIEnv* env, jobject thiz) {
     double gr = -limGrDb; if (gr < 0.0) gr = 0.0; if (gr > 100.0) gr = 100.0;
     return (jint) (gr * 10.0);   /* 0..1000 units = 0..-100 dB reduction */
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_neon_eq_dsp_NeonDsp_limiterActive(JNIEnv* env, jobject thiz) {
+Java_com_soniccore_app_dsp_NeonDsp_limiterActive(JNIEnv* env, jobject thiz) {
     return limGrDb < -0.05 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL
-Java_com_neon_eq_dsp_NeonDsp_compressorGrMs(JNIEnv* env, jobject thiz) {
+Java_com_soniccore_app_dsp_NeonDsp_compressorGrMs(JNIEnv* env, jobject thiz) {
     double gr = -compGrDb; if (gr < 0.0) gr = 0.0; if (gr > 100.0) gr = 100.0;
     return (jint) (gr * 10.0);
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_neon_eq_dsp_NeonDsp_dspProcUs(JNIEnv* env, jobject thiz) { return (jlong) lastProcUs; }
+Java_com_soniccore_app_dsp_NeonDsp_dspProcUs(JNIEnv* env, jobject thiz) { return (jlong) lastProcUs; }
 
 JNIEXPORT jlong JNICALL
-Java_com_neon_eq_dsp_NeonDsp_paramVersion(JNIEnv* env, jobject thiz) { return (jlong) cfgVersion; }
+Java_com_soniccore_app_dsp_NeonDsp_paramVersion(JNIEnv* env, jobject thiz) { return (jlong) cfgVersion; }
 
 JNIEXPORT jlong JNICALL
-Java_com_neon_eq_dsp_NeonDsp_processedFrames(JNIEnv* env, jobject thiz) { return (jlong) procFrames; }
+Java_com_soniccore_app_dsp_NeonDsp_processedFrames(JNIEnv* env, jobject thiz) { return (jlong) procFrames; }
 
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_resetStats(JNIEnv* env, jobject thiz) { clipCount = 0; procFrames = 0; nanEvents = 0; }
+Java_com_soniccore_app_dsp_NeonDsp_resetStats(JNIEnv* env, jobject thiz) { clipCount = 0; procFrames = 0; nanEvents = 0; }
 
 JNIEXPORT jlong JNICALL
-Java_com_neon_eq_dsp_NeonDsp_nanCount(JNIEnv* env, jobject thiz) { return (jlong) nanEvents; }
+Java_com_soniccore_app_dsp_NeonDsp_nanCount(JNIEnv* env, jobject thiz) { return (jlong) nanEvents; }
 
 /* Build #119: signal-path counters and DSP meters (measured, never inferred) */
 JNIEXPORT jlong JNICALL
-Java_com_neon_eq_dsp_NeonDsp_jniFrames(JNIEnv* env, jobject thiz) { return jniFramesIn; }
+Java_com_soniccore_app_dsp_NeonDsp_jniFrames(JNIEnv* env, jobject thiz) { return jniFramesIn; }
 
 JNIEXPORT jint JNICALL
-Java_com_neon_eq_dsp_NeonDsp_inRmsMs(JNIEnv* env, jobject thiz) { return inRmsMs; }
+Java_com_soniccore_app_dsp_NeonDsp_inRmsMs(JNIEnv* env, jobject thiz) { return inRmsMs; }
 
 JNIEXPORT jint JNICALL
-Java_com_neon_eq_dsp_NeonDsp_inPeakMs(JNIEnv* env, jobject thiz) { return inPeakMs; }
+Java_com_soniccore_app_dsp_NeonDsp_inPeakMs(JNIEnv* env, jobject thiz) { return inPeakMs; }
 
 JNIEXPORT jint JNICALL
-Java_com_neon_eq_dsp_NeonDsp_outRmsMs(JNIEnv* env, jobject thiz) { return outRmsMs; }
+Java_com_soniccore_app_dsp_NeonDsp_outRmsMs(JNIEnv* env, jobject thiz) { return outRmsMs; }
 
 JNIEXPORT jint JNICALL
-Java_com_neon_eq_dsp_NeonDsp_outPeakMs(JNIEnv* env, jobject thiz) { return outPeakMs; }
+Java_com_soniccore_app_dsp_NeonDsp_outPeakMs(JNIEnv* env, jobject thiz) { return outPeakMs; }
 
 /* Build #121: per-channel meters */
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_inLRmsMs(JNIEnv* e, jobject t) { return inLRmsMs; }
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_inRRmsMs(JNIEnv* e, jobject t) { return inRRmsMs; }
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_inLPkMs(JNIEnv* e, jobject t) { return inLPkMs; }
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_inRPkMs(JNIEnv* e, jobject t) { return inRPkMs; }
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_outLRmsMs(JNIEnv* e, jobject t) { return outLRmsMs; }
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_outRRmsMs(JNIEnv* e, jobject t) { return outRRmsMs; }
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_outLPkMs(JNIEnv* e, jobject t) { return outLPkMs; }
-JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_outRPkMs(JNIEnv* e, jobject t) { return outRPkMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_inLRmsMs(JNIEnv* e, jobject t) { return inLRmsMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_inRRmsMs(JNIEnv* e, jobject t) { return inRRmsMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_inLPkMs(JNIEnv* e, jobject t) { return inLPkMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_inRPkMs(JNIEnv* e, jobject t) { return inRPkMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_outLRmsMs(JNIEnv* e, jobject t) { return outLRmsMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_outRRmsMs(JNIEnv* e, jobject t) { return outRRmsMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_outLPkMs(JNIEnv* e, jobject t) { return outLPkMs; }
+JNIEXPORT jint JNICALL Java_com_soniccore_app_dsp_NeonDsp_outRPkMs(JNIEnv* e, jobject t) { return outRPkMs; }
 
 /* Build #123: spectrum analyzer — fills `out` (n bins) with normalized
    log-frequency magnitudes (20Hz..20kHz, 0.0..1.0, -66dBFS floor).
@@ -828,7 +828,7 @@ JNIEXPORT jint JNICALL Java_com_neon_eq_dsp_NeonDsp_outRPkMs(JNIEnv* e, jobject 
    Runs entirely on the CALLER's thread; the audio callback only maintains
    the cheap snapshot rings. */
 JNIEXPORT void JNICALL
-Java_com_neon_eq_dsp_NeonDsp_spectrum(JNIEnv* env, jobject thiz, jfloatArray out, jint mode) {
+Java_com_soniccore_app_dsp_NeonDsp_spectrum(JNIEnv* env, jobject thiz, jfloatArray out, jint mode) {
     jsize n = env->GetArrayLength(out);
     if (n < 4) return;
     jfloat* dst = env->GetFloatArrayElements(out, NULL);

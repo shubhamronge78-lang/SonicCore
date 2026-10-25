@@ -98,12 +98,15 @@ clearable), and an exportable report shared as a text file through the existing
 
 `SonicCoreCategory` groups all 16 destinations into the six categories the plan
 asks for — **Audio**, **Device Center**, **Shizuku Center**, **Customization**,
-**Permissions & Privacy**, **Settings** — and the dock shows those six, evenly
-weighted so it never scrolls sideways. The flat 16-chip scrolling dock is gone;
-a contextual row above the categories shows the destinations of the active one,
-so every destination stays reachable. `SonicCoreNavigationTest` asserts the
-category contract (six categories in order, every destination owned exactly
-once, no duplicate, each tab landing inside its own category).
+**Permissions & Privacy**, **Settings**. Home shows those six and the bottom
+dock — the only bottom navigation — shows the same six, each opening that
+category's hub, where the tools inside it are listed; a tool never appears in the
+dock. The flat 16-chip scrolling dock is gone and every destination stayed
+reachable. A tool either reuses a long-standing full-screen body
+(`SonicCoreTool.destination`) or has its own screen in
+`ui/navigation/SonicCoreToolScreens.kt`, and `SonicCoreToolRegistry` is the single
+list of them. `SonicCoreNavigationTest` asserts that contract: six categories in
+order, one rendering path per tool, no two tools claiming a destination.
 
 ## Verification results (measured 2026-10-25)
 
@@ -114,27 +117,28 @@ docker compose -f docker-compose.base44.yml restart app
 | Check | Command | Result |
 | --- | --- | --- |
 | Native DSP harness | `g++ … tools/dspharness/harness.cpp` under ASan+UBSan | `HARNESS PASS (0 failures)` |
-| JVM unit tests | `./gradlew :app:testDebugUnitTest --no-daemon` | 28 suites, **176 tests, 0 failures, 0 skipped** |
+| JVM unit tests | `./gradlew :app:testDebugUnitTest --no-daemon` | 29 suites, **200 tests, 0 failures, 0 skipped** |
 | Debug APK | `./gradlew :app:assembleDebug --no-daemon` | `BUILD SUCCESSFUL` — `build-output/NeonEQ-debug.apk`, 13.6 MB |
-| Dependency licences | `python3 tools/license_check.py` | **PASS** — 109 shipped / 112 test-only artifacts, no copyleft |
+| Dependency licences | `python3 tools/license_check.py` | **PASS** — 110 shipped / 113 test-only artifacts, no copyleft |
 | Documentation links | `python3 tools/check_docs_links.py` | **PASS** — every relative link resolves (10 files) |
-| Android lint | `./gradlew :app:lintDebug --no-daemon` | **BUILD FAILED: 4 errors, 55 warnings** — see below |
-| APK contents | `aapt2 dump badging`, `apksigner verify` | `com.neon.eq` 3.6.0, minSdk 26, targetSdk 34, 12 permissions as audited, `libneondsp.so` for `arm64-v8a` + `armeabi-v7a`, adaptive icon `mipmap-anydpi-v26/ic_launcher.xml`, signed with the pinned debug keystore (`CN=NeonEQ Debug`) |
+| Android lint | `./gradlew :app:lintDebug --no-daemon` | **BUILD FAILED: 6 errors, 68 warnings** — see below |
+| APK contents | `aapt2 dump badging`, `apksigner verify` | `com.soniccore.app` 3.6.0, minSdk 26, targetSdk 34, 12 permissions as audited, `libneondsp.so` for `arm64-v8a` + `armeabi-v7a`, adaptive icon `mipmap-anydpi-v26/ic_launcher.xml`, signed with the pinned debug keystore (`CN=NeonEQ Debug`) |
 
 ### Known lint findings (pre-existing)
 
 Lint is **not** part of CI (the workflows run the unit tests and the assembly),
-and all four errors are in files this platform work does not touch:
+and none of the six errors is in a file this platform work touches:
 
 | Location | Issue |
 | --- | --- |
 | `capture/AudioCapabilityManager.kt:63` | `MissingPermission` — `AudioRecord.Builder()` |
 | `capture/CaptureEqService.kt:276` | `MissingPermission` — same capture path |
+| `ui/settings/SettingsToolScreens.kt:529` | `NewApi` ×2 — `PackageInfo.signingInfo` / `SigningInfo.getApkContentsSigners` on API 26 |
 | `shizuku/ShizukuBridge.kt:161` | `RestrictedApi` — `Shizuku.getServerPatchVersion` |
 | `shizuku/ShizukuDiagnostics.kt:84` | `RestrictedApi` — the same call |
 
-The 55 warnings are dominated by `ObsoleteSdkInt` (20) and `InlinedApi` (6) from
-the app's long API-level history, plus `IconLauncherShape`, `UnusedResources` and
+The 68 warnings are dominated by the app's long API-level history
+(`ObsoleteSdkInt`, `InlinedApi`), plus `IconLauncherShape`, `UnusedResources` and
 `GradleDependency`. Fixing them is its own change: the two capture-path errors
 must not be "fixed" by loosening code in the path this work preserves.
 

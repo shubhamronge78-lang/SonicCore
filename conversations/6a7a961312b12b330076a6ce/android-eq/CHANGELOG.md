@@ -9,16 +9,19 @@ verified with the commands listed at the end of this entry.
 
 ### Navigation — six categories instead of a scrolling 16-chip dock
 
+`SonicCoreDestination` keeps every existing id, label and full-screen body, and
 `SonicCoreCategory` groups all 16 destinations into the six categories the
 platform plan asks for: **Audio**, **Device Center**, **Shizuku Center**,
-**Customization**, **Permissions & Privacy**, **Settings**. The dock now shows
-those six, evenly weighted so it never scrolls sideways, plus a contextual row
-for the destinations of the active category — so no destination became
-unreachable when the flat dock was removed. `SonicCoreDestination` keeps every
-existing id and label; only `consoleDestinations` (the flat list) is gone, and
-`SonicCoreNavigationTest` now asserts the category contract instead: six
-categories in order, every destination owned exactly once, each tab landing
-inside its own category.
+**Customization**, **Permissions & Privacy**, **Settings**. Home shows those six
+and the bottom dock — the only bottom navigation — shows the same six, each
+opening that category's hub; a category's tools are listed there and never in
+the dock, so the flat 16-chip scrolling dock is gone without making a
+destination unreachable. A tool either reuses a long-standing full-screen body
+(`SonicCoreTool.destination`, e.g. the equalizer) or has its own screen in
+`ui/navigation/SonicCoreToolScreens.kt`, and `SonicCoreToolRegistry` is the
+single list of them. `SonicCoreNavigationTest` asserts that contract: six
+categories in order, exactly one rendering path per tool, and no two tools
+claiming a destination.
 
 ### Customization — twelve themes, one accent picker, honest wallpaper tint
 
@@ -57,26 +60,29 @@ when the system animation scale is off.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| JVM unit tests | `./gradlew :app:testDebugUnitTest --no-daemon` | **176 tests, 0 failures** (was 159) |
-| Debug APK | `./gradlew :app:assembleDebug --no-daemon` | BUILD SUCCESSFUL |
+| JVM unit tests | `./gradlew :app:testDebugUnitTest --no-daemon` | **200 tests across 29 classes, 0 failures, 0 skipped** |
+| Debug APK | `./gradlew :app:assembleDebug --no-daemon` | BUILD SUCCESSFUL — `build-output/NeonEQ-debug.apk`, 13.6 MB |
 | Native DSP regression | `tools/dspharness/harness.cpp` under ASan+UBSan | HARNESS PASS (0 failures) |
-| Dependency licences | `python3 tools/license_check.py` | PASS — 109 shipped / 112 test-only artifacts, no copyleft |
-| Documentation links | `python3 tools/check_docs_links.py` | PASS — every relative link resolves |
-| Android lint | `./gradlew :app:lintDebug --no-daemon` | **4 errors, 55 warnings** — all four errors are pre-existing and in files this change does not touch (see below); lint is not part of CI, and no error class was introduced here |
+| Dependency licences | `python3 tools/license_check.py` | PASS — 110 shipped / 113 test-only artifacts, no copyleft |
+| Documentation links | `python3 tools/check_docs_links.py` | PASS — every relative link resolves (10 files) |
+| Android lint | `./gradlew :app:lintDebug --no-daemon` | **6 errors, 68 warnings** — none of them in a file this change touches (see below); lint is not part of CI |
 
-The four pre-existing lint errors, none of them in a file this change touches:
+The six lint errors, none of them in a file this change touches:
 
 | Location | Issue |
 | --- | --- |
 | `capture/AudioCapabilityManager.kt:63` | `MissingPermission` — `AudioRecord.Builder()` |
 | `capture/CaptureEqService.kt:276` | `MissingPermission` — same capture path |
+| `ui/settings/SettingsToolScreens.kt:529` | `NewApi` ×2 — `PackageInfo.signingInfo` / `SigningInfo.getApkContentsSigners` read on API 26 |
 | `shizuku/ShizukuBridge.kt:161` | `RestrictedApi` — `Shizuku.getServerPatchVersion` |
 | `shizuku/ShizukuDiagnostics.kt:84` | `RestrictedApi` — the same call |
 
-The first two sit in the playback-capture path, which is deliberately preserved
-as-is; the last two read an API the Shizuku client marks as restricted to its own
-library group. Fixing them (an explicit permission check, or dropping/wrapping
-the patch-version read) is a separate decision and was not part of this work.
+The two capture-path errors sit in playback capture, which is deliberately
+preserved as-is; the settings pair needs an API-level guard around a
+signing-info read; the last two read an API the Shizuku client marks as
+restricted to its own library group. Fixing them (an explicit permission check,
+an API guard, or dropping/wrapping the patch-version read) is a separate
+decision and was not part of this work.
 
 Device-only behaviour (capture consent, routing, wallpaper colours, Shizuku
 authorization) is **not** verified here: this environment has no Android device.

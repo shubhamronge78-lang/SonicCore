@@ -33,11 +33,10 @@ requested, or an active UI control as proof that audio is currently flowing.
 ## Current features in source
 
 - Six navigation categories — **Audio**, **Device Center**, **Shizuku Center**,
-  **Customization**, **Permissions & Privacy**, **Settings** — in a fixed
-  six-item dock, with a contextual row showing the destinations of whichever
-  category is active. The previous flat, horizontally scrolling 16-chip dock is
-  gone: every destination is still reachable, but the dock no longer duplicates
-  the dashboard.
+  **Customization**, **Permissions & Privacy**, **Settings** — shown on Home and
+  in the bottom dock, which never lists an internal tool: a category opens a hub
+  that lists the tools inside it. The previous flat, horizontally scrolling
+  16-chip dock is gone, and every destination is still reachable.
 - Four primary audio destinations (Home, Equalizer, Player, DSP + FX) plus the
   secondary capture, signal-path, session and Pro FX destinations.
 - Graphic EQ configurations and parametric EQ controls, presets, A/B comparison,
@@ -106,16 +105,16 @@ changes, latency, or audible output.
 
 ## Project map
 
-- `app/src/main/java/com/neon/eq/MainActivity.kt` — Compose host and existing
+- `app/src/main/java/com/soniccore/app/MainActivity.kt` — Compose host and existing
   application workflows.
-- `app/src/main/java/com/neon/eq/ui/` — SonicCore design components, dashboard,
+- `app/src/main/java/com/soniccore/app/ui/` — SonicCore design components, dashboard,
   and navigation.
-- `app/src/main/java/com/neon/eq/capture/` — playback-capture service and
+- `app/src/main/java/com/soniccore/app/capture/` — playback-capture service and
   capture capability/path handling.
-- `app/src/main/java/com/neon/eq/dsp/` — JNI declarations, DSP parameters, and
+- `app/src/main/java/com/soniccore/app/dsp/` — JNI declarations, DSP parameters, and
   meter presentation helpers.
 - `app/src/main/cpp/` — native DSP and CMake configuration.
-- `app/src/main/java/com/neon/eq/engine/` — engine, presets, output routes,
+- `app/src/main/java/com/soniccore/app/engine/` — engine, presets, output routes,
   service, widget, and Quick Settings tile.
 - `app/src/test/` — JVM contract and regression tests.
 
