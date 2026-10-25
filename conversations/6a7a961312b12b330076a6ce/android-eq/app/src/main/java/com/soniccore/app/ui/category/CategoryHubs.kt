@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -46,7 +47,10 @@ import com.soniccore.app.ui.design.GlassSlider
 import com.soniccore.app.ui.design.LiquidGlassSurface
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.design.color
+import com.soniccore.app.ui.audio.AudioGroupHeader
+import com.soniccore.app.ui.audio.AudioGroupTabs
 import com.soniccore.app.ui.home.HomeAudioSummary
+import com.soniccore.app.ui.navigation.SonicCoreAudioGroup
 import com.soniccore.app.ui.navigation.SonicCoreCategory
 import com.soniccore.app.ui.navigation.SonicCoreTool
 import com.soniccore.app.ui.navigation.SonicCoreToolRegistry
@@ -62,6 +66,8 @@ data class CategoryHubHost(
     val currentThemeId: String,
     val onThemeApply: (String) -> Unit,
     val onToggleEngine: () -> Unit,
+    val bypassActive: Boolean,
+    val onToggleBypass: () -> Unit,
     val onOpenFullSettings: () -> Unit
 )
 
@@ -143,7 +149,7 @@ private fun ToolList(
     }
 }
 
-// ── AUDIO: waveform-led workspace ──
+// ── AUDIO: the Audio Center, with its own six-group sub-navigation ──
 @Composable
 private fun AudioCategoryHub(
     host: CategoryHubHost,
@@ -152,10 +158,17 @@ private fun AudioCategoryHub(
 ) {
     val capabilityFor = ToolCapabilityResolver(SonicCoreCategory.AUDIO)
     val summary = host.audioSummary
+    // Phones get one group at a time behind compact chips; a tablet has the room
+    // for every group as a labelled list, so nothing needs a second tap.
+    val wideLayout = LocalConfiguration.current.screenWidthDp >= 840
+    var selectedGroup by remember { mutableStateOf(SonicCoreAudioGroup.OVERVIEW) }
+    val grouped = remember { SonicCoreToolRegistry.audioToolsByGroup() }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ── Status and quick controls ──
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -163,7 +176,7 @@ private fun AudioCategoryHub(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "SIGNAL",
+                        "CURRENT AUDIO STATUS",
                         color = SonicCoreColors.SecondaryText,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -196,13 +209,72 @@ private fun AudioCategoryHub(
             }
             WaveformPanel(summary)
             Text(
-                "Bars render the measured RMS of the live capture session; a running service alone never draws a signal.",
+                "Bars render the measured RMS of the live capture session; a running service alone never draws a signal. " +
+                    "Active processing: " + when {
+                        !summary.engineEnabled -> "engine disabled"
+                        host.bypassActive -> "capture session in bypass — DSP is not processing"
+                        summary.captureRunning -> "native DSP chain on the capture session"
+                        else -> "no capture session — nothing is being processed"
+                    },
                 color = SonicCoreColors.SecondaryText,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(top = 8.dp)
             )
+            CategoryActionPill(
+                label = if (host.bypassActive) "BYPASS ON" else "BYPASS OFF",
+                tone = SonicCoreCategory.AUDIO,
+                active = host.bypassActive,
+                onClick = host.onToggleBypass
+            )
         }
-        ToolList(SonicCoreCategory.AUDIO, onToolClick, capabilityFor, "AUDIO WORKSPACE")
+
+        // ── The Audio Center's own sub-navigation ──
+        LiquidGlassSurface(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = 14.dp,
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Text(
+                "AUDIO CENTER",
+                color = SonicCoreColors.SecondaryText,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Text(
+                "${SonicCoreAudioGroup.entries.size} groups · ${SonicCoreToolRegistry.audioTools().size} screens · " +
+                    "every existing Audio feature stays reachable",
+                color = SonicCoreColors.SecondaryText,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+            )
+            if (wideLayout) {
+                grouped.forEach { (group, tools) ->
+                    AudioGroupHeader(group, modifier = Modifier.fillMaxWidth())
+                    tools.forEach { tool ->
+                        SonicCoreToolRow(
+                            tool = tool,
+                            capability = capabilityFor(tool),
+                            onClick = { onToolClick(tool) }
+                        )
+                    }
+                }
+            } else {
+                AudioGroupTabs(
+                    selected = selectedGroup,
+                    onSelect = { selectedGroup = it }
+                )
+                Spacer(Modifier.height(10.dp))
+                AudioGroupHeader(selectedGroup, modifier = Modifier.fillMaxWidth())
+                SonicCoreToolRegistry.forAudioGroup(selectedGroup).forEach { tool ->
+                    SonicCoreToolRow(
+                        tool = tool,
+                        capability = capabilityFor(tool),
+                        onClick = { onToolClick(tool) }
+                    )
+                }
+            }
+        }
     }
 }
 

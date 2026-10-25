@@ -12,16 +12,34 @@ and sandbox have no Android device, so device-only behaviour is listed as
 
 ## Category 1 — Audio
 
-| Destination | Status | Notes | Device-verified |
-| --- | --- | --- | --- |
-| Home | Implemented | Live engine state, measured meters, spectrum, quick presets, output route | No |
-| Equalizer | Implemented | Graphic + parametric EQ, shelves, preamp, A/B, undo/redo, presets, import/export | No |
-| Player | Implemented | Built-in player through SonicCore's own software processing path | No |
-| DSP Studio | Implemented | Native stage list, limiter/compressor telemetry, bypass | No |
-| System Capture | Bounded | Playback capture needs a user-approved `MediaProjection` token; the source app must permit capture. Protected/opted-out audio is not available | No |
-| Sessions | Implemented | Session records, comparison of factual aggregates, export through `FileProvider` | No |
-| Signal Path | Implemented | Measured capture-to-output stages; reports "no frames" rather than a guess | No |
-| Pro FX | Implemented | Noise gate and limiter controls on the existing native chain | No |
+Audio is the largest workspace, so its screens are grouped into six sections in
+the **Audio Center**. The Audio Center's sub-navigation is a chip row on phones
+and a grouped list on tablets; every group below is reachable from it, and no
+screen is duplicated — each destination still has exactly one rendering path,
+which `SonicCoreNavigationTest` asserts.
+
+| Destination | Group | Status | Notes | Device-verified |
+| --- | --- | --- | --- | --- |
+| Audio Dashboard | Overview | Implemented | Live engine state, measured meters, spectrum, counters, output route | No |
+| Equalizer | Sound Controls | Implemented | Graphic + parametric EQ, preamp, A/B, undo/redo, per-band controls | No |
+| Bass & Treble | Sound Controls | Implemented | Independent low/high shelf gains with the modelled shelf response curve | No |
+| Stereo & Spatial | Sound Controls | Implemented | Width, balance, channel swap and mono downmix — the four native `setStereo` parameters | No |
+| Dynamics | Sound Controls | Implemented | Noise gate and limiter controls on the existing native chain | No |
+| DSP Studio | DSP Processing | Implemented | Native stage list, per-stage bypass, parameters, limiter/compressor telemetry | No |
+| Player | Playback & Capture | Implemented | Built-in player through SonicCore's own software processing path | No |
+| Audio Capture | Playback & Capture | Bounded | Playback capture needs a user-approved `MediaProjection` token; the source app must permit capture. Protected/opted-out audio is not available | No |
+| Audio Sessions | Playback & Capture | Implemented | Session records, comparison of factual aggregates, export through `FileProvider` | No |
+| Output & Devices | Devices & Routing | Implemented | Routes Android publishes to this app with their own capabilities; routing is never forced | No |
+| Signal Path | Devices & Routing | Implemented | Measured capture-to-output stages; reports "no frames" rather than a guess | No |
+| Audio Presets | Presets & Diagnostics | Implemented | Built-in and custom profiles, save, apply, delete, import/export bundles | No |
+| Audio Diagnostics | Presets & Diagnostics | Implemented | Session counters, platform compatibility probes, the project's own audio self-test, log and redacted report export | No |
+
+Every Audio screen is a pure consumer of `SonicCoreToolHost`: it reads an
+`AudioControlState` snapshot and hands a new one back. The host validates it
+against `AudioControlRanges` (NaN and infinity collapse instead of reaching the
+audio thread), merges it over the persisted `DspParams` so one screen can never
+clear another's parameters, and applies it through the same `DspParams.applyTo`
+path the DSP rack uses.
 
 Native DSP (`app/src/main/cpp/neondsp.cpp`) is unchanged by the platform work and
 is covered by the host harness (`HARNESS PASS`), which compiles the production

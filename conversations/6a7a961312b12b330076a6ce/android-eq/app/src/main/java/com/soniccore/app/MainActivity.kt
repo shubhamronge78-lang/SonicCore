@@ -116,10 +116,12 @@ import com.soniccore.app.capture.AudioPath
 import com.soniccore.app.capture.CaptureEqService
 import com.soniccore.app.capture.CaptureFlowStatus
 import com.soniccore.app.dsp.NeonDsp
+import com.soniccore.app.dsp.AudioControlState
 import com.soniccore.app.dsp.DspParams
 import com.soniccore.app.dsp.MeterLevels
 import com.soniccore.app.dsp.PeqSlot
 import com.soniccore.app.dsp.computeMeterLevels
+import com.soniccore.app.dsp.mergeInto
 import com.soniccore.app.ui.design.SonicCoreTheme
 import com.soniccore.app.ui.design.SonicCorePalette
 import com.soniccore.app.ui.design.IndicatorStatus
@@ -1099,6 +1101,27 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         } catch (_: Throwable) { false }
     }
 
+    // ── Audio Center: the DSP parameters the Audio screens edit ──
+    // ONE snapshot, read from the persisted parameter set. A screen never writes
+    // DSP state itself — it hands a new snapshot to [applyAudioControl], which
+    // validates it, merges it over the existing parameters (so the parametric
+    // slots another screen owns are untouched), applies it through the same
+    // native path the rack uses, persists it and bumps the tick so every Audio
+    // screen re-reads the real value.
+    var audioControlTick by remember { mutableStateOf(0) }
+    val audioControl = remember(audioControlTick) {
+        try { AudioControlState.of(DspParams.load(engine)) } catch (_: Throwable) { AudioControlState() }
+    }
+    fun applyAudioControl(next: AudioControlState) {
+        try {
+            val p = DspParams.load(engine)
+            next.validated().mergeInto(p)
+            p.applyTo(NeonDsp)
+            p.save(engine)
+        } catch (_: Throwable) { }
+        audioControlTick++
+    }
+
     // The installed version string, shown by Settings and the About tool.
     val appVersion = remember {
         try {
@@ -1180,6 +1203,8 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                 engine.deleteCustomPreset(name)
                 customPresets = engine.listCustomPresets()
             },
+            audioControl = audioControl,
+            onAudioControlChange = { next -> applyAudioControl(next) },
             glassLevel = appGlassState.value,
             onGlassLevelChange = { level -> applyGlassLevel(level) },
             themes = Themes.ALL,
@@ -1252,6 +1277,8 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         engine.setEnabled(next)
                         if (context is MainActivity) context.onEnabledToggled(next)
                     },
+                    bypassActive = CaptureEqService.bypass,
+                    onToggleBypass = { CaptureEqService.bypass = !CaptureEqService.bypass },
                     onOpenFullSettings = { showSettings = true }
                 ),
                 onToolClick = { navigator.openTool(it) }

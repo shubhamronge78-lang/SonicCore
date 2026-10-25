@@ -134,9 +134,65 @@ enum class SonicCoreCategory(
 fun SonicCoreCategory.color(): Color = tone.color()
 
 /**
+ * The Audio Center's own sub-navigation.
+ *
+ * Audio is the largest workspace in SonicCore, so its thirteen destinations are
+ * grouped into six sections that the Audio Center shows as tabs on a phone and
+ * as a grouped list on a tablet. The groups are the app's own vocabulary: every
+ * Audio tool belongs to exactly one of them, which `SonicCoreNavigationTest`
+ * asserts.
+ */
+enum class SonicCoreAudioGroup(
+    val title: String,
+    val label: String,
+    val summary: String,
+    val icon: String
+) {
+    OVERVIEW(
+        "Overview",
+        "OVERVIEW",
+        "Status, active processing, output device and quick controls",
+        "◉"
+    ),
+    SOUND_CONTROLS(
+        "Sound Controls",
+        "SOUND",
+        "Equalizer, tone shaping, stereo placement and dynamics",
+        "∿"
+    ),
+    DSP_PROCESSING(
+        "DSP Processing",
+        "DSP",
+        "Processing stages, parameters, bypass and signal flow",
+        "⌘"
+    ),
+    PLAYBACK_CAPTURE(
+        "Playback & Capture",
+        "PLAYBACK",
+        "Player transport, capture consent and session history",
+        "▶"
+    ),
+    DEVICES_ROUTING(
+        "Devices & Routing",
+        "DEVICES",
+        "Output routes, device capabilities, latency and signal path",
+        "↗"
+    ),
+    PRESETS_DIAGNOSTICS(
+        "Presets & Diagnostics",
+        "PRESETS",
+        "Profiles, counters, compatibility probes and report export",
+        "☆"
+    )
+}
+
+/**
  * One tool inside a category. [destination] non-null reuses an existing
  * full-screen implementation; null means the tool has its own screen rendered
  * by the category tool router.
+ *
+ * [audioGroup] is set for Audio tools only — it is what places the tool in the
+ * Audio Center's sub-navigation.
  */
 data class SonicCoreTool(
     val id: String,
@@ -145,7 +201,8 @@ data class SonicCoreTool(
     val icon: String,
     val category: SonicCoreCategory,
     val destination: SonicCoreDestination? = null,
-    val keywords: String = ""
+    val keywords: String = "",
+    val audioGroup: SonicCoreAudioGroup? = null
 ) {
     /** Text used by Home search — title, summary and the tool's category. */
     val searchText: String get() = "$title $summary $keywords ${category.title}"
@@ -160,42 +217,75 @@ object SonicCoreToolRegistry {
         summary: String,
         icon: String,
         destination: SonicCoreDestination? = null,
-        keywords: String = ""
-    ) = SonicCoreTool(id, title, summary, icon, category, destination, keywords)
+        keywords: String = "",
+        audioGroup: SonicCoreAudioGroup? = null
+    ) = SonicCoreTool(id, title, summary, icon, category, destination, keywords, audioGroup)
 
     /** Every internal tool, in the order it appears in its category. */
     val all: List<SonicCoreTool> = listOf(
-        // ── AUDIO ──
-        tool("audio.overview", SonicCoreCategory.AUDIO, "Live Overview",
-            "Real-time meters, spectrum, engine health and performance counters",
-            "◉", SonicCoreDestination.AUDIO_OVERVIEW, "meter peak spectrum engine"),
+        // ── AUDIO · OVERVIEW ──
+        tool("audio.dashboard", SonicCoreCategory.AUDIO, "Audio Dashboard",
+            "Current audio status, active processing, output device and quick controls",
+            "◉", SonicCoreDestination.AUDIO_OVERVIEW, "meter peak spectrum engine status",
+            SonicCoreAudioGroup.OVERVIEW),
+
+        // ── AUDIO · SOUND CONTROLS ──
         tool("audio.equalizer", SonicCoreCategory.AUDIO, "Equalizer",
-            "Graphic EQ, parametric bands, frequency, gain, Q, preamp, bass and treble",
-            "∿", SonicCoreDestination.EQUALIZER, "parametric q factor bands preamp"),
+            "Graphic EQ, parametric bands, presets, preamp and per-band controls",
+            "∿", SonicCoreDestination.EQUALIZER, "parametric q factor bands preamp graphic",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+        tool("audio.bass_treble", SonicCoreCategory.AUDIO, "Bass & Treble",
+            "Independent low and high shelf gains with a frequency-response view",
+            "⌁", null, "shelf low high tone bass treble response",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+        tool("audio.spatial", SonicCoreCategory.AUDIO, "Stereo & Spatial",
+            "Stereo width, balance, channel swap and mono downmix",
+            "⇄", null, "width balance swap mono channel stereo",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+        tool("audio.dynamics", SonicCoreCategory.AUDIO, "Dynamics",
+            "Noise gate, limiter strength and anti-clip state; compressor parameters stay in DSP Studio",
+            "✦", SonicCoreDestination.PRO_FX, "gate limiter dynamics threshold compressor anti clip",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+
+        // ── AUDIO · DSP PROCESSING ──
         tool("audio.dsp", SonicCoreCategory.AUDIO, "DSP Studio",
-            "Processing stages, stage bypass, parameters and clipping metrics",
-            "⌘", SonicCoreDestination.DSP_FX, "stage bypass clipping chain compressor"),
-        tool("audio.player", SonicCoreCategory.AUDIO, "Audio Player",
-            "Supported local playback, transport controls, queue and test signals",
-            "▶", SonicCoreDestination.PLAYER, "play pause queue tone sine"),
-        tool("audio.presets", SonicCoreCategory.AUDIO, "Presets",
-            "Built-in profiles, custom profiles, save, import and export",
-            "☆", null, "profile save import export preset library"),
-        tool("audio.capture", SonicCoreCategory.AUDIO, "System Capture",
-            "Capture eligibility, user consent, capture status and source restrictions",
-            "◎", SonicCoreDestination.SYSTEM_CAPTURE, "media projection consent eligibility"),
-        tool("audio.output", SonicCoreCategory.AUDIO, "Output & Signal Path",
-            "Detected output route, pipeline stages and measured processing status",
-            "↗", SonicCoreDestination.SIGNAL_PATH, "route latency stage pipeline"),
+            "Processing stages, parameters, per-stage bypass and signal flow",
+            "⌘", SonicCoreDestination.DSP_FX, "stage bypass clipping chain signal flow",
+            SonicCoreAudioGroup.DSP_PROCESSING),
+
+        // ── AUDIO · PLAYBACK & CAPTURE ──
+        tool("audio.player", SonicCoreCategory.AUDIO, "Player",
+            "Playback controls, track information and audio-session status",
+            "▶", SonicCoreDestination.PLAYER, "play pause queue tone sine track",
+            SonicCoreAudioGroup.PLAYBACK_CAPTURE),
+        tool("audio.capture", SonicCoreCategory.AUDIO, "Audio Capture",
+            "MediaProjection consent, capture status, source restrictions and recovery",
+            "◎", SonicCoreDestination.SYSTEM_CAPTURE, "media projection consent eligibility recovery",
+            SonicCoreAudioGroup.PLAYBACK_CAPTURE),
+        tool("audio.sessions", SonicCoreCategory.AUDIO, "Audio Sessions",
+            "Session history, session diagnostics and export",
+            "▤", SonicCoreDestination.SESSIONS, "session history compare export verdict",
+            SonicCoreAudioGroup.PLAYBACK_CAPTURE),
+
+        // ── AUDIO · DEVICES & ROUTING ──
+        tool("audio.devices", SonicCoreCategory.AUDIO, "Output & Devices",
+            "Available output routes, Bluetooth, wired audio and device capabilities",
+            "⇲", null, "output route bluetooth wired usb device capability",
+            SonicCoreAudioGroup.DEVICES_ROUTING),
+        tool("audio.signal_path", SonicCoreCategory.AUDIO, "Signal Path",
+            "Source-to-output pipeline, frame counters, latency and diagnostics",
+            "↗", SonicCoreDestination.SIGNAL_PATH, "route latency stage pipeline frames",
+            SonicCoreAudioGroup.DEVICES_ROUTING),
+
+        // ── AUDIO · PRESETS & DIAGNOSTICS ──
+        tool("audio.presets", SonicCoreCategory.AUDIO, "Audio Presets",
+            "Save, load, rename, duplicate, import and export profiles",
+            "☆", null, "profile save load rename duplicate import export preset library",
+            SonicCoreAudioGroup.PRESETS_DIAGNOSTICS),
         tool("audio.diagnostics", SonicCoreCategory.AUDIO, "Audio Diagnostics",
-            "Audio session state, available counters, errors and report export",
-            "⚑", null, "session counters underrun clip export report"),
-        tool("audio.sessions", SonicCoreCategory.AUDIO, "Capture Sessions",
-            "Recorded session records, their verdicts, comparison and per-app profiles",
-            "▤", SonicCoreDestination.SESSIONS, "session history compare app profile verdict"),
-        tool("audio.profx", SonicCoreCategory.AUDIO, "Pro FX",
-            "Noise gate and limiter controls on the capture pipeline",
-            "✦", SonicCoreDestination.PRO_FX, "gate limiter dynamics threshold"),
+            "Compatibility probes, processing status, errors and test results",
+            "⚑", null, "session counters underrun clip export report probe test",
+            SonicCoreAudioGroup.PRESETS_DIAGNOSTICS),
 
         // ── DEVICE CENTER ──
         tool("device.overview", SonicCoreCategory.DEVICE, "Device Overview",
@@ -358,6 +448,23 @@ object SonicCoreToolRegistry {
     }
 
     fun countFor(category: SonicCoreCategory): Int = forCategory(category).size
+
+    /** The Audio tools of one Audio Center group, in registry order. */
+    fun forAudioGroup(group: SonicCoreAudioGroup): List<SonicCoreTool> =
+        all.filter { it.audioGroup == group }
+
+    /**
+     * Every Audio tool grouped in the Audio Center's own order — the shape the
+     * hub and the phone/tablet layouts both render from.
+     */
+    fun audioToolsByGroup(): List<Pair<SonicCoreAudioGroup, List<SonicCoreTool>>> =
+        SonicCoreAudioGroup.entries.map { it to forAudioGroup(it) }
+
+    /** Group of an Audio tool — null for every other category. */
+    fun groupOf(tool: SonicCoreTool): SonicCoreAudioGroup? = tool.audioGroup
+
+    /** All Audio tools, in the order their groups are listed. */
+    fun audioTools(): List<SonicCoreTool> = audioToolsByGroup().flatMap { it.second }
 }
 
 @Composable

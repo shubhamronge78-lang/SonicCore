@@ -47,6 +47,20 @@ neither. `SonicCoreNavigationTest` asserts all of that (six categories in order,
 one rendering path per tool, no two tools claiming a destination) — adding a
 category or a tool requires updating that test.
 
+Audio is the one category with a second level of its own: its thirteen tools each
+carry a `SonicCoreAudioGroup` (Overview, Sound Controls, DSP Processing, Playback
+& Capture, Devices & Routing, Presets & Diagnostics), which the **Audio Center**
+hub renders as a chip row on phones and as a grouped list on tablets. The
+screens that live in `ui/audio/` share one settings vocabulary
+(`AudioSettingsComponents.kt`) and never touch the engine: they read an
+`AudioControlState` snapshot from `SonicCoreToolHost` and hand a validated one
+back, which `MainActivity` merges over the persisted `DspParams` (parametric
+slots left alone) and applies through the same `DspParams.applyTo` path the DSP
+rack uses. `AudioControlRanges.clampTo` is where NaN and infinity stop.
+`SonicCoreNavigationTest` asserts the grouping and `AudioControlStateTest` the
+clamping/merge contract, so a new Audio tool needs a group in the registry and a
+route (own screen) or a destination.
+
 ## How the app is run / verified here
 
 `docker-compose.base44.yml` builds the app **from the cloned source** (the source
@@ -63,9 +77,10 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (200 tests across 29 classes: the platform expansion, the Shizuku IPC work, the
-   Home/layout contracts, the twelve-theme catalogue and the splash) plus the
-   debug APK, built from the mounted source. All 200 pass with 0 skipped.
+   (215 tests across 30 classes: the platform expansion, the Shizuku IPC work, the
+   Home/layout contracts, the twelve-theme catalogue, the splash, the Audio Center
+   grouping/rendering contract and the Audio control-parameter validation) plus the
+   debug APK, built from the mounted source. All 215 pass with 0 skipped.
    `:app:lintDebug` is **not** run here: it reports 6 pre-existing errors (the
    capture path, `SettingsToolScreens`' API-28 signing-info read, and the two
    Shizuku restricted-API calls), none of them in a file this work touches, so
