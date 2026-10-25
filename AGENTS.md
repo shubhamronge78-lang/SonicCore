@@ -92,6 +92,14 @@ docker compose -f docker-compose.base44.yml logs -f app     # harness + Gradle o
   for changes to `docker-compose.base44.yml` or `.base44/android/Dockerfile`.
   Never run two Gradle invocations at once against the shared `gradle-home`
   volume.
+- **A container that predates a checkout keeps serving the old build.** Nothing
+  rebuilds on its own when the branch or commit changes: the `app` service is
+  already running, so `up -d --build` reports "Container ... Running" and leaves
+  it untouched — `:3000` then still hands out the APK, `build.log` and test
+  report from the *previous* source (e.g. a pre-`com.soniccore.app` APK), which
+  looks exactly like "the fix did not work". After a checkout, force the rebuild
+  (`docker compose -f docker-compose.base44.yml up -d --build --force-recreate`)
+  and check the `/out` timestamps before judging the build.
 
 ## How to check it works
 
