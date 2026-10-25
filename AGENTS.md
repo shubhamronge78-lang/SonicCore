@@ -7,7 +7,11 @@ This is a **Base44 agent workspace**, not a web application. It holds:
 - `.agents/` — the agent's platform docs, memory and identity.
 - `conversations/6a7a961312b12b330076a6ce/android-eq/` — the only real project:
   **Neon EQ / SonicCore**, an Android app (Kotlin + Jetpack Compose + native C++
-  DSP; `versionName 3.6.0`, minSdk 26, targetSdk 34, applicationId `com.neon.eq`).
+  DSP; `versionName 3.6.0`, minSdk 26, targetSdk 34, applicationId and namespace
+  `com.soniccore.app`). The Kotlin tree is the historical package layout,
+  mechanically renamed from `com.neon.eq` to `com.soniccore.app`, so `capture/`,
+  `engine/`, `ui/category/`, `ui/navigation/` and the rest keep their shape and
+  only the package prefix differs.
 - `.github/workflows/` — the app's CI: `build.yml`, `android-apk.yml`, `release.yml`.
 - `.base44/` — this sandbox setup: the builder image and the served status page.
 
@@ -55,8 +59,9 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (159 tests: 120 from the platform expansion + 39 for the Shizuku IPC work)
-   plus the debug APK, built from the mounted source.
+   (186 tests across 27 classes: the platform expansion, the Shizuku IPC work
+   and the Home/layout contracts) plus the debug APK, built from the mounted
+   source. All 186 pass with 0 skipped.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -191,3 +196,22 @@ own and behave identically outside the sandbox. Specifically:
   how the root cause above was confirmed.
 - The native DSP build needs NDK 25.1.8937393 and CMake 3.22.1 (AGP 8.2.2
   defaults); both come from the SDK, not from the host.
+- **JNI symbol names are hard-wired to the Kotlin package.** `neondsp.cpp`
+  exports `Java_com_soniccore_app_dsp_NeonDsp_<fn>` and
+  `tools/dspharness/harness.cpp` calls those same C symbols directly, so
+  `dsp/NeonDsp.kt` must stay in `com.soniccore.app.dsp`. Renaming the package
+  requires renaming the exported symbols in **both** files together and
+  rebuilding — a mismatch compiles fine and only fails at runtime, or breaks the
+  DSP harness at link time. Verify after any rename:
+  `llvm-nm -D --defined-only libneondsp.so | grep Java_com_soniccore_app_dsp_`
+  (34 symbols, and no `Java_com_neon_eq_`).
+- **The `sync/mobile-harness` lineage was never buildable — do not re-merge it
+  as-is.** Commits `28aa75a`/`bd95978` (PR #16) restructured the app by deleting
+  the `capabilities/`, `diagnostics/`, `shizuku/`, `ui/category/`,
+  `ui/navigation/`, `ui/design/` theme and component modules and splicing
+  `MainActivity.kt` together from two source versions, leaving ~1200 Kotlin
+  compile errors — `bd95978` itself never compiled (`:app:compileDebugKotlin`
+  failed). Everything the restructure aimed at (six categories, Shizuku Center,
+  Customization, Audio/DSP, JNI) already exists in the renamed tree. Its only
+  genuinely reusable output was the namespace change to `com.soniccore.app` and
+  the matching JNI renames, both already applied here.
