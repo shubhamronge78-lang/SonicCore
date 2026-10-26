@@ -68,6 +68,18 @@ android {
         kotlinCompilerExtensionVersion = "1.5.8"
     }
 
+    // The rendered-screen test (app/src/test/.../ScreenRenderSnapshotTest.kt)
+    // runs the real Compose screens on the JVM under Robolectric and writes PNGs
+    // of what they actually paint, because this project has no emulator and the
+    // pixel result otherwise cannot be checked at all. It needs the app's real
+    // resources (the launcher theme, the glass background) for that.
+    // Test-only: nothing here reaches the shipped APK.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -97,6 +109,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // org.json runs on the JVM for tests (framework stubs throw on-device mocks)
     testImplementation("org.json:json:20240303")
+    // Device-free rendering: Robolectric runs the app's real Compose screens on
+    // the JVM so `ScreenRenderSnapshotTest` can capture their pixels as PNGs.
+    // Test-only — neither artifact is packaged into the APK.
+    testImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test.ext:junit:1.1.5")
+    testImplementation("org.robolectric:robolectric:4.11.1")
     // On-device tap tests for the launcher (app/src/androidTest) — Compose UI
     // testing needs its own BOM and the manifest that supplies the host activity.
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
