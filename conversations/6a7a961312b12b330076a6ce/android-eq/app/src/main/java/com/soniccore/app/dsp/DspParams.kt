@@ -27,7 +27,14 @@ class DspParams {
     var limThresh = -1f
     var slots = List(8) { PeqSlot() }
 
-    fun applyTo(dsp: NeonDsp) {
+    /**
+     * Pushes every parameter to the native engine.
+     *
+     * @return true when every setter completed. A missing native library or a
+     *   failing setter reports false instead of being absorbed silently, so a
+     *   caller that must not claim a write it could not make can tell the truth.
+     */
+    fun applyTo(dsp: NeonDsp): Boolean =
         try {
             dsp.setPreamp(preamp)
             dsp.setShelves(bass, treble)
@@ -35,11 +42,12 @@ class DspParams {
             dsp.setCompressor(compOn, compThresh, 4f, 5f, 150f)
             dsp.setLimiter(limiterOn, limThresh)
             slots.forEachIndexed { i, s -> dsp.setParametric(i, s.on, s.freq, s.gain, s.q) }
-        } catch (_: Throwable) { }
-    }
+            true
+        } catch (_: Throwable) { false }
 
-    fun save(engine: EqualizerEngine) {
-        try {
+    /** @return true when the parameter set was persisted; see [applyTo]. */
+    fun save(engine: EqualizerEngine): Boolean {
+        return try {
             val o = JSONObject()
             o.put("preamp", preamp.toDouble()); o.put("bass", bass.toDouble()); o.put("treble", treble.toDouble())
             o.put("width", width.toDouble()); o.put("balance", balance.toDouble())
@@ -54,7 +62,8 @@ class DspParams {
             }
             o.put("peq", arr)
             engine.setDspParamsJson(o.toString())
-        } catch (_: Throwable) { }
+            true
+        } catch (_: Throwable) { false }
     }
 
     companion object {

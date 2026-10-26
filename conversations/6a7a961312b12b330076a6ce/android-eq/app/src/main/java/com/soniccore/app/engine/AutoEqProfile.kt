@@ -51,6 +51,9 @@ object AutoEqProfile {
     /** Largest profile text accepted, so a pathological paste cannot be parsed. */
     const val MAX_TEXT_CHARS = 128 * 1024
 
+    /** Longest stored profile name. Every name this object produces fits inside it. */
+    const val MAX_NAME_CHARS = 64
+
     /** Caps on what one profile may contain. */
     const val MAX_FILTERS = 64
     const val MAX_GRAPHIC_POINTS = 8192
@@ -398,8 +401,30 @@ object AutoEqProfile {
         return GraphicScan.Ready(points.sortedBy { it.first }, adjustments)
     }
 
+    /**
+     * Turns a supplied name into something safe to store.
+     *
+     * The name is untrusted input: it comes from whatever the user pasted, or
+     * from the file name their picker handed over. It ends up in the app's
+     * persisted preset store and is what a later import matches on, so a control
+     * character, a quote, a path separator or a `..` is removed here rather than
+     * left for whatever consumes the string next. The result is
+     * whitespace-collapsed, length-capped and never blank.
+     */
     private fun sanitizeName(name: String): String =
-        name.replace(Regex("[\"\\n\\r\\t]"), " ").trim().take(64).ifBlank { DEFAULT_NAME }
+        buildString(name.length) {
+            for (ch in name) {
+                val unsafe = ch.isISOControl() || ch == '"' || ch == '\'' ||
+                    ch == '/' || ch == '\\' || ch == ':'
+                append(if (unsafe) ' ' else ch)
+            }
+        }
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .trimStart('.', ' ')
+            .trim()
+            .take(MAX_NAME_CHARS)
+            .ifBlank { DEFAULT_NAME }
 
     private fun dbText(value: Double): String =
         String.format(Locale.ROOT, "%+.1f", value)

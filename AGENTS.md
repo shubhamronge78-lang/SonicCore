@@ -76,13 +76,22 @@ Everything lives in **one long-running service, `app`**:
 1. Native DSP host self-test — compiles the **real** production DSP
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
+1b. Offline loudness self-test — compiles the vendored libebur128 as C, links it
+   with the module's JNI facade (`tools/dspharness/loudness_harness.cpp`
+   `#include`s `app/src/main/cpp/loudness/loudness_jni.cpp`) and runs it under the
+   same ASan+UBSan. It pins the EBU R 128 numbers the app reports (-23 dBFS RMS
+   1 kHz = -23.0 LUFS mono / -20.0 stereo, silence and a sub-400 ms span = *no*
+   integrated loudness, an fs/4 sine's true peak, every refused input). A change
+   to the measurement fails here instead of reaching a report.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` — the JVM
-   unit tests (311 tests across 36 classes: the platform expansion, the Shizuku IPC
+   unit tests (341 tests across 38 classes: the platform expansion, the Shizuku IPC
    work, the Home/layout contracts, the responsive decisions and scroll-ownership
-   rule, the AutoEQ profile parsing *and* import flow, the twelve-theme catalogue,
+   rule, the AutoEQ profile parsing *and* import flow (including the preamp-write
+   rollback and the built-in name collision) and the offline loudness
+   measurement's own decisions, the twelve-theme catalogue,
    the splash, the Audio Center grouping/rendering contract, the Audio
    control-parameter validation and the Liquid Glass token contracts), the
-   debug APK, and lint — all built from the mounted source. All 311 tests pass with
+   debug APK, and lint — all built from the mounted source. All 341 tests pass with
    0 skipped.
    **`:app:lintDebug` is part of the pipeline on purpose.** It used to fail with 6
    errors and was therefore left out (the capture path's two `MissingPermission`
@@ -128,8 +137,9 @@ docker compose -f docker-compose.base44.yml logs -f app     # harness + Gradle o
 ```bash
 curl -fsS http://localhost:3000/                     # status page
 curl -fsSI http://localhost:3000/NeonEQ-debug.apk    # APK present
-ls build-output/                                     # NeonEQ-debug.apk, build.log, dsp-test.log, tests/
+ls build-output/                                     # NeonEQ-debug.apk, build.log, dsp-test.log, loudness-test.log, tests/
 tail -5 build-output/dsp-test.log                    # must end with "HARNESS PASS (0 failures)"
+tail -5 build-output/loudness-test.log               # must end with "LOUDNESS HARNESS PASS (0 failures)"
 tail -5 build-output/build.log                       # must end with "BUILD SUCCESSFUL"
 ```
 
@@ -345,6 +355,34 @@ Rules:
   data whose own licence is not AutoEq's MIT. A clamp the import performs must
   always be reported (`Plan.notes`), never silent — `AutoEqImportTest` fails if
   that stops being true.
+- **Three AutoEQ import traps that the tests exist to keep closed.**
+  (a) A stored custom preset is activated *by name* and the engine resolves a
+  built-in first, so an import whose name is a built-in's is stored as
+  `<name> (AutoEQ)` (`AutoEqImport.availableName`) — without that, "apply" would
+  activate the built-in curve while reporting the imported one.
+  (b) The native preamp parameter and the preset store are two separate writes
+  with **no** transaction between them; `setPreamp` therefore returns whether the
+  write actually landed (the app's `DspParams.applyTo` / `applyAudioControl`
+  report it instead of swallowing it), and a write that did not land makes
+  `AutoEqImport.apply` put the previous profile back rather than leave a curve
+  playing without its headroom compensation.
+  (c) `AutoEqProfile.sanitizeName` treats the name as untrusted input: path
+  separators, quotes, control characters and a leading dot are removed and the
+  result is capped at `AutoEqProfile.MAX_NAME_CHARS`, which `Presets.MAX_NAME_CHARS`
+  now matches so an export/import round-trip cannot rename a stored profile.
+- **The loudness measurement is offline and lives in its own library.**
+  `app/src/main/cpp/loudness/loudness_jni.cpp` + the vendored
+  `app/src/main/cpp/third_party/ebur128` (libebur128 v1.2.6, MIT, provenance and
+  checksum in that directory's README — the only copied source tree in the
+  project) build `libloudness.so`, which nothing in the playback path loads or
+  calls. Do not move it into `neondsp.cpp`: keeping it separate is what makes
+  "it cannot add latency to playback" a structural fact rather than a promise.
+  `Loudness`/`WavPcm` are pure Kotlin decisions (JVM-tested); `LoudnessNative`
+  loads the library and is `available == false` on a host JVM, which is why
+  `LoudnessTest` asserts the honest refusal there. Silence, spans under one 400 ms
+  gating block and buffers longer than three minutes are each reported in words —
+  never as `-inf LUFS`, a zero, or a silently measured part. The numbers are
+  **not device-verified**: no device or emulator exists here.
 - `gradle.properties` carries the original author's
   `android.cmake.path = /opt/soniccore-tools/cmake-3.22.6`. That directory does
   not exist here — and it does not need to: `android.cmake.path` is not an AGP

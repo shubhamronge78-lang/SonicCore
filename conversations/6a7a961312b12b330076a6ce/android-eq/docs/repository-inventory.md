@@ -52,7 +52,7 @@ unverified project may be reported as `Integrated`, and none may be queued as
 
 | Verdict | Projects | Meaning |
 | --- | --- | --- |
-| Permissive | 28 | Usable; 2 adopted, 10 queued, 16 studied and not taken |
+| Permissive | 28 | Usable; 4 integrated, 8 queued, 16 studied and not taken |
 | Copyleft (GPL/AGPL) | 17 | Audited, refused, nothing copied |
 | Weak copyleft (LGPL) | 1 | Not bundleable in an APK |
 | Proprietary | 1 | Needs a commercial licence |
@@ -62,8 +62,8 @@ unverified project may be reported as `Integrated`, and none may be queued as
 
 | Integration status | Projects |
 | --- | --- |
-| Integrated | 2 |
-| Ready to Integrate | 10 |
+| Integrated | 4 |
+| Ready to Integrate | 8 |
 | Reference Only | 15 |
 | Requires Shizuku | 1 |
 | Requires Root | 1 |
@@ -71,16 +71,21 @@ unverified project may be reported as `Integrated`, and none may be queued as
 | Unsupported | 1 |
 
 `Integrated` is used only where code or an official client is in this repository
-**and** covered by tests: `androidx/androidx` (declared dependencies) and
-`RikkaApps/Shizuku-API` (the Shizuku client). Everything else states what it
-would need.
+**and** covered by tests: `androidx/androidx` (declared dependencies),
+`RikkaApps/Shizuku-API` (the Shizuku client), `jaakkopasanen/AutoEq` (its profile
+formats, read by `engine/AutoEqProfile.kt`) and `jiixyj/libebur128` (vendored
+source compiled into `libloudness.so`). Everything else states what it would
+need.
 
 ## Integrated
 
 | Project | Licence | Surface | Coverage | Detail |
 | --- | --- | --- | --- | --- |
+| `jaakkopasanen/AutoEq` | MIT | AutoEQ profile import | Adopted | Its `ParametricEQ` / `GraphicEQ` **file formats** are parsed by `engine/AutoEqProfile.kt` and turned into an ordinary custom preset by `engine/AutoEqImport.kt` (review → save or apply, preamp written once). No upstream source, data or generated profile is bundled. See [repository-integration.md](repository-integration.md) §1.1. |
+| `jiixyj/libebur128` | MIT | Offline loudness measurement | Adopted | **Vendored source, v1.2.6 @ `67b33ab`** under `app/src/main/cpp/third_party/ebur128`, compiled into `libloudness.so` (never the playback DSP). Reports integrated loudness, LRA and true peak for one 16-bit PCM WAV the user picks. See [repository-integration.md](repository-integration.md) §1.2. |
 | `RikkaApps/Shizuku-API` | MIT | Shizuku bridge | Partial | `dev.rikka.shizuku:api` + `:provider` 13.1.5 are real dependencies. `ShizukuBridge` reports binder state; `ShizukuDiagnostics` performs the one read-only elevated call. Every other operation is `NOT_IMPLEMENTED` — see [shizuku-operations.md](shizuku-operations.md). Latest GitHub release is v12.1.0 (2022-10-07); the Maven artifacts used here are 13.1.5. |
 | `androidx/androidx` | Apache-2.0 | UI, lifecycle, platform | Adopted | `core-ktx` 1.12.0, `appcompat` 1.6.1, Compose BOM 2024.02.00 + Material3, `activity-compose` 1.8.2, `lifecycle-runtime-ktx` 2.7.0. `tools/license_check.py` reads their licences from the resolved dependency graph. |
+| `jiixyj/libebur128` | MIT | Offline loudness measurement (EBU R 128) | Adopted | **Vendored source, v1.2.6 @ `67b33ab`** (`ebur128.c` + `ebur128.h` + `LICENSE` under `app/src/main/cpp/third_party/ebur128`, provenance in that directory's README), compiled into its own `libloudness.so` — never into the playback DSP. Integrated loudness, LRA and true peak of one 16-bit PCM WAV the user picks, measured once after the fact; refuses non-PCM formats, non-mono/stereo audio and buffers it cannot measure honestly. Covered by `tools/dspharness/loudness_harness.cpp` (ASan+UBSan) plus `LoudnessTest`/`WavPcmTest`. See [repository-integration.md](repository-integration.md) §1.2. **Not device-verified**, and loudness matching (acting on the number) is not implemented. |
 
 ## Ready to Integrate — the audited backlog
 
@@ -92,6 +97,12 @@ this table is implemented today.
 `engine/AutoEqImport.kt`. See the Integrated section above and
 [repository-integration.md](repository-integration.md) §1.1.)
 
+(`jiixyj/libebur128` has left it too: v1.2.6 is vendored under
+`app/src/main/cpp/third_party/ebur128` and compiled into its own `libloudness.so`
+for the offline loudness measurement — the audited backlog row below is kept
+struck from this table, not from the audit. See the Integrated section above and
+[repository-integration.md](repository-integration.md) §1.2.)
+
 The three audio candidates below were re-read from their upstream source on
 **2026-10-26** (`/repos/{owner}/{repo}`, `/releases/latest`, the licence file
 itself and `/security-advisories`), because the first three rows are the ones the
@@ -101,7 +112,7 @@ are permissive, none is archived, and **none publishes a security advisory**.
 | Project | Licence | Latest release | What it would add |
 | --- | --- | --- | --- |
 | `xiph/speexdsp` | BSD-3-Clause (read from the repository `COPYING`; GitHub's detector reports `Other` because the file is not canonical SPDX) | SpeexDSP-1.2.1 (2022-06-17) | Resampling, echo cancellation and preprocessor DSP. Build: autotools/CMake, plain C, no Android port needed. **No consumer today:** nothing in the engine resamples (the capture path runs at the device rate), and AEC needs a duplex/voice path a playback-capture EQ does not have. Audited, not started. |
-| `jiixyj/libebur128` | MIT (read from the repository `COPYING`) | v1.2.6 (2021-02-14), last push 2023-06-25 — **slow-moving** | EBU R128 / BS.1770 loudness measurement — the basis of a loudness-matching feature. Build: vendoring means `ebur128.c` (53 KB) + `ebur128.h` (15 KB) + one `queue.h` implementation (the repo ships them under `ebur128/queue/`) compiled into `libneondsp.so` under its own MIT notice. Use ≥ 1.2.6: v1.2.3 fixed an uninitialised-memory read in true-peak scanning and v1.2.5 added channel/rate limits against integer overflow. Blocked on hardware, not on licence — the meter's numbers can only be confirmed against real audio on a device. |
+| ~~`jiixyj/libebur128`~~ **— integrated, see the Integrated section** | MIT (read from the repository `COPYING`) | v1.2.6 (2021-02-14), last push 2023-06-25 — **slow-moving** | EBU R128 / BS.1770 loudness measurement. **Taken into the app since this table was written:** `ebur128.c` + `ebur128.h` vendored under `app/src/main/cpp/third_party/ebur128` at pinned commit `67b33ab` and compiled into its own `libloudness.so` under its own MIT notice (not into `libneondsp.so`, as planned here — the separate library keeps the measurement out of the playback path). Measured values are pinned by `tools/dspharness/loudness_harness.cpp` under ASan+UBSan; the numbers still need one confirmation against real audio on a device. |
 | `google/oboe` | Apache-2.0 | 1.11.0 (2026-09-15), last push 2026-10-21 — **active** | AAudio/OpenSL ES wrapper for a lower-latency output path (AAudio needs API 26+, OpenSL ES covers API 16+). **Not started:** SonicCore drives its own JNI engine over `AudioTrack`/`AudioRecord` and that path works and is tested; swapping the transport is an audio-path rewrite whose only claimed benefit — latency — cannot be measured in this environment, so it would replace working code on a guess. |
 | `androidx/media` | Apache-2.0 | 1.11.1 (2026-09-11) | ExoPlayer and media-session libraries if the built-in player needs wider codec coverage. |
 | `chrisbanes/haze` | Apache-2.0 | 2.0.1 (2026-09-29) | Real background blur for Compose with a documented downlevel fallback — the first candidate if the glass vocabulary ever gains a blur layer. |
@@ -196,7 +207,7 @@ and test.
 
 | Batch | Contents | Needs |
 | --- | --- | --- |
-| A — no new dependency | **AutoEQ profile import — done** (see [repository-integration.md](repository-integration.md) §1.1); `libebur128` loudness metering; `speexdsp` resampling/AEC (no consumer today); `material-color-utilities` seed-based palettes | Native/Native-bridge work plus unit tests; no new Gradle dependency. `libebur128` additionally needs a device to confirm the meter's numbers, and `speexdsp`/`material-color-utilities` need a consumer that does not exist yet. |
+| A — no new dependency | **AutoEQ profile import — done** ([repository-integration.md](repository-integration.md) §1.1); **`libebur128` offline loudness measurement — done** (§1.2; loudness *matching* is not: nothing acts on the number yet); `speexdsp` resampling/AEC (no consumer today); `material-color-utilities` seed-based palettes | Native/Native-bridge work plus unit tests; no new Gradle dependency. `libebur128` is vendored source and still needs a device to confirm its numbers against real audio; `speexdsp`/`material-color-utilities` need a consumer that does not exist yet. |
 | B — dependency decision | `haze` blur where the OS supports it; `coil` artwork; `vico` charts; `material-design-icons` | An explicit decision per dependency, then `tools/license_check.py` re-run. |
 | C — blocked by design | `AppOpsX` write path via a Shizuku user service; every root-only project | Out of scope while SonicCore ships no root code path; documented in [shizuku-operations.md](shizuku-operations.md). |
 | D — verification | Device testing of every Audio/Device/Shizuku/Customization feature; release-tag refresh for the remaining entries | A physical device; see [feature-matrix.md](feature-matrix.md). |

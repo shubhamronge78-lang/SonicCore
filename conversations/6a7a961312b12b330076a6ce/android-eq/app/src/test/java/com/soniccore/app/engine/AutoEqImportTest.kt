@@ -39,6 +39,8 @@ class AutoEqImportTest {
         var saveFails = false
         var activateFails = false
         var preampFails = false
+        /** True when the preamp write does not land but reports it, instead of throwing. */
+        var preampReportsFailure = false
 
         fun save(preset: Presets.CustomPreset) {
             if (saveFails) throw IllegalStateException("storage error")
@@ -55,13 +57,29 @@ class AutoEqImportTest {
             return true
         }
 
-        fun setPreamp(value: Float) {
+        fun setPreamp(value: Float): Boolean {
             if (preampFails) throw IllegalStateException("no dsp")
+            if (preampReportsFailure) return false
             preampWrites += value
+            return true
         }
 
-        fun importProfile(review: AutoEqImport.Review, applyNow: Boolean): String =
-            AutoEqImport.apply(review, applyNow, ::save, ::activate, ::setPreamp)
+        /**
+         * The engine's own name resolution, for the tests that prove *which*
+         * curve an apply actually reaches: a built-in preset wins over a custom
+         * one that shares its name (`tryApplyPresetByName` looks the built-in up
+         * first).
+         */
+        fun resolveByName(name: String): ShortArray? =
+            Presets.presets.firstOrNull { it.name == name }?.levels
+                ?: presets.firstOrNull { it.name == name }?.levels
+
+        fun importProfile(
+            review: AutoEqImport.Review,
+            applyNow: Boolean,
+            previousCurve: String? = null
+        ): String =
+            AutoEqImport.apply(review, applyNow, ::save, ::activate, ::setPreamp, previousCurve)
     }
 
     private fun plan(text: String, name: String = "Test profile"): AutoEqImport.Plan {
@@ -135,7 +153,7 @@ class AutoEqImportTest {
         val plan = plan(graphic)
         val writes = mutableListOf<Float>()
         assertFalse("nothing must be written for a profile with no Preamp line",
-            AutoEqImport.applyPreamp(plan, writes::add))
+            AutoEqImport.applyPreamp(plan) { writes.add(it); true })
         assertTrue(writes.isEmpty())
         // The value the app is left with is the one it already had.
         assertEquals(3.4f, AutoEqImport.preampAfter(plan, 3.4f), 0.0001f)
@@ -280,6 +298,57 @@ class AutoEqImportTest {
         assertTrue("message was “$message”", message.contains("preamp could not be set"))
     }
 
+    @Test
+    fun aPreampWriteThatDoesNotLandWithoutThrowingIsAlsoReported() {
+        // The app's preamp path absorbs its own errors, so a write that simply
+        // does not land must be reported by the sink and trusted — never assumed
+        // to have succeeded because no exception came back.
+        val host = Host()
+        host.preampReportsFailure = true
+        val message = host.importProfile(AutoEqImport.Ready(plan(parametric)), applyNow = true)
+        assertTrue("message was “$message”", message.contains("preamp could not be set"))
+        assertTrue(host.preampWrites.isEmpty())
+    }
+
+    @Test
+    fun aFailedPreampWritePutsThePreviousProfileBackInsteadOfLeavingTheCurveBoosted() {
+        // The partial state this guards against: the imported curve active without
+        // the headroom compensation AutoEQ publishes for it. There is no
+        // transaction between the native preamp parameter and the preset store, so
+        // the previous curve is re-applied instead.
+        val host = Host()
+        host.presets += Presets.CustomPreset("Night Mode", ShortArray(31) { -6 }, 0, 0, 0)
+        host.preampReportsFailure = true
+        val message = host.importProfile(AutoEqImport.Ready(plan(parametric)), applyNow = true, previousCurve = "Night Mode")
+
+        assertEquals("the imported curve, then the previous one", listOf("Test profile", "Night Mode"), host.activations)
+        assertTrue("message was “$message”", message.contains("put back to “Night Mode”"))
+        assertTrue("the import is still saved for later", host.presets.any { it.name == "Test profile" })
+        assertTrue(host.preampWrites.isEmpty())
+    }
+
+    @Test
+    fun aFailedPreampWriteWithNoPreviousProfileSaysTheRollbackDidNotHappen() {
+        val host = Host()
+        host.preampFails = true
+        val message = host.importProfile(AutoEqImport.Ready(plan(parametric)), applyNow = true, previousCurve = null)
+        assertTrue("message was “$message”", message.contains("could not be put back"))
+        assertTrue("message was “$message”", message.contains("set the preamp yourself"))
+        assertEquals(listOf("Test profile"), host.activations)
+    }
+
+    @Test
+    fun theRollbackNeverCountsAsApplyingTheImportAgain() {
+        // previousCurve == the imported name would re-activate the same curve and
+        // report a rollback that did not happen.
+        val host = Host()
+        host.preampFails = true
+        val review = AutoEqImport.review(parametric, "Test profile") as AutoEqImport.Ready
+        val message = host.importProfile(review, applyNow = true, previousCurve = review.plan.name)
+        assertEquals(listOf("Test profile"), host.activations)
+        assertTrue("message was “$message”", message.contains("could not be put back"))
+    }
+
     // ── 7. Boundary values, and what the review tells the user ──
 
     @Test
@@ -323,6 +392,78 @@ class AutoEqImportTest {
         val named = plan(parametric, "   ")
         assertEquals(AutoEqProfile.DEFAULT_NAME, named.name)
         assertTrue(named.notes.any { it.contains("cleaned up") })
+    }
+
+    // ── 8. The name: an import must be the profile that gets activated ──
+
+    @Test
+    fun anImportNamedLikeABuiltInProfileIsStoredUnderItsOwnName() {
+        // The engine resolves a built-in before a custom preset, so an import left
+        // under a built-in's name would activate the built-in curve while the
+        // screen reported the imported one.
+        val collision = Presets.presets.first().name
+        val stored = AutoEqImport.availableName(collision)
+        assertEquals(collision + AutoEqImport.BUILTIN_COLLISION_SUFFIX, stored)
+        assertTrue("the stored name must not be a built-in name", Presets.presets.none { it.name == stored })
+        assertTrue(stored.length <= AutoEqProfile.MAX_NAME_CHARS)
+
+        val plan = plan(parametric, collision)
+        assertEquals(stored, plan.name)
+        assertTrue(plan.notes.any { it.contains("built-in profile is already named") })
+        assertTrue(AutoEqImport.reviewLines(plan).any { it.contains(stored) })
+
+        // Resolved the way the engine resolves: the colliding name is still the
+        // built-in, the stored name is the imported curve.
+        val host = Host()
+        host.importProfile(AutoEqImport.Ready(plan), applyNow = false)
+        assertArrayEquals(
+            Presets.presets.first().levels,
+            host.resolveByName(collision) ?: ShortArray(0)
+        )
+        assertArrayEquals(plan.bandLevels, host.resolveByName(stored) ?: ShortArray(0))
+    }
+
+    @Test
+    fun aNameThatIsNotABuiltInIsStoredAsTyped() {
+        val plan = plan(parametric, "HD 650")
+        assertEquals("HD 650", plan.name)
+        assertTrue(plan.notes.none { it.contains("built-in") })
+        assertEquals("HD 650", AutoEqImport.availableName("HD 650"))
+    }
+
+    @Test
+    fun aHostileProfileNameIsStoredHarmlesslyAndStillActivatesTheImport() {
+        val hostile = "../../data/local/tmp/evil\n\"name\":\"Hacked\\"
+        val plan = plan(parametric, hostile)
+        assertFalse("no path separator may survive: “${plan.name}”", plan.name.contains("/"))
+        assertFalse("no path separator may survive: “${plan.name}”", plan.name.contains("\\"))
+        assertFalse("no quote may survive: “${plan.name}”", plan.name.contains("\""))
+        assertFalse("no traversal may survive: “${plan.name}”", plan.name.contains(".."))
+        assertFalse("no control character may survive", plan.name.any { it.isISOControl() })
+        assertTrue(plan.name.length <= AutoEqProfile.MAX_NAME_CHARS)
+        assertTrue("the cleaned name is reported", plan.notes.any { it.contains("cleaned up") })
+
+        // It persists unchanged through the app's own round-trip and activates the
+        // imported curve — a stored name is a key, never a path.
+        val host = Host()
+        host.importProfile(AutoEqImport.Ready(plan), applyNow = true)
+        val reloaded = Presets.importFromJson(Presets.exportToJson(host.presets))
+        assertEquals(plan.name, reloaded.single().name)
+        assertArrayEquals(plan.bandLevels, reloaded.single().levels)
+        assertEquals(listOf(plan.name), host.activations)
+        assertEquals(1, host.preampWrites.size)
+    }
+
+    @Test
+    fun aFullLengthNameSurvivesThePresetBundleRoundTrip() {
+        // 64 characters is what the importer may store; the exported-bundle reader
+        // must not silently rename it to something shorter.
+        val name = "Sennheiser HD 650 with a very long descriptive profile name 1234"
+        assertTrue(name.length > 40 && name.length <= AutoEqProfile.MAX_NAME_CHARS)
+        val host = Host()
+        host.importProfile(AutoEqImport.Ready(plan(parametric, name)), applyNow = false)
+        val reloaded = Presets.importFromJson(Presets.exportToJson(host.presets))
+        assertEquals(name, reloaded.single().name)
     }
 
     @Test

@@ -1,11 +1,11 @@
-/* Minimal host stub of jni.h for the SonicCore DSP harness. */
+/* Minimal host stub of jni.h for the SonicCore harnesses (DSP + loudness). */
 #ifndef _STUB_JNI_H
 #define _STUB_JNI_H
 #include <stdint.h>
 typedef int jint; typedef long long jlong; typedef short jshort;
-typedef float jfloat; typedef unsigned char jboolean; typedef int jsize;
+typedef float jfloat; typedef double jdouble; typedef unsigned char jboolean; typedef int jsize;
 typedef void* jobject; typedef void* jarray; typedef void* jshortArray;
-typedef void* jfloatArray;
+typedef void* jfloatArray; typedef void* jdoubleArray;
 #define JNIEXPORT
 #define JNICALL
 #define JNI_TRUE 1
@@ -40,7 +40,20 @@ struct JNIEnv {
     }
     void ReleasePrimitiveArrayCritical(jarray, void*, jint) { criticalReleases++; }
     jfloat* GetFloatArrayElements(jfloatArray a, jboolean*) { return (jfloat*)((HostArr*)a)->data; }
-    void ReleaseFloatArrayElements(jfloatArray a, jfloat*, jint) {}
+    void ReleaseFloatArrayElements(jfloatArray, jfloat*, jint) {}
+
+    /* Result arrays: the loudness facade returns a 4-element double array, so the
+       stub hands back a fixed buffer that the caller reads directly. Additive —
+       the DSP harness neither calls nor sees these. */
+    double doubleBuffer[8] = {0};
+    jdoubleArray NewDoubleArray(jsize len) {
+        for (jsize i = 0; i < 8 && i < len; i++) doubleBuffer[i] = 0;
+        return (jdoubleArray) doubleBuffer;
+    }
+    void SetDoubleArrayRegion(jdoubleArray a, jsize start, jsize len, const jdouble* v) {
+        jdouble* dst = (jdouble*) a;
+        for (jsize i = 0; i < len; i++) dst[start + i] = v[i];
+    }
 };
 typedef JNIEnv* JNIEnvPtr;
 #endif

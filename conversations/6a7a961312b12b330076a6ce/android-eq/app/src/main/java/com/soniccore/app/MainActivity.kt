@@ -1160,14 +1160,26 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
     val audioControl = remember(audioControlTick) {
         try { AudioControlState.of(DspParams.load(engine)) } catch (_: Throwable) { AudioControlState() }
     }
-    fun applyAudioControl(next: AudioControlState) {
-        try {
+    /**
+     * Applies one Audio-control snapshot through the app's single validated path.
+     *
+     * @return true when the snapshot reached **both** the native engine and the
+     *   persisted parameters. The native bridge, each setter and the store all
+     *   absorb their own errors, so this is the only place that can say whether a
+     *   write actually landed — the AutoEQ import uses it to avoid claiming a
+     *   preamp it could not set. Callers that only want the side effect may keep
+     *   ignoring the result.
+     */
+    fun applyAudioControl(next: AudioControlState): Boolean {
+        val landed = try {
             val p = DspParams.load(engine)
             next.validated().mergeInto(p)
-            p.applyTo(NeonDsp)
-            p.save(engine)
-        } catch (_: Throwable) { }
+            val writtenNatively = p.applyTo(NeonDsp)
+            val persisted = p.save(engine)
+            writtenNatively && persisted
+        } catch (_: Throwable) { false }
         audioControlTick++
+        return landed
     }
 
     /**
@@ -1203,8 +1215,14 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             // The existing atomic apply path the preset picker's APPLY button uses.
             applyCurve = { name -> tryApplyPresetByName(name) },
             // The existing validated preamp path — one write, through the Audio
-            // control snapshot the engine already merges and applies natively.
-            setPreamp = { value -> applyAudioControl(audioControl.copy(preamp = value)) }
+            // control snapshot the engine already merges and applies natively. It
+            // reports whether the value landed, so a failed write is never
+            // reported as a success.
+            setPreamp = { value -> applyAudioControl(audioControl.copy(preamp = value)) },
+            // The profile that is active now. The native parameter and the preset
+            // store are two separate writes with no transaction between them, so
+            // this is what lets a failed preamp write put the previous curve back.
+            previousCurve = selectedPreset
         )
 
     // The installed version string, shown by Settings and the About tool.
