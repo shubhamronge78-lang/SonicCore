@@ -224,6 +224,17 @@ private fun SignalChainEditor(
         modifier = modifier,
         description = "The order the engine really processes: ${chain.orderText}"
     ) {
+        // The name comes before the actions that use it: the field used to sit
+        // below SAVE CHAIN, so "save" was offered over a name the user had not
+        // been asked for yet.
+        OutlinedTextField(
+            value = presetName,
+            onValueChange = { presetName = it },
+            singleLine = true,
+            label = { Text("Chain name", color = SonicCoreColors.SecondaryText) },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(GlassSpacing.gapSmall)
@@ -302,14 +313,6 @@ private fun SignalChainEditor(
                 }
             }
         }
-
-        OutlinedTextField(
-            value = presetName,
-            onValueChange = { presetName = it },
-            singleLine = true,
-            label = { Text("Chain name", color = SonicCoreColors.SecondaryText) },
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-        )
 
         Spacer(Modifier.height(6.dp))
         chain.order.forEachIndexed { index, stage ->

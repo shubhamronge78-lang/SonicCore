@@ -69,6 +69,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.font.FontFamily
@@ -78,6 +79,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -121,6 +123,8 @@ import com.soniccore.app.capture.CaptureEqService
 import com.soniccore.app.capture.CaptureFlowStatus
 import com.soniccore.app.dsp.NeonDsp
 import com.soniccore.app.dsp.AudioControlState
+import com.soniccore.app.dsp.ChainMove
+import com.soniccore.app.dsp.ChainStage
 import com.soniccore.app.dsp.DspChain
 import com.soniccore.app.dsp.DspParams
 import com.soniccore.app.dsp.DspTelemetry
@@ -140,6 +144,7 @@ import com.soniccore.app.ui.design.SonicCoreTheme
 import com.soniccore.app.ui.design.SonicCorePalette
 import com.soniccore.app.ui.design.IndicatorStatus
 import com.soniccore.app.ui.design.GlassCard
+import com.soniccore.app.ui.design.GlassIconButton
 import com.soniccore.app.ui.design.GlassIntensityPreference
 import com.soniccore.app.ui.design.LiquidGlassButton
 import com.soniccore.app.ui.design.LiquidGlassChoiceChip
@@ -2012,24 +2017,6 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         }
 
         if (toolTargets(SonicCoreDestination.EQUALIZER)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            Text(
-                "SESSION HISTORY  ›",
-                fontSize = 10.sp,
-                color = T.accent,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(T.accent.copy(alpha = 0.12f))
-                    // Push the session tool on top of the EQ tool: back returns
-                    // here, which is what the old secondary-return pair meant.
-                    .clickable { openDestination(SonicCoreDestination.SESSIONS) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .semantics { contentDescription = "Open saved session history" }
-            )
-        }
         var editBand by remember { mutableStateOf(-1) }
         var selBand by remember { mutableStateOf(-1) }
         var eqScaleMode by remember { mutableStateOf(0) } // 0 AUTO · 6 · 12 · 18
@@ -2055,68 +2042,105 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                 }
             } catch (_: Throwable) { null }
         }
-        // ── v143: EQUALIZER header — title + FOCUS EQ (§32) ──
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Spacer(Modifier.weight(1f))
-            Text(
-                if (focusEq) "✕ EXIT FOCUS" else "◎ FOCUS EQ", fontSize = 10.sp,
-                color = if (focusEq) T.accent else T.primary,
+        // ── EQUALIZER header — actions on their own row ──
+        // These used to be bare `Text` chips with 6 dp of vertical padding, which
+        // is a ~20 dp touch target, and the session-history chip sat on a row of
+        // its own before them. They are now two real glass buttons on one row:
+        // every target is at least 48 dp, and neither label has to compete for
+        // width with the preset navigation below.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            LiquidGlassButton(
+                text = if (focusEq) "EXIT FOCUS" else "FOCUS EQ",
+                onClick = { focusEq = !focusEq },
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background((if (focusEq) T.accent else T.primary).copy(alpha = 0.14f))
-                    .clickable { focusEq = !focusEq }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .semantics { contentDescription = if (focusEq) "Exit Focus EQ mode" else "Enter Focus EQ — immersive full-screen EQ workspace" }
+                    .weight(1f)
+                    .semantics { contentDescription = if (focusEq) "Exit Focus EQ mode" else "Enter Focus EQ — immersive full-screen EQ workspace" },
+                selected = focusEq
+            )
+            // Push the session tool on top of the EQ tool: back returns here.
+            LiquidGlassButton(
+                text = "SESSIONS",
+                onClick = { openDestination(SonicCoreDestination.SESSIONS) },
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { contentDescription = "Open saved session history" }
             )
         }
-        // ── v143 §4: PRESET BAR — star, prev/next (measured preview), browser, save ──
+        Spacer(Modifier.height(8.dp))
+        // ── PRESET BAR ──
+        // Two rows instead of one: the star, ‹, the preset name, › and SAVE used
+        // to share a single Row of ~20 dp text chips, so on a narrow phone (or
+        // with the system font scaled up) the name and SAVE fought for the same
+        // pixels and the whole bar dropped below the 48 dp touch target. The
+        // navigation row below keeps three real 48 dp icon buttons around the
+        // name, and SAVE lives on the actions row above with the other actions.
         val presetOrder = remember(customPresets) { Presets.presets.map { it.name } + customPresets.map { it.name } }
+        val presetIsCustomized = eqPresetLv != null &&
+            com.soniccore.app.engine.EqualizerEngine.isCustomizedDb(bandLevels, eqPresetLv!!, bandCount)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                if (selectedPreset in presetFavs) "★" else "☆", fontSize = 14.sp,
-                color = if (selectedPreset in presetFavs) T.accent else T.secondary,
+            GlassIconButton(
+                contentDescription = (if (selectedPreset in presetFavs) "Remove " else "Add ") +
+                    selectedPreset + (if (selectedPreset in presetFavs) " from favourites" else " to favourites"),
+                onClick = {
+                    if (selectedPreset in Presets.presets.map { it.name } + customPresets.map { it.name }) toggleFav(selectedPreset)
+                }
+            ) {
+                Text(
+                    if (selectedPreset in presetFavs) "★" else "☆",
+                    fontSize = 16.sp,
+                    color = if (selectedPreset in presetFavs) T.accent else T.secondary
+                )
+            }
+            GlassIconButton(
+                contentDescription = "Previous preset — opens measured preview",
+                onClick = {
+                    val ni = com.soniccore.app.engine.Presets.stepIndex(presetOrder.size, presetOrder.indexOf(selectedPreset), -1)
+                    if (ni >= 0) previewPresetName = presetOrder[ni]
+                }
+            ) { Text("‹", fontSize = 18.sp, color = T.primary) }
+            Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .clickable {
-                        if (selectedPreset in Presets.presets.map { it.name } + customPresets.map { it.name }) toggleFav(selectedPreset)
-                    }
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                    .semantics { contentDescription = (if (selectedPreset in presetFavs) "Unfavorite " else "Favorite ") + selectedPreset }
-            )
-            Text("‹", fontSize = 15.sp, color = T.primary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .clickable {
-                        val ni = com.soniccore.app.engine.Presets.stepIndex(presetOrder.size, presetOrder.indexOf(selectedPreset), -1)
-                        if (ni >= 0) previewPresetName = presetOrder[ni]
-                    }
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                    .semantics { contentDescription = "Previous preset — opens measured preview" })
-            Text(selectedPreset + " ▾", fontSize = 11.sp, color = T.primary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
+                    .weight(1f)
+                    .padding(horizontal = 4.dp)
+                    .defaultMinSize(minHeight = GlassSpacing.touchTarget)
+                    .clip(RoundedCornerShape(GlassRadius.control))
                     .background(T.primary.copy(alpha = 0.12f))
                     .clickable { showPresetPicker = true }
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                    .semantics { contentDescription = "Select a preset — opens the preset picker" })
-            Text("›", fontSize = 15.sp, color = T.primary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .clickable {
-                        val ni = com.soniccore.app.engine.Presets.stepIndex(presetOrder.size, presetOrder.indexOf(selectedPreset), +1)
-                        if (ni >= 0) previewPresetName = presetOrder[ni]
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .semantics { contentDescription = "Select a preset — opens the preset picker" },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        selectedPreset + " ▾",
+                        fontSize = 11.sp,
+                        color = T.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center
+                    )
+                    if (presetIsCustomized) {
+                        Text(
+                            "CUSTOMIZED",
+                            fontSize = 8.sp,
+                            color = T.accent,
+                            modifier = Modifier.padding(top = 1.dp)
+                                .semantics { contentDescription = "Current EQ differs from the loaded preset" }
+                        )
                     }
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                    .semantics { contentDescription = "Next preset — opens measured preview" })
-            Spacer(Modifier.width(4.dp))
-            // v143 §28: CUSTOMIZED — current curve differs from the loaded preset
-            if (eqPresetLv != null && com.soniccore.app.engine.EqualizerEngine.isCustomizedDb(bandLevels, eqPresetLv!!, bandCount)) {
-                Text("• CUSTOMIZED", fontSize = 8.sp, color = T.accent,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(T.accent.copy(alpha = 0.10f))
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                        .semantics { contentDescription = "Current EQ differs from the loaded preset" })
+                }
             }
-            Spacer(Modifier.weight(1f))
+            GlassIconButton(
+                contentDescription = "Next preset — opens measured preview",
+                onClick = {
+                    val ni = com.soniccore.app.engine.Presets.stepIndex(presetOrder.size, presetOrder.indexOf(selectedPreset), +1)
+                    if (ni >= 0) previewPresetName = presetOrder[ni]
+                }
+            ) { Text("›", fontSize = 18.sp, color = T.primary) }
+            Spacer(Modifier.width(4.dp))
             GlassButton("SAVE", 0) { presetNameInput = ""; showSaveDialog = true }
         }
         Spacer(Modifier.height(8.dp))
@@ -3058,54 +3082,67 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             Spacer(Modifier.height(8.dp))
             Text("PROCESSING CHAIN", fontSize = 11.sp, color = T.accent)
             Spacer(Modifier.height(2.dp))
-            val stBase = remember { try { DspParams.load(engine) } catch (_: Throwable) { DspParams() } }
-            var stOn by remember { mutableStateOf(mapOf(
-                "preamp" to true, "graphic" to true, "parametric" to true, "bass" to true,
-                "treble" to true, "comp" to stBase.compOn, "stereo" to true, "limiter" to stBase.limiterOn)) }
-            fun stPush(key: String, on: Boolean) {
-                try {
-                    val p = DspParams()
-                    p.preamp = if (key == "preamp" && !on) 0f else stBase.preamp
-                    p.bass = if (key == "bass" && !on) 0f else stBase.bass
-                    p.treble = if (key == "treble" && !on) 0f else stBase.treble
-                    p.width = if (key == "stereo" && !on) 1f else stBase.width
-                    p.balance = if (key == "stereo" && !on) 0f else stBase.balance
-                    p.mono = if (key == "stereo" && !on) false else stBase.mono
-                    p.swap = if (key == "stereo" && !on) false else stBase.swap
-                    p.compOn = if (key == "comp") on else stBase.compOn
-                    p.compThresh = stBase.compThresh
-                    p.limiterOn = if (key == "limiter") on else stBase.limiterOn
-                    p.limThresh = stBase.limThresh
-                    p.slots = if (key == "parametric" && !on) List(8) { PeqSlot() } else stBase.slots
-                    p.applyTo(NeonDsp)
-                    if (key == "graphic") {
-                        if (!on) NeonDsp.setGraphicGains(FloatArray(engine.bandCount) { 0f })
-                        else NeonDsp.setGraphicGains(FloatArray(engine.bandCount) { i -> bandLevels.getOrNull(i) ?: 0f })
-                    }
-                    p.save(engine)
-                    stOn = stOn.toMutableMap().also { it[key] = on }
-                } catch (_: Throwable) { }
-            }
-            // Build #130: canonical signal order — PREAMP → PARAMETRIC →
-            // GRAPHIC → BASS/TREBLE → STEREO → COMPRESSOR → CONVOLVER → LIMITER
-            val stages = listOf(
-                "preamp" to ("PREAMP" + " · " + "%+.1f dB".format(stBase.preamp)),
-                "parametric" to "PARAMETRIC EQ · " + (stBase.slots.count { it.on }).toString() + " slots",
-                "graphic" to "GRAPHIC EQ · " + if (bandLevels.any { it != 0f }) "custom curve" else "flat",
-                "bass" to "BASS SHELF · " + "%+.1f dB".format(stBase.bass),
-                "treble" to "TREBLE SHELF · " + "%+.1f dB".format(stBase.treble),
-                "stereo" to "STEREO · " + "%.0f%%".format(stBase.width * 100),
-                "comp" to "COMPRESSOR · " + if (stOn["comp"] == true) "ON" else "off",
-                "convolver" to "CONVOLVER · impulse engine (API-ready, not yet active)",
-                "limiter" to "LIMITER · " + if (stOn["limiter"] == true) "ON" else "off"
-            )
+            // ── The chain below is READ from the engine, never mirrored ──
+            // This card used to keep its own `stOn` map and implement "bypass" by
+            // writing zeros over the parameters — preamp 0 dB, all eight PEQ slots
+            // reset, the graphic curve flattened — from a snapshot taken when the
+            // card first composed. Two real consequences: toggling one stage also
+            // pushed that stale snapshot back over every other stage, and the
+            // limiter row disagreed with the Limiter switch the rest of the app
+            // writes. A bypass is now the native stage flag, applied through the
+            // same `DspChain` the Audio Console edits; parameters are left
+            // untouched, so re-enabling a stage restores what the user had.
+            val chainNow = toolHost.dspChain
+            val limiterOnNow = toolHost.audioControl.limiterOn
+            val stBase = remember(dspTick) { try { DspParams.load(engine) } catch (_: Throwable) { DspParams() } }
             var stEdit by remember { mutableStateOf<String?>(null) }
+
+            fun stageKey(stage: ChainStage): String = when (stage) {
+                ChainStage.PREAMP -> "preamp"
+                ChainStage.PARAMETRIC_EQ -> "parametric"
+                ChainStage.GRAPHIC_EQ -> "graphic"
+                ChainStage.SHELVES -> "bass"
+                ChainStage.STEREO -> "stereo"
+                ChainStage.CONVOLVER -> "convolver"
+                ChainStage.COMPRESSOR -> "comp"
+                ChainStage.LIMITER -> "limiter"
+            }
+
+            /** Is this stage running? Order and bypass are the chain's, the limiter's is `limiterOn`. */
+            fun stageOn(stage: ChainStage): Boolean = chainNow.enableOf(stage, limiterOnNow)
+
+            /** Bypasses or enables one stage. `on == false` means bypass. */
+            fun stPush(key: String, on: Boolean) {
+                val stage = chainNow.order.firstOrNull { stageKey(it) == key } ?: return
+                if (!stage.bypassable) return
+                pushUndo(true, "Stage: " + key)
+                toolHost.onDspChainChange(chainNow.withBypass(stage, !on))
+            }
+
+            /** What a stage row says — every value read from the engine. */
+            fun stageLabel(stage: ChainStage): String = when (stage) {
+                ChainStage.PREAMP -> "PREAMP · " + "%+.1f dB".format(stBase.preamp)
+                ChainStage.PARAMETRIC_EQ -> "PARAMETRIC EQ · " + stBase.slots.count { it.on } + " slots"
+                ChainStage.GRAPHIC_EQ -> "GRAPHIC EQ · " + (if (bandLevels.any { it != 0f }) "custom curve" else "flat")
+                ChainStage.SHELVES -> "BASS & TREBLE · " + "%+.1f / %+.1f dB".format(stBase.bass, stBase.treble)
+                ChainStage.STEREO -> "STEREO · " + "%.0f%%".format(stBase.width * 100)
+                ChainStage.CONVOLVER -> "CONVOLVER · impulse engine (API-ready, not yet active)"
+                ChainStage.COMPRESSOR -> "COMPRESSOR · " + "%+.1f dB".format(stBase.compThresh)
+                ChainStage.LIMITER -> "LIMITER · ceiling " + "%+.1f dB".format(stBase.limThresh)
+            }
+
+            // The rows follow `chain.order` — the order the engine really walks,
+            // so a reorder made on the Audio Console shows up here.
+            val stages = chainNow.order
+
             @Composable
-            fun StageCard(si: Int, key: String, label: String) {
+            fun StageCard(si: Int, stage: ChainStage) {
+                val key = stageKey(stage)
+                val on = stageOn(stage)
                 if (si > 0) Text("↓", fontSize = 10.sp, color = T.secondary, modifier = Modifier.padding(start = 10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text((if (dspMoving && stOn[key] == true) "✓ " else "") + label, fontSize = 10.sp,
-                        color = if (stOn[key] == true) T.primary else T.secondary)
+                    Text((if (dspMoving && on) "✓ " else "") + stageLabel(stage), fontSize = 10.sp,
+                        color = if (on) T.primary else T.secondary)
                     Spacer(Modifier.weight(1f))
                     if (key == "convolver") {
                         // API-ready placeholder — honest label, no fake controls
@@ -3116,15 +3153,36 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                     } else {
                         Text("EDIT", fontSize = 9.sp, color = T.primary,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.12f))
-                                .clickable { if (stOn[key] == true) stEdit = key }
+                                .clickable { if (on) stEdit = key }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                                 .semantics { contentDescription = "Edit stage " + key })
-                        Text(if (stOn[key] == true) "BYPASS" else "ENABLE", fontSize = 9.sp,
-                            color = if (stOn[key] == true) T.accent else T.primary,
-                            modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background((if (stOn[key] == true) T.accent else T.primary).copy(alpha = 0.12f))
-                                .clickable { pushUndo(true, "Stage: " + key); stPush(key, stOn[key] != true) }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                                .semantics { contentDescription = (if (stOn[key] == true) "Bypass " else "Enable ") + key })
+                        if (!stage.bypassable) {
+                            // The limiter cannot be bypassed, only switched off, and
+                            // its one switch is the app-level `limiterOn` — the
+                            // same value the Limiter card and Settings write.
+                            GlassSwitch(
+                                checked = on,
+                                onCheckedChange = { next ->
+                                    pushUndo(true, "Limiter")
+                                    toolHost.onAudioControlChange(
+                                        toolHost.audioControl.copy(limiterOn = next)
+                                    )
+                                },
+                                modifier = Modifier
+                                    .padding(start = 6.dp)
+                                    .semantics {
+                                        contentDescription = "Enable the limiter"
+                                        stateDescription = if (on) "On" else "Off"
+                                    }
+                            )
+                        } else {
+                            Text(if (on) "BYPASS" else "ENABLE", fontSize = 9.sp,
+                                color = if (on) T.accent else T.primary,
+                                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background((if (on) T.accent else T.primary).copy(alpha = 0.12f))
+                                    .clickable { stPush(key, on != true) }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    .semantics { contentDescription = (if (on) "Bypass " else "Enable ") + key })
+                        }
                     }
                 }
 
@@ -3135,19 +3193,21 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             if (rackLandscape && stages.size > 1) {
                 Row(Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
-                        stages.take((stages.size + 1) / 2).forEachIndexed { i, (k, l) -> StageCard(i, k, l) }
+                        stages.take((stages.size + 1) / 2).forEachIndexed { i, s -> StageCard(i, s) }
                     }
                     Column(Modifier.weight(1f)) {
-                        stages.drop((stages.size + 1) / 2).forEachIndexed { i, (k, l) -> StageCard(i, k, l) }
+                        stages.drop((stages.size + 1) / 2).forEachIndexed { i, s -> StageCard(i, s) }
                     }
                 }
             } else {
-                stages.forEachIndexed { si, (key, label) -> StageCard(si, key, label) }
+                stages.forEachIndexed { si, s -> StageCard(si, s) }
             }
             // Build #124: stage editor — only controls the native engine actually has
             if (stEdit != null) {
                 val stKey = stEdit!!
-                val stName = stages.firstOrNull { it.first == stKey }?.second ?: stKey
+                val stStage = stages.firstOrNull { stageKey(it) == stKey }
+                val stName = stStage?.let { stageLabel(it) } ?: stKey
+                val stPosition = stStage?.let { stages.indexOf(it) } ?: -1
                 val curParams = try { DspParams.load(engine) } catch (_: Throwable) { DspParams() }
                 var stVal by remember(stKey) {
                     mutableStateOf(when (stKey) {
@@ -3203,13 +3263,53 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                                 }
                                 stEdit = null
                             }) { Text("RESET STAGE", color = T.accent) }
-                            TextButton(onClick = { pushUndo(true, "Stage: " + stKey); stPush(stKey, false); stEdit = null }) { Text("BYPASS", color = T.accent) }
+                            // Reordering lives in the dialog: the rack rows are too
+                            // narrow on a phone to carry two more 48 dp targets. It
+                            // goes through the same DspChain rule the Audio Console
+                            // uses, so an order the engine would refuse is refused
+                            // in the same words and nothing is applied.
+                            TextButton(
+                                enabled = stPosition > 0 && stStage != null,
+                                onClick = {
+                                    val move = chainNow.moved(stPosition, stPosition - 1)
+                                    if (move is ChainMove.Applied) {
+                                        pushUndo(true, "Reorder chain")
+                                        toolHost.onDspChainChange(chainNow.copy(order = move.order))
+                                        stEdit = null
+                                    }
+                                }
+                            ) { Text("MOVE ↑", color = T.secondary) }
+                            TextButton(
+                                enabled = stStage != null && stPosition in 0 until stages.lastIndex,
+                                onClick = {
+                                    val move = chainNow.moved(stPosition, stPosition + 1)
+                                    if (move is ChainMove.Applied) {
+                                        pushUndo(true, "Reorder chain")
+                                        toolHost.onDspChainChange(chainNow.copy(order = move.order))
+                                        stEdit = null
+                                    }
+                                }
+                            ) { Text("MOVE ↓", color = T.secondary) }
+                            if (stStage?.bypassable == true) {
+                                TextButton(onClick = { stPush(stKey, false); stEdit = null }) { Text("BYPASS", color = T.accent) }
+                            } else if (stStage != null) {
+                                TextButton(onClick = {
+                                    pushUndo(true, "Limiter")
+                                    toolHost.onAudioControlChange(
+                                        toolHost.audioControl.copy(limiterOn = !limiterOnNow)
+                                    )
+                                    stEdit = null
+                                }) { Text(if (limiterOnNow) "LIMIT OFF" else "LIMIT ON", color = T.accent) }
+                            }
                             TextButton(onClick = { stEdit = null }) { Text("DONE", color = T.secondary) }
                         }
                     }
                 )
             }
-            Text("Stage bypass modifies the existing configuration atomically — no parallel pipelines. Values snapshot at card open; fine-tune stages below.", fontSize = 8.sp, color = T.secondary)
+            Text(
+                "A bypass here is the engine's own stage flag — the same one the Audio Console and the chain editor show — so the settings are kept and the order is untouched. The limiter's place is fixed last; only its enable moves, through the one limiter switch the app has.",
+                fontSize = 8.sp, color = T.secondary
+            )
         }
         Spacer(Modifier.height(16.dp))
 
@@ -3222,7 +3322,13 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                 fontSize = 10.sp, color = T.secondary, lineHeight = 13.sp
             )
             Spacer(Modifier.height(8.dp))
-            var dspP by remember { mutableStateOf(DspParams.load(engine)) }
+            // Re-read on the studio's own 1 s tick. This card used to hold the
+            // parameters it saw when it first composed, so a ± press wrote that
+            // stale snapshot back over every stage — including curve edits made
+            // on the Equalizer in the meantime.
+            var chainTick by remember { mutableStateOf(0) }
+            LaunchedEffect(Unit) { while (true) { delay(1000); chainTick++ } }
+            var dspP by remember(chainTick) { mutableStateOf(DspParams.load(engine)) }
             var dspVer by remember { mutableStateOf(0) }
             fun bump() { dspVer++ }
             @Suppress("UNUSED_EXPRESSION")
