@@ -59,6 +59,7 @@ import com.soniccore.app.ui.design.LiquidGlassSurface
 import com.soniccore.app.ui.design.LiquidGlassValueChip
 import com.soniccore.app.ui.design.MetricCard
 import com.soniccore.app.ui.design.PresetCard
+import com.soniccore.app.ui.design.ResponsiveBreakpoints
 import com.soniccore.app.ui.design.SectionHeader
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.design.StatusIndicator
@@ -103,7 +104,7 @@ fun HomeResponsiveColumns(
 }
 
 internal fun homeUsesTwoColumns(landscape: Boolean, availableWidth: Dp): Boolean =
-    landscape || availableWidth >= 840.dp
+    landscape || availableWidth.value >= ResponsiveBreakpoints.TWO_PANE_MIN_WIDTH_DP
 
 @Composable
 fun HomeTopBar(

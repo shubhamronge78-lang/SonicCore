@@ -63,6 +63,13 @@ enum class LicenseCompatibility(val label: String, val summary: String) {
     )
 }
 
+/** The orderings the Repository Manager offers. */
+enum class RepositorySort(val label: String) {
+    NAME("Name"),
+    STATUS("Status"),
+    CATEGORY("Category")
+}
+
 /** The integration vocabulary the Repository Manager reports. */
 enum class IntegrationStatus(val label: String, val detail: String) {
     INTEGRATED(
@@ -635,6 +642,24 @@ object RepositoryInventory {
     /** How many entries carry each licence verdict, in declaration order. */
     fun countByCompatibility(): List<Pair<LicenseCompatibility, Int>> =
         LicenseCompatibility.entries.map { verdict -> verdict to all.count { it.compatibility == verdict } }
+
+    /**
+     * Order the Repository Manager's filtered list.
+     *
+     * `STATUS` sorts by the status enum's own declaration order — the
+     * compliance order the inventory is written in (Integrated first, then
+     * Ready to Integrate, then the reference and blocked groups) — so the most
+     * actionable entries are always at the top.
+     */
+    fun orderedBy(entries: List<RepositoryEntry>, sort: RepositorySort): List<RepositoryEntry> = when (sort) {
+        RepositorySort.NAME -> entries.sortedBy { it.title.lowercase() }
+        RepositorySort.STATUS -> entries.sortedWith(
+            compareBy({ it.status.ordinal }, { it.title.lowercase() })
+        )
+        RepositorySort.CATEGORY -> entries.sortedWith(
+            compareBy({ it.category.ordinal }, { it.title.lowercase() })
+        )
+    }
 
     /**
      * Filter for the Repository Manager: a free-text query plus an optional

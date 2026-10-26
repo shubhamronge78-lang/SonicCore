@@ -182,7 +182,9 @@ fun CustomizationGlassScreen(host: SonicCoreToolHost, modifier: Modifier = Modif
                     value = host.glassLevel.toFloat(),
                     onValueChange = { host.onGlassLevelChange(it.toInt().coerceIn(0, 2)) },
                     valueRange = 0f..2f,
-                    modifier = Modifier.weight(1f).height(32.dp)
+                    // No fixed height here either — see CategoryHubs: the
+                    // shared slider owns its 48 dp touch target.
+                    modifier = Modifier.weight(1f)
                 )
                 Text(
                     listOf("SUBTLE", "LIQUID", "CRYSTAL").getOrElse(host.glassLevel.coerceIn(0, 2)) { "LIQUID" },

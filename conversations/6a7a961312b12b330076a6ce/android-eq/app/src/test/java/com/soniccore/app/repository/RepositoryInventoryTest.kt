@@ -212,4 +212,42 @@ class RepositoryInventoryTest {
             }
         }
     }
+
+    // ── Ordering (the Repository Manager's sort control) ──
+
+    @Test
+    fun orderingByNameIsAlphabetical() {
+        val ordered = RepositoryInventory.orderedBy(all, RepositorySort.NAME)
+        assertEquals(all.size, ordered.size)
+        assertEquals(ordered.map { it.title.lowercase() }.sorted(), ordered.map { it.title.lowercase() })
+    }
+
+    @Test
+    fun orderingByStatusKeepsTheComplianceOrder() {
+        val ordered = RepositoryInventory.orderedBy(all, RepositorySort.STATUS)
+        assertEquals(all.size, ordered.size)
+        // Status ordinal order is the inventory's own compliance order, so the
+        // actionable entries (Integrated, Ready) come before the blocked ones.
+        assertEquals(ordered.map { it.status.ordinal }.sorted(), ordered.map { it.status.ordinal })
+        // Inside a status the titles stay alphabetical, so the list is stable.
+        ordered.groupBy { it.status }.values.forEach { group ->
+            assertEquals(group.map { it.title.lowercase() }.sorted(), group.map { it.title.lowercase() })
+        }
+    }
+
+    @Test
+    fun orderingByCategoryGroupsTheSixCategories() {
+        val ordered = RepositoryInventory.orderedBy(all, RepositorySort.CATEGORY)
+        assertEquals(all.size, ordered.size)
+        assertEquals(ordered.map { it.category.ordinal }.sorted(), ordered.map { it.category.ordinal })
+    }
+
+    @Test
+    fun noOrderingDropsOrDuplicatesAnEntry() {
+        RepositorySort.entries.forEach { sort ->
+            val ordered = RepositoryInventory.orderedBy(all, sort)
+            assertEquals("$sort changed the entry count", all.size, ordered.size)
+            assertEquals("$sort changed the entry set", all.toSet(), ordered.toSet())
+        }
+    }
 }

@@ -146,6 +146,45 @@ object GlassSpacing {
 
     /** Minimum touch target. Nothing interactive may be smaller. */
     val touchTarget = 48.dp
+
+    // ── Responsive scale (see `ResponsiveLayout.kt`) ──
+    // Phones keep the historical 16 dp gutter; a window with room gets a wider
+    // one so cards do not stretch edge to edge on a tablet. The window class
+    // decides which of these applies — no screen picks a number itself.
+
+    /** Horizontal gutter on a medium window (600–839 dp). */
+    val screenHorizontalMedium = 24.dp
+
+    /** Horizontal gutter on an expanded window (840 dp and wider). */
+    val screenHorizontalExpanded = 32.dp
+
+    /** Vertical rhythm between cards, per window class. */
+    val sectionGapCompact = 14.dp
+    val sectionGapMedium = 16.dp
+    val sectionGapExpanded = 18.dp
+
+    /**
+     * Caps for the centred content column. Without them a phone layout is
+     * stretched across a tablet: text lines run the full width and every card
+     * becomes a very wide, very empty band.
+     */
+    val contentMaxWidthMedium = 680.dp
+
+    /**
+     * A tablet-wide column. Deliberately below the common 1280 dp tablet width
+     * so the cap actually binds and leaves real gutters, instead of turning a
+     * phone layout into full-bleed bands on a large screen.
+     */
+    val contentMaxWidthExpanded = 960.dp
+
+    /** Narrowest a tile may get before an adaptive grid drops a column. */
+    val minTileWidth = 132.dp
+
+    /** Narrowest a two-line tile (value + footer) may get. */
+    val minTileWidthWide = 168.dp
+
+    /** Narrowest a single-number tile may get. */
+    val minTileWidthNumeric = 112.dp
 }
 
 /** Elevation (GL-03). Soft separation, never a heavy glow. */

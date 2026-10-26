@@ -15,9 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -77,10 +75,12 @@ fun DeviceDiagnosticsScreen(
         }
     }
 
+    // Scrolling is owned by the launcher shell (one scroll container for the
+    // whole body). A second vertical scroll here nests two scrollables in the
+    // same direction, which Compose rejects at measure time.
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
             .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {

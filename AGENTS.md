@@ -77,7 +77,7 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (241 tests across 32 classes: the platform expansion, the Shizuku IPC work, the
+   (259 tests across 33 classes: the platform expansion, the Shizuku IPC work, the
    Home/layout contracts, the twelve-theme catalogue, the splash, the Audio Center
    grouping/rendering contract, the Audio control-parameter validation and the
    Liquid Glass token contracts) plus the
@@ -206,6 +206,44 @@ Rules the rebuild established, and the tests that hold them:
   web surface, so no UI change here can be verified in the browser preview —
   only the tests, the harness, `assembleDebug` and `lintDebug`. Say so in the
   report rather than claiming a visual check.
+
+## Responsive layout
+
+`docs/responsive-audit.md` is the audit (RD-01 … RD-13). The code is one new
+file plus the spacing tokens:
+
+- `ui/design/ResponsiveLayout.kt` — `WindowSizeClass` (compact < 600, medium
+  < 840, expanded ≥ 840 dp), `ResponsiveMetrics`, `LocalResponsiveMetrics`,
+  `rememberResponsiveMetrics()`, `AdaptiveGrid`, and the pure decisions
+  `windowSizeClassOf`, `adaptiveColumnCount`, `categoryColumnCount`. No new
+  dependency: the window comes from
+  `LocalConfiguration.screenWidthDp`, which invalidates on rotation,
+  split-screen resize and a foldable changing posture.
+- `ui/design/GlassTokens.kt` — the responsive half of `GlassSpacing`
+  (per-class gutters, section gaps, content caps, minimum tile widths).
+
+Rules:
+
+- **The shell owns vertical scrolling.** `mainContent` in `MainActivity` is one
+  `Column(Modifier.verticalScroll(...))` and its `ScrollState` is keyed on
+  `(category, tool)` so every destination opens at the top. A tool body must
+  **never** add its own `verticalScroll`: an outer vertical scroll hands its
+  child an infinite maximum height, and Compose rejects a scrollable measured
+  with one (`checkScrollableContainerConstraints`). Eight bodies did exactly
+  that (RD-01) — that is why they no longer scroll themselves.
+- **Never compare a breakpoint at a call site.** Use
+  `ResponsiveBreakpoints` / `ResponsiveMetrics` (`twoPane`, `contentMaxWidth`,
+  `screenPadding`, `sectionGap`, `categoryColumns`, `columnsFor`).
+  `homeUsesTwoColumns` reads the shared constant; the Audio hub reads `twoPane`.
+- **Do not reflow a fixed `Row { x.weight(1f) … }` with content that can
+  truncate.** Use `AdaptiveGrid`, which drops a column before the cells have to
+  squeeze; it measures its own width, so a grid inside a card still behaves.
+- **A fixed `.height()` on a control defeats its minimum touch target.**
+  `GlassSlider`/`GlassSwitch` enforce `GlassSpacing.touchTarget` through
+  `defaultMinSize`, which fixed constraints override (RD-13).
+- Tests: `ResponsiveLayoutTest` (classes, caps, gutters, two-pane boundary,
+  grid columns), `HomeResponsiveLayoutTest`, and
+  `RepositoryInventoryTest` for the Repository Manager's sort orders.
 
 ## Non-obvious quirks worth knowing
 

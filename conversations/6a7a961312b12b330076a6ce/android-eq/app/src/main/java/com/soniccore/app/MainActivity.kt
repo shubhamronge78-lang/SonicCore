@@ -131,6 +131,7 @@ import com.soniccore.app.ui.design.GlassScaffold
 import com.soniccore.app.ui.design.LocalGlassNativeBlur
 import com.soniccore.app.ui.design.GlassSwitch
 import com.soniccore.app.ui.design.GlassRadius
+import com.soniccore.app.ui.design.GlassSpacing
 import com.soniccore.app.ui.design.SonicCoreTheme
 import com.soniccore.app.ui.design.SonicCorePalette
 import com.soniccore.app.ui.design.IndicatorStatus
@@ -140,6 +141,7 @@ import com.soniccore.app.ui.design.LiquidGlassButton
 import com.soniccore.app.ui.design.LiquidGlassChoiceChip
 import com.soniccore.app.ui.design.LiquidGlassPanel
 import com.soniccore.app.ui.design.LiquidGlassSurface
+import com.soniccore.app.ui.design.rememberResponsiveMetrics
 import com.soniccore.app.ui.design.SectionHeader
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.design.SonicCoreSplashOverlay
@@ -1192,6 +1194,16 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         fun toolTargets(destination: SonicCoreDestination): Boolean =
             activeTool?.destination == destination
 
+    // One owner for the responsive frame: the gutter scales with the window
+    // class and the body is capped at a readable width, so on a tablet the same
+    // cards stay a centred column instead of being stretched edge to edge.
+    val responsive = rememberResponsiveMetrics()
+    // One scroll container for the whole body, and a fresh position per
+    // destination: the state used to be shared by every screen, so opening a
+    // short screen after a long one landed part-way down with its first cards
+    // already above the fold. Tool bodies therefore never scroll themselves —
+    // a nested vertical scroll is rejected by Compose at measure time.
+    val bodyScroll = remember(navState.category, navState.tool) { ScrollState(0) }
     Column(
         modifier = Modifier.fillMaxSize().background(Color.Transparent),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1199,9 +1211,13 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         Column(
             modifier = Modifier
                 .weight(1f)
+                .widthIn(max = responsive.contentMaxWidth)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .verticalScroll(bodyScroll)
+                .padding(
+                    horizontal = responsive.screenPadding,
+                    vertical = GlassSpacing.screenVertical
+                ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
         // ── Navigation chrome: a breadcrumb on every screen but Home ──
