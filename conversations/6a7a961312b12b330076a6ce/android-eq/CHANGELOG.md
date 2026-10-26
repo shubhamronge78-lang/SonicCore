@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — the Convolver gains a real input (`fix-ui-redesign`)
+
+The native chain has always had a real FIR convolver (`neondsp.cpp`, `MAXIR`
+taps, `NeonDsp.loadIr`, harness section [7]) but nothing in the app could hand it
+an impulse response, so the stage could only pass audio through and the Audio
+Console listed convolution as "not available in this build". It is available now.
+
+- **`engine/ImpulseResponse.kt`** — a pure-Kotlin WAV reader for impulse
+  responses: 16/24/32-bit PCM and 32-bit float, mono or stereo, truncated to the
+  engine's 2048 taps and resampled to the engine's rate, with truncation,
+  resampling (linear — stated as an approximation), mono duplication and a peak
+  above full scale each reported rather than performed silently. Silent files,
+  unsupported sample formats, more than two channels and non-WAV files are
+  refused by name. `ImpulseResponseTest` (14 tests) pins all of it.
+- **`engine/IrStore.kt`** — the decoded taps are stored in the app's files
+  directory and restored into the bridge on the next launch, so a response keeps
+  working even if the original file is moved. A foreign, truncated or oversized
+  store decodes to `null` instead of feeding the convolver (`IrStoreTest`, 7
+  tests).
+- **Audio Console** — a Convolver card with its own enable/bypass toggle, LOAD
+  .WAV and CLEAR actions, and an output block naming the loaded response, its tap
+  count and its source rate. Loading a response is the deliberate step and also
+  switches the stage on through the validated chain path.
+- **Clearing loads a unit impulse**, not zeros: one 1.0 tap is exactly
+  pass-through, while an all-zero response would have silenced the chain.
+- **`DspParams.applyTo`** now derives `setConvolverEnabled` from
+  `DspChain.enableOf(CONVOLVER, …)`, the same answer the stage enable uses, so
+  the chain editor and the native convolver flag cannot disagree (the limiter's
+  old two-enable conflict, one stage over).
+- **DSP Studio** no longer reports a capture format (`"48000 Hz · Stereo"`) when
+  no capture session is running — the service's rate starts at the engine's
+  default, so the header claimed a format nothing had measured.
+- Device-verified: **no** — there is no emulator or phone in this environment, so
+  the audible result of a loaded response has not been heard.
+
 ## Unreleased — DSP truth, the limiter policy, and the missing pipeline gate (`soniccore-ui-redesign`)
 
 Two long-standing mismatches between what the UI states and what the DSP does are

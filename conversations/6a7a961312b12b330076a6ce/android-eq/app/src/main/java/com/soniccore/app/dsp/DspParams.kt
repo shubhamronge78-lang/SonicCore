@@ -74,6 +74,11 @@ class DspParams {
             ChainStage.entries.forEach { stage ->
                 chainAccepted = dsp.setStageEnabled(stage.id, chain.enableOf(stage, limiterOn)) && chainAccepted
             }
+            // The convolver's own enable flag is a second native switch for the same
+            // stage, so it is derived from the same answer as its stage enable —
+            // otherwise the chain editor could show the stage on while the native
+            // convolver stayed off (the limiter's old conflict, one stage over).
+            dsp.setConvolverEnabled(chain.enableOf(ChainStage.CONVOLVER, limiterOn))
             chainAccepted
         } catch (_: Throwable) { false }
 

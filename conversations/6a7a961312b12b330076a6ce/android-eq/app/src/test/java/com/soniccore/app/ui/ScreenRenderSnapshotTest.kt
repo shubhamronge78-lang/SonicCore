@@ -4,6 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -15,6 +19,7 @@ import com.soniccore.app.dsp.DspTelemetry
 import com.soniccore.app.dsp.MeterLevels
 import com.soniccore.app.engine.Presets
 import com.soniccore.app.ui.audio.AudioConsoleScreen
+import com.soniccore.app.ui.audio.ConvolverEffectCard
 import com.soniccore.app.ui.category.SonicCoreToolHost
 import com.soniccore.app.ui.design.SonicCoreTheme
 import com.soniccore.app.ui.home.HomeAudioSummary
@@ -66,7 +71,20 @@ class ScreenRenderSnapshotTest {
     }
 
     /** A host with the values a live engine would report on a quiet device. */
-    private fun sampleHost(control: AudioControlState = AudioControlState()): SonicCoreToolHost =
+    /** A response as the store would hand it back — the card's loaded state. */
+    private fun sampleImpulse() = com.soniccore.app.engine.StoredImpulse(
+        name = "hall.wav",
+        left = FloatArray(2048) { if (it == 0) 1f else 0f },
+        right = FloatArray(2048) { if (it == 0) 0.9f else 0f },
+        sourceSampleRate = 48000,
+        sourceFrames = 2048,
+        peak = 1f
+    )
+
+    private fun sampleHost(
+        control: AudioControlState = AudioControlState(),
+        impulse: com.soniccore.app.engine.StoredImpulse? = null
+    ): SonicCoreToolHost =
         SonicCoreToolHost(
             appVersion = "3.6.0",
             audioSummary = HomeAudioSummary(
@@ -105,6 +123,9 @@ class ScreenRenderSnapshotTest {
             onDspChainChange = { true },
             eqBands = List(31) { 0f },
             measuredDsp = { DspTelemetry.unavailable("No capture session is running") },
+            impulseResponse = impulse,
+            onLoadImpulseResponse = { _, _ -> "" },
+            onClearImpulseResponse = { "" },
             operationLogSize = { 0 },
             onClearOperationLog = {},
             sessionHistorySize = { 0 },
@@ -193,6 +214,34 @@ class ScreenRenderSnapshotTest {
             }
         }
         capture("audio-console")
+    }
+
+    /**
+     * The Convolver card on its own, at the size it really paints.
+     *
+     * The card sits below the fold of the full console snapshot, so rendering it
+     * alone is what makes its loaded state visible in a captured frame rather
+     * than only in the accessibility tree.
+     */
+    @Test
+    fun convolverCardRendersItsLoadedResponse() {
+        compose.setContent {
+            SonicCoreTheme(glassLevel = 1) {
+                Box(Modifier.padding(16.dp)) {
+                    ConvolverEffectCard(
+                        host = sampleHost(impulse = sampleImpulse()),
+                        onStatus = {}
+                    )
+                }
+            }
+        }
+        capture(
+            "convolver-card",
+            "CONVOLVER",
+            "hall.wav · 2048 taps · enabled",
+            "LOAD .WAV",
+            "CLEAR"
+        )
     }
 
     @Test

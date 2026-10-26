@@ -90,6 +90,8 @@ import androidx.compose.ui.window.DialogProperties
 import com.soniccore.app.engine.AutoEqImport
 import com.soniccore.app.engine.EQService
 import com.soniccore.app.engine.EqualizerEngine
+import com.soniccore.app.engine.ImpulseResponse
+import com.soniccore.app.engine.IrStore
 import com.soniccore.app.engine.OutputContract
 import com.soniccore.app.engine.OutputRoutes
 import com.soniccore.app.engine.Presets
@@ -1233,6 +1235,77 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         return landed
     }
 
+    // ── The Convolver stage's impulse response ──
+    // The engine holds the taps natively, so the decoded copy is also stored in
+    // the app's own files directory and handed back to the bridge after a
+    // restart. Nothing here invents a response: the card shows exactly what was
+    // loaded, and a refused file leaves the previous one in place.
+    var impulseResponse by remember { mutableStateOf(IrStore.load(context)) }
+    LaunchedEffect(Unit) {
+        if (impulseResponse != null) IrStore.restoreIntoEngine(context)
+    }
+
+    /**
+     * Decodes, applies and stores one picked `.wav` as the convolver's response.
+     *
+     * @return the sentence the Convolver card shows — a loaded summary with
+     *   every note the file earned (resampling, truncation, mono), or the reason
+     *   it was refused. A refusal changes nothing.
+     */
+    fun applyImpulseResponse(fileName: String, bytes: ByteArray): String {
+        if (!NeonDsp.available) {
+            return "The native DSP engine is not available on this device, so an impulse response " +
+                "cannot be loaded."
+        }
+        return when (val read = ImpulseResponse.read(bytes)) {
+            is ImpulseResponse.Read.Refused -> read.reason
+            is ImpulseResponse.Read.Ok -> {
+                val stored = IrStore.from(read, fileName)
+                val applied = try {
+                    NeonDsp.loadIr(stored.left, stored.right)
+                    true
+                } catch (_: Throwable) {
+                    false
+                }
+                if (!applied) {
+                    "That file decoded, but the engine did not accept the impulse response."
+                } else {
+                    val persisted = IrStore.save(context, stored)
+                    impulseResponse = stored
+                    // Loading a response is the deliberate step: the stage is switched
+                    // on through the same validated chain path every other toggle uses.
+                    applyDspChain(dspChain.withBypass(ChainStage.CONVOLVER, false))
+                    val head = "Loaded ${stored.name}: ${stored.taps} taps" +
+                        if (persisted) "" else " (this session only — it could not be stored)"
+                    (listOf(head) + read.notes).joinToString(" ")
+                }
+            }
+        }
+    }
+
+    /**
+     * Removes the response and leaves the stage transparent again.
+     *
+     * A unit impulse is loaded rather than a zeroed one: convolving with a single
+     * 1.0 tap is exactly pass-through, so the stage cannot be left silent by a
+     * "cleared" response the way an all-zero IR would.
+     */
+    fun clearImpulseResponse(): String {
+        IrStore.clear(context)
+        impulseResponse = null
+        val cleared = try {
+            NeonDsp.loadIr(floatArrayOf(1f), floatArrayOf(1f))
+            true
+        } catch (_: Throwable) {
+            false
+        }
+        return if (cleared) {
+            "Impulse response removed — the Convolver stage passes audio through unchanged."
+        } else {
+            "Impulse response removed from storage; the engine did not confirm the reset."
+        }
+    }
+
     /**
      * One measured snapshot of the native pipeline.
      *
@@ -1420,6 +1493,9 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             onDspChainChange = { next -> applyDspChain(next) },
             eqBands = bandLevels.toList(),
             measuredDsp = { readDspTelemetry() },
+            impulseResponse = impulseResponse,
+            onLoadImpulseResponse = { name, bytes -> applyImpulseResponse(name, bytes) },
+            onClearImpulseResponse = { clearImpulseResponse() },
             glassLevel = appGlassState.value,
             onGlassLevelChange = { level -> applyGlassLevel(level) },
             themes = Themes.ALL,
@@ -3065,7 +3141,18 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
                     Text(if (NeonDsp.available) "Native DSP" else if (SoftwareEq.lastEngineLabel != null) "Kotlin" else "unavailable", fontSize = 11.sp, color = if (NeonDsp.available) T.primary else T.accent)
-                    Text(CaptureEqService.captureSampleRate.toString() + " Hz · Stereo", fontSize = 9.sp, color = T.secondary)
+                    // Only a running capture has a format to report. The service's
+                    // rate starts at the engine's default, so printing it
+                    // unconditionally claimed a format nothing had measured.
+                    Text(
+                        if (CaptureEqService.running && CaptureEqService.captureSampleRate > 0) {
+                            CaptureEqService.captureSampleRate.toString() + " Hz · Stereo"
+                        } else {
+                            "No capture format reported"
+                        },
+                        fontSize = 9.sp,
+                        color = T.secondary
+                    )
                 }
             }
             // Build #124: live activity — measured from actual frame deltas,

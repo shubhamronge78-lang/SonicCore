@@ -369,14 +369,48 @@ processes, using the ids `neondsp.cpp` uses:
 | 2 | Graphic EQ — 10 / 15 / 31 bands | yes |
 | 3 | Bass & Treble — one low, one high shelf | yes |
 | 4 | Stereo — width, balance, swap, mono | yes |
-| 5 | Convolver | yes, but **no IR can be loaded in this build**, so it passes audio through unchanged and its row says so |
+| 5 | Convolver | yes — it convolves with the impulse response loaded from a WAV (`engine/ImpulseResponse.kt`), and with none loaded it passes audio through unchanged and says so |
 | 6 | Compressor | yes |
 | 7 | Limiter | **no — pinned last** |
 
 Anything else is not a stage and the console renders **no control** for it: the
-"Not available on this path" section names IR convolution, reverb/virtualizer,
-haptic bass and system-wide processing with their reasons, because a toggle that
-changed nothing would be worse than saying so.
+"Not available on this path" section names reverb/virtualizer, haptic bass and
+system-wide processing with their reasons, because a toggle that changed nothing
+would be worse than saying so.
+
+### The convolver's impulse response: real taps, honestly reported
+
+The Convolver was the one stage with no way to give it input, so it could only
+pass audio through. It now has a card and a real path:
+
+- `engine/ImpulseResponse.kt` reads a picked WAV into the two float arrays the
+  native stage takes. It is pure Kotlin and JVM-tested (`ImpulseResponseTest`):
+  16/24/32-bit PCM and 32-bit float, mono or stereo, truncated to the engine's
+  `MAXIR` (2048 — `ImpulseResponse.MAX_TAPS` mirrors `neondsp.cpp`) with the
+  truncation **stated**, resampled to the engine's rate by linear interpolation
+  with that **stated** as an approximation, and silent files refused because they
+  would change nothing. A peak above full scale is reported, never normalised:
+  the convolver has no makeup gain.
+- `engine/IrStore.kt` keeps the decoded taps in the app's files directory so the
+  response survives a restart (`restoreIntoEngine`, called once per process from
+  `MainActivity`), and its codec refuses a foreign, truncated or oversized store
+  (`IrStoreTest`). A picked file is not needed again after the load.
+- **Clearing loads a unit impulse**, not zeros: convolving with one 1.0 tap is
+  exactly pass-through, while an all-zero response would silence the chain.
+- `DspParams.applyTo` now derives `setConvolverEnabled` from
+  `DspChain.enableOf(CONVOLVER, …)`, the same answer its `setStageEnabled` uses —
+  otherwise the chain editor could show the stage on while the native convolver
+  flag stayed off (the limiter's old two-enable conflict, one stage over).
+- The Audio Console's card is the only entry point: it hands the bytes to
+  `SonicCoreToolHost.onLoadImpulseResponse`, which decodes, applies through
+  `NeonDsp.loadIr`, stores, and **enables the stage through `applyDspChain`**.
+  Loading is the deliberate step, exactly like the AutoEQ import's "Apply now".
+- The stage runs on the **capture path only** — the in-app player uses the Kotlin
+  chain — and the card says so rather than implying the player convolves.
+- Not device-verified: there is no emulator or phone here, so the audible result
+  of a loaded response has not been heard. The format handling, the refusals and
+  the store are pinned by the JVM tests; the native stage itself by
+  `tools/dspharness` section [7].
 
 ### The order is real, and invalid orders are refused before they reach audio
 
