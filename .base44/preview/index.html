@@ -119,6 +119,22 @@
   </div>
 
   <div class="card">
+    <h2>This build's identity</h2>
+    <pre id="apk-info" style="white-space:pre-wrap;font-size:12px;margin:0;color:#9eacc2">loading…</pre>
+    <p class="muted" style="margin-top:10px">
+      A phone shows the redesign only when <em>this</em> file is the build it is running.
+      <code>versionCode</code> must also be higher than the installed one, otherwise Android
+      keeps the old app and the install looks successful.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Rendered screens</h2>
+    <p class="muted">Every shipped screen, painted from this exact source by the render test.</p>
+    <a class="btn" href="screens.html" target="_blank" rel="noopener">Open rendered screens</a>
+  </div>
+
+  <div class="card">
     <h2>Install on your phone</h2>
     <ol>
       <li>Download the APK above (open this page on the phone, or transfer the file).</li>
@@ -154,6 +170,12 @@
     .catch(function () {
       document.getElementById('status-text').textContent = 'Build still running — reload in a few minutes';
     });
+
+  // The identity of the file above: written by the build next to the APK.
+  fetch('apk-info.txt')
+    .then(function (r) { return r.ok ? r.text() : 'build still running'; })
+    .then(function (text) { document.getElementById('apk-info').textContent = text; })
+    .catch(function () { document.getElementById('apk-info').textContent = 'build still running'; });
 </script>
 </body>
 </html>

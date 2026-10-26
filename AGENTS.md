@@ -91,7 +91,7 @@ Everything lives in **one long-running service, `app`**:
    integrated loudness, an fs/4 sine's true peak, every refused input). A change
    to the measurement fails here instead of reaching a report.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` — the JVM
-   unit tests (374 tests across 40 classes: the platform expansion, the Shizuku IPC
+   unit tests (394 tests across 43 classes: the platform expansion, the Shizuku IPC
    work, the Home/layout contracts, the responsive decisions and scroll-ownership
    rule, the DSP chain model (`DspChainTest` — the eight stages, the limiter-last
    rule, refused moves) with its saved-chain store (`DspChainPresetsTest`, which
@@ -100,9 +100,25 @@ Everything lives in **one long-running service, `app`**:
    import flow (including the preamp-write rollback and the built-in name
    collision) and the offline loudness measurement's own decisions, the
    twelve-theme catalogue, the splash, the Audio Center grouping/rendering
-   contract and the Liquid Glass token contracts), the
-   debug APK, and lint — all built from the mounted source. All 374 tests pass with
-   0 skipped.
+   contract and the Liquid Glass token contracts, plus the two render tests below
+   and `ChainEditorInteractionTest`, which *presses* the chain editor — a stage
+   switch, the reorder buttons and the Audio Console's inline switch — and asserts
+   the chain that leaves the screen, so a switch that only looks right fails),
+   the debug APK, and lint — all built from the mounted source. All 394 tests pass
+   with 0 skipped.
+
+   **What the screens paint, and what the file you download is.** There is no
+   emulator here (`/dev/kvm` is absent), so the rendered result is captured
+   instead: `ScreenRenderSnapshotTest` renders single screens and
+   `ShippedScreenSnapshotTest` drives the real shell through its own navigation
+   state, and both write PNGs to `app/build/ui-screenshots/`. The compose step
+   copies them to `build-output/ui-png/` and serves them at `/screens.html`, so a
+   browser can show an Android screen. The same step writes
+   `build-output/apk-info.txt` (branch, commit when passed in, size, SHA-256,
+   package/versionCode/versionName), which the status page displays: a downloaded
+   APK that does not match it is not the APK that was built.
+   `conversations/…/android-eq/docs/apk-verification.md` is the procedure for
+   telling which build a phone is actually running.
    **`:app:lintDebug` is part of the pipeline on purpose.** It used to fail with 6
    errors and was therefore left out (the capture path's two `MissingPermission`
    calls, `SettingsToolScreens`' API-28 signing-info read, and the two Shizuku
@@ -164,7 +180,9 @@ docker compose -f docker-compose.base44.yml logs -f app     # harness + Gradle o
 ```bash
 curl -fsS http://localhost:3000/                     # status page
 curl -fsSI http://localhost:3000/NeonEQ-debug.apk    # APK present
-ls build-output/                                     # NeonEQ-debug.apk, build.log, dsp-test.log, loudness-test.log, tests/
+ls build-output/                                     # NeonEQ-debug.apk, apk-info.txt, build.log, dsp-test.log, loudness-test.log, tests/, screens.html, ui-png/
+cat build-output/apk-info.txt                        # branch, commit, size, SHA-256, package/versionCode/versionName
+curl -fsSI http://localhost:3000/screens.html        # the rendered screens
 tail -5 build-output/dsp-test.log                    # must end with "HARNESS PASS (0 failures)"
 tail -5 build-output/loudness-test.log               # must end with "LOUDNESS HARNESS PASS (0 failures)"
 tail -5 build-output/build.log                       # must end with "BUILD SUCCESSFUL"
@@ -315,7 +333,11 @@ Rules:
 ## The Audio Console, the eight DSP stages and the chain editor
 
 `ui/audio/AudioConsoleScreen.kt` is the Audio tool `audio.console` (first entry in
-the Sound Controls group). It is one continuous surface: the chain editor, then
+the Sound Controls group). Its `SignalChainEditor` is `internal` on purpose: the
+**DSP Studio** body in `MainActivity` renders the very same editor, so a reorder
+or a bypass means the same thing on both screens and the DSP Studio no longer has
+a second, chip-row rendering of the chain. The console is one continuous surface:
+the chain editor, then
 one inline card per effect — preamp, shelves, graphic EQ, parametric EQ, stereo,
 compressor, limiter — each with its own enable/bypass toggle, its controls, and an
 `OUTPUT` block immediately underneath. Two rules hold there and are the reason the
@@ -347,14 +369,48 @@ processes, using the ids `neondsp.cpp` uses:
 | 2 | Graphic EQ — 10 / 15 / 31 bands | yes |
 | 3 | Bass & Treble — one low, one high shelf | yes |
 | 4 | Stereo — width, balance, swap, mono | yes |
-| 5 | Convolver | yes, but **no IR can be loaded in this build**, so it passes audio through unchanged and its row says so |
+| 5 | Convolver | yes — it convolves with the impulse response loaded from a WAV (`engine/ImpulseResponse.kt`), and with none loaded it passes audio through unchanged and says so |
 | 6 | Compressor | yes |
 | 7 | Limiter | **no — pinned last** |
 
 Anything else is not a stage and the console renders **no control** for it: the
-"Not available on this path" section names IR convolution, reverb/virtualizer,
-haptic bass and system-wide processing with their reasons, because a toggle that
-changed nothing would be worse than saying so.
+"Not available on this path" section names reverb/virtualizer, haptic bass and
+system-wide processing with their reasons, because a toggle that changed nothing
+would be worse than saying so.
+
+### The convolver's impulse response: real taps, honestly reported
+
+The Convolver was the one stage with no way to give it input, so it could only
+pass audio through. It now has a card and a real path:
+
+- `engine/ImpulseResponse.kt` reads a picked WAV into the two float arrays the
+  native stage takes. It is pure Kotlin and JVM-tested (`ImpulseResponseTest`):
+  16/24/32-bit PCM and 32-bit float, mono or stereo, truncated to the engine's
+  `MAXIR` (2048 — `ImpulseResponse.MAX_TAPS` mirrors `neondsp.cpp`) with the
+  truncation **stated**, resampled to the engine's rate by linear interpolation
+  with that **stated** as an approximation, and silent files refused because they
+  would change nothing. A peak above full scale is reported, never normalised:
+  the convolver has no makeup gain.
+- `engine/IrStore.kt` keeps the decoded taps in the app's files directory so the
+  response survives a restart (`restoreIntoEngine`, called once per process from
+  `MainActivity`), and its codec refuses a foreign, truncated or oversized store
+  (`IrStoreTest`). A picked file is not needed again after the load.
+- **Clearing loads a unit impulse**, not zeros: convolving with one 1.0 tap is
+  exactly pass-through, while an all-zero response would silence the chain.
+- `DspParams.applyTo` now derives `setConvolverEnabled` from
+  `DspChain.enableOf(CONVOLVER, …)`, the same answer its `setStageEnabled` uses —
+  otherwise the chain editor could show the stage on while the native convolver
+  flag stayed off (the limiter's old two-enable conflict, one stage over).
+- The Audio Console's card is the only entry point: it hands the bytes to
+  `SonicCoreToolHost.onLoadImpulseResponse`, which decodes, applies through
+  `NeonDsp.loadIr`, stores, and **enables the stage through `applyDspChain`**.
+  Loading is the deliberate step, exactly like the AutoEQ import's "Apply now".
+- The stage runs on the **capture path only** — the in-app player uses the Kotlin
+  chain — and the card says so rather than implying the player convolves.
+- Not device-verified: there is no emulator or phone here, so the audible result
+  of a loaded response has not been heard. The format handling, the refusals and
+  the store are pinned by the JVM tests; the native stage itself by
+  `tools/dspharness` section [7].
 
 ### The order is real, and invalid orders are refused before they reach audio
 
@@ -574,7 +630,11 @@ It is now the engine's own response, from one documented set of constants:
 - `app/build.gradle.kts` pins the debug signing keystore (`app/debug.keystore.p12`,
   password `android`) so every CI build is signed identically and installs
   update cleanly instead of Android refusing the update.
-- `versionCode` comes from `GITHUB_RUN_NUMBER` when set (1 locally/elsewhere).
+- `versionCode` is `1_000_000 + GITHUB_RUN_NUMBER` (so `1_000_000` for a build
+  that does not run on CI). The base is above every run-numbered build that was
+  already published, so a fresh local or CI build always replaces an installed
+  one; a `versionCode` that goes *down* is silently rejected by the installer and
+  leaves the phone on the old UI. `docs/apk-verification.md` is the procedure.
 - The three `*.jpg` files under `app/src/main/res/drawable-nodpi/` are real
   binaries in git: `.gitattributes` routes most binary types through LFS but
   `.base44`-unrelated rule `.../android-eq/app/src/main/res/** -filter` exempts

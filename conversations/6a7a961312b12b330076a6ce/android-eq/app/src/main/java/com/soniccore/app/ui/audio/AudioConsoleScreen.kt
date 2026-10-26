@@ -1,6 +1,9 @@
 package com.soniccore.app.ui.audio
 
 import android.content.Context
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +53,8 @@ import com.soniccore.app.dsp.DspTelemetryText
 import com.soniccore.app.dsp.HIGH_SHELF_HZ
 import com.soniccore.app.dsp.LOW_SHELF_HZ
 import com.soniccore.app.dsp.shelfResponseDb
+import com.soniccore.app.engine.ImpulseResponse
+import com.soniccore.app.engine.IrStore
 import com.soniccore.app.ui.category.CapabilityLegend
 import com.soniccore.app.ui.category.SonicCoreCapability
 import com.soniccore.app.ui.category.SonicCoreDataRow
@@ -150,6 +155,7 @@ fun AudioConsoleScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
             onOpenEditor = { host.onNavigate(SonicCoreDestination.EQUALIZER) }
         )
         StereoEffectCard(chain, controls, host)
+        ConvolverEffectCard(host) { message -> status = message }
         CompressorEffectCard(chain, controls, telemetry, { next -> host.onAudioControlChange(next) })
         LimiterEffectCard(chain, controls, telemetry, { next -> host.onAudioControlChange(next) })
         PipelineCard(host, telemetry)
@@ -175,7 +181,7 @@ private const val TELEMETRY_INTERVAL_MS = 700L
  * whose order the engine is really walking.
  */
 @Composable
-private fun SignalChainEditor(
+internal fun SignalChainEditor(
     chain: DspChain,
     limiterOn: Boolean,
     onChainChange: (DspChain) -> Boolean,
@@ -450,7 +456,8 @@ private fun ChainStageRow(
         }
         if (stage == ChainStage.CONVOLVER) {
             Text(
-                "No impulse response can be loaded in this build, so this stage passes audio through unchanged.",
+                "Load a .wav impulse response in the Convolver card below; with none loaded this stage " +
+                    "passes audio through unchanged.",
                 color = SonicCoreColors.SecondaryText,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(top = 3.dp)
@@ -799,6 +806,132 @@ private fun LimiterEffectCard(
     }
 }
 
+/**
+ * The Convolver stage — the one effect whose input is a file rather than a knob.
+ *
+ * The native chain has always had a real FIR convolver; what it never had was a
+ * way to load a response, so the stage could only pass audio through. This card
+ * is that way in: it picks a `.wav`, hands the bytes to the host (which decodes,
+ * applies and stores it), and reports the loaded response — or the reason a file
+ * was refused — in the same sentence style as every other card.
+ *
+ * Loading a response enables the stage through the same validated chain path the
+ * toggle uses; with nothing loaded the switch says so instead of pretending to
+ * process. Clearing loads a unit impulse, which is exactly pass-through, so a
+ * "cleared" stage can never be left silent.
+ */
+@Composable
+internal fun ConvolverEffectCard(host: SonicCoreToolHost, onStatus: (String) -> Unit) {
+    val context = LocalContext.current
+    val stored = host.impulseResponse
+    val bypassed = host.dspChain.isBypassed(ChainStage.CONVOLVER)
+
+    val pickIrFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) onStatus(readImpulseResponseFile(context, uri) { name, bytes ->
+            host.onLoadImpulseResponse(name, bytes)
+        })
+    }
+
+    AudioEffectCard(
+        title = "Convolver",
+        status = when {
+            stored == null -> "No impulse response loaded · pass-through"
+            bypassed -> "${stored.name} loaded · stage bypassed"
+            else -> "${stored.name} · ${stored.taps} taps · enabled"
+        },
+        description = "Finite impulse response convolution of the captured stream. The engine keeps at most " +
+            "${ImpulseResponse.MAX_TAPS} taps; a longer file is truncated and says so.",
+        toggle = AudioEffectToggle(
+            checked = stored != null && !bypassed,
+            onCheckedChange = { on ->
+                if (stored == null) {
+                    onStatus("Load an impulse response first — with no response the stage has nothing to convolve.")
+                } else {
+                    host.onDspChainChange(host.dspChain.withBypass(ChainStage.CONVOLVER, !on))
+                }
+            },
+            label = "Enable the convolver stage",
+            offState = if (stored == null) "Nothing loaded" else "Bypassed"
+        ),
+        output = {
+            AudioOutputLine(
+                "Response",
+                if (stored == null) "None" else "${stored.taps} taps · ${ImpulseResponse.kilo(stored.sourceSampleRate)}"
+            )
+            AudioOutputLine("Peak tap", if (stored == null) "—" else "×${"%.2f".format(stored.peak)}")
+            AudioOutputLine("Processing path", "Capture path · the in-app player uses the Kotlin chain")
+        }
+    ) {
+        AudioActionRow(
+            actions = listOf(
+                AudioAction(
+                    label = "LOAD .WAV",
+                    onClick = { pickIrFile.launch(arrayOf("audio/wav", "audio/x-wav", "audio/*")) }
+                ),
+                AudioAction(
+                    label = "CLEAR",
+                    enabled = stored != null,
+                    onClick = { onStatus(host.onClearImpulseResponse()) }
+                )
+            )
+        )
+        Text(
+            IrStore.describe(stored),
+            color = SonicCoreColors.SecondaryText,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+/**
+ * Reads the picked `.wav` — bounded, because an "impulse response" of several
+ * hundred megabytes would exhaust the heap — and hands it to the host's verdict.
+ *
+ * Every outcome is a sentence: a file that could not be read, one over the cap,
+ * or whatever the decoder and the engine answered.
+ */
+private fun readImpulseResponseFile(
+    context: Context,
+    uri: android.net.Uri,
+    onRead: (String, ByteArray) -> String
+): String {
+    fun displayName(): String {
+        val fromProvider = runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        }.getOrNull()
+        return fromProvider ?: uri.lastPathSegment ?: "impulse-response.wav"
+    }
+
+    val limitMb = ImpulseResponse.MAX_FILE_BYTES / (1024 * 1024)
+    var oversize = false
+    val bytes = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(64 * 1024)
+            var total = 0
+            while (true) {
+                val read = input.read(chunk)
+                if (read <= 0) break
+                total += read
+                if (total > ImpulseResponse.MAX_FILE_BYTES) {
+                    oversize = true
+                    break
+                }
+                out.write(chunk, 0, read)
+            }
+            if (oversize) null else out.toByteArray()
+        }
+    }.getOrNull()
+
+    if (oversize) return "That file is larger than $limitMb MB — impulse responses are normally a few hundred kB."
+    if (bytes == null) return "That file could not be read."
+    return onRead(displayName(), bytes)
+}
+
 @Composable
 private fun PipelineCard(host: SonicCoreToolHost, telemetry: DspTelemetry) {
     val summary = host.audioSummary
@@ -842,11 +975,6 @@ private fun UnavailableEffectsSection() {
         title = "Not available on this path",
         description = "Listed so the absence is a statement rather than a missing control."
     ) {
-        SonicCoreDataRow(
-            label = "Impulse-response convolution",
-            value = "No IR can be loaded in this build",
-            capability = SonicCoreCapability.NOT_IMPLEMENTED
-        )
         SonicCoreDataRow(
             label = "Reverb / virtualizer",
             value = "Not part of the native chain",

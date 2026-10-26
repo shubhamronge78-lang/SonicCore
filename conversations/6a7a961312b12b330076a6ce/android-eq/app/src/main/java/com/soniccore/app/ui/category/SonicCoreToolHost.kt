@@ -5,6 +5,7 @@ import com.soniccore.app.dsp.AudioControlState
 import com.soniccore.app.dsp.DspChain
 import com.soniccore.app.dsp.DspTelemetry
 import com.soniccore.app.engine.AutoEqImport
+import com.soniccore.app.engine.StoredImpulse
 import com.soniccore.app.ui.home.HomeAudioSummary
 import com.soniccore.app.ui.navigation.SonicCoreDestination
 
@@ -82,6 +83,23 @@ data class SonicCoreToolHost(
      * the console, never once per recomposition.
      */
     val measuredDsp: () -> DspTelemetry,
+
+    // Impulse response — the Convolver stage's only real input.
+    /**
+     * The response the native convolver is holding, or null when none is
+     * loaded. Read-only: the console shows [com.soniccore.app.engine.IrStore.describe]
+     * and never owns the taps.
+     */
+    val impulseResponse: StoredImpulse?,
+    /**
+     * Decodes, applies and stores one picked `.wav` as the impulse response.
+     * Returns the sentence the Convolver card shows — including why a file was
+     * refused. A successful load also enables the stage, through the same
+     * validated chain path every other toggle uses.
+     */
+    val onLoadImpulseResponse: (String, ByteArray) -> String,
+    /** Removes the stored response; the stage then passes audio through again. */
+    val onClearImpulseResponse: () -> String,
 
     // Data / navigation
     val operationLogSize: () -> Int,

@@ -39,6 +39,13 @@ services:
       - gradle-home:/gradle
     environment:
       GRADLE_USER_HOME: /gradle
+      # Recorded into /out/apk-info.txt so a downloaded APK can be traced back to
+      # the source it was built from. Pass them when a specific revision matters:
+      #   SONICCORE_BRANCH=$(git rev-parse --abbrev-ref HEAD) \
+      #   SONICCORE_COMMIT=$(git rev-parse HEAD) \
+      #   docker compose -f docker-compose.base44.yml up -d
+      SONICCORE_BRANCH: ${SONICCORE_BRANCH:-unknown}
+      SONICCORE_COMMIT: ${SONICCORE_COMMIT:-unknown}
     command:
       - bash
       - -ec
@@ -52,8 +59,9 @@ services:
         #    never be reported as a ready one.
         mkdir -p /out
         rm -f /out/NeonEQ-debug.apk /out/dsp-test.log /out/loudness-test.log /out/build.log
-        rm -rf /out/tests
+        rm -rf /out/tests /out/ui-png
         cp /preview/index.html /out/index.html
+        cp /preview/screens.html /out/screens.html
         # `$$` escapes Compose interpolation — without it Compose substitutes the
         # shell's own variables away and the `wait` at the end gets an empty pid.
         python3 -m http.server 80 --directory /out &
@@ -98,6 +106,36 @@ services:
           --no-daemon --console=plain > /out/build.log 2>&1
         cp app/build/outputs/apk/debug/app-debug.apk /out/NeonEQ-debug.apk
         cp -r app/build/reports/tests/testDebugUnitTest /out/tests
+
+        # 2a. Publish what the screens actually paint. `ShippedScreenSnapshotTest`
+        #     renders the real screens through the real shell during the test run
+        #     above, so these PNGs come from the same source as the APK — they are
+        #     the only view of this Android app that a browser can show.
+        mkdir -p /out/ui-png
+        cp app/build/ui-screenshots/*.png /out/ui-png/ 2>/dev/null || true
+
+        # 2b. Say exactly which binary the page is offering. The APK alone cannot
+        #     be traced to a build once it has been downloaded, and a stale one
+        #     looks identical to a fresh one — the versionCode is what Android
+        #     compares when it decides whether an install may replace the installed
+        #     app, and the SHA-256 is what identifies the file itself.
+        APK=/out/NeonEQ-debug.apk
+        AAPT=/opt/android-sdk/build-tools/34.0.0/aapt2
+        {
+          echo "artifact=NeonEQ-debug.apk"
+          echo "variant=debug"
+          echo "source_branch=$${SONICCORE_BRANCH:-unknown}"
+          echo "source_commit=$${SONICCORE_COMMIT:-unknown}"
+          echo "size_bytes=$$(stat -c %s "$$APK")"
+          echo "sha256=$$(sha256sum "$$APK" | cut -d' ' -f1)"
+          if [ -x "$$AAPT" ]; then
+            "$$AAPT" dump badging "$$APK" | sed -n "1p" \
+              | sed -e "s/^package: //" -e "s/ platformBuild.*//" \
+              | tr "'" '"' | sed -e "s/ /\n/g" -e "s/^/badging:/"
+          fi
+          echo "built_at=$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        } > /out/apk-info.txt
+        cat /out/apk-info.txt
 
         # 3. The APK is in place, so the status page now reports "ready to install".
         echo "artifacts ready — serving on :80"

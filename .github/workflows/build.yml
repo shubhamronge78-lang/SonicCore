@@ -48,9 +48,33 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleDebug --no-daemon -x test
 
+    # Both workflows used to publish an artifact named "app-debug-apk", so a
+    # download could not be traced to a branch or a commit. The name carries both
+    # now, and the identity step prints the commit, size and SHA-256 into the run
+    # summary and writes them next to the APK.
+    - name: Identify the build (ref, commit, SHA-256)
+      working-directory: conversations/6a7a961312b12b330076a6ce/android-eq
+      run: |
+        set -euo pipefail
+        APK=app/build/outputs/apk/debug/app-debug.apk
+        test -s "$APK" || { echo "ERROR: APK missing or empty: $APK"; exit 1; }
+        SAFE_REF="$(printf '%s' "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" | tr '/' '-' | tr -cd '[:alnum:].-_')"
+        {
+          echo "ref=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          echo "commit=$GITHUB_SHA"
+          echo "workflow_run=$GITHUB_RUN_NUMBER"
+          echo "variant=debug"
+          echo "size_bytes=$(stat -c %s "$APK")"
+          echo "sha256=$(sha256sum "$APK" | cut -d' ' -f1)"
+        } > app/build/outputs/apk/debug/BUILD-INFO.txt
+        cat app/build/outputs/apk/debug/BUILD-INFO.txt
+        echo "artifact name: app-debug-apk-${SAFE_REF}-${GITHUB_SHA}"
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug-apk
-        path: conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk
+        name: app-debug-apk-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+        path: |
+          conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk
+          conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/BUILD-INFO.txt
         if-no-files-found: error

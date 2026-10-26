@@ -95,21 +95,54 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleDebug --no-daemon -x test
 
-    - name: Validate APK exists and is non-empty
+    # The artifact used to be uploaded as "app-debug-apk" from every run of every
+    # branch, so a downloaded APK could not be told apart from a stale one: the
+    # name carried no branch, no commit and no version. It is named after the ref
+    # and the commit now, and the identity below is printed into the run summary.
+    - name: Identify the build (ref, commit, version code, SHA-256)
       working-directory: conversations/6a7a961312b12b330076a6ce/android-eq
       run: |
+        set -euo pipefail
         APK=app/build/outputs/apk/debug/app-debug.apk
         if [ ! -s "$APK" ]; then
           echo "ERROR: APK missing or empty: $APK"
           exit 1
         fi
+        # A ref can contain '/', which an artifact name may not.
+        SAFE_REF="$(printf '%s' "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" | tr '/' '-' | tr -cd '[:alnum:].-_')"
+        {
+          echo "### APK build identity"
+          echo
+          echo '| field | value |'
+          echo '| --- | --- |'
+          echo "| ref | \`${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}\` |"
+          echo "| commit | \`$GITHUB_SHA\` |"
+          echo "| workflow | $GITHUB_WORKFLOW (run $GITHUB_RUN_NUMBER) |"
+          echo "| artifact name | \`app-debug-apk-${SAFE_REF}-${GITHUB_SHA}\` |"
+          echo "| variant | debug |"
+          echo "| size | $(stat -c %s "$APK") bytes |"
+          echo "| sha256 | \`$(sha256sum "$APK" | cut -d' ' -f1)\` |"
+        } >> "$GITHUB_STEP_SUMMARY"
+        # The same identity travels next to the APK, so it can be read after the
+        # artifact was downloaded rather than only from the run page.
+        {
+          echo "ref=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          echo "commit=$GITHUB_SHA"
+          echo "workflow_run=$GITHUB_RUN_NUMBER"
+          echo "variant=debug"
+          echo "size_bytes=$(stat -c %s "$APK")"
+          echo "sha256=$(sha256sum "$APK" | cut -d' ' -f1)"
+        } > app/build/outputs/apk/debug/BUILD-INFO.txt
         echo "APK size: $(stat -c %s "$APK") bytes"
+        echo "APK sha256: $(sha256sum "$APK" | cut -d' ' -f1)"
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug-apk
-        path: conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk
+        name: app-debug-apk-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+        path: |
+          conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/app-debug.apk
+          conversations/6a7a961312b12b330076a6ce/android-eq/app/build/outputs/apk/debug/BUILD-INFO.txt
         if-no-files-found: error
         retention-days: 30
 
