@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.home
 
+import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -389,7 +390,7 @@ private fun HomeMiniButton(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(
                 if (active) SonicCoreColors.Cyan.copy(alpha = 0.14f)
                 else SonicCoreColors.ElevatedSurface.copy(alpha = 0.7f)
@@ -398,7 +399,7 @@ private fun HomeMiniButton(
                 1.dp,
                 if (active) SonicCoreColors.Cyan.copy(alpha = 0.35f)
                 else SonicCoreColors.Border.copy(alpha = 0.14f),
-                RoundedCornerShape(12.dp)
+                RoundedCornerShape(GlassRadius.tile)
             )
             .clickable(onClick = onClick)
             .padding(vertical = 9.dp)
@@ -420,7 +421,7 @@ private fun HomeSearchBar(query: String, onQueryChange: (String) -> Unit) {
     LiquidGlassSurface(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = 4.dp,
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(GlassRadius.control)
     ) {
         androidx.compose.foundation.text.BasicTextField(
             value = query,
@@ -568,9 +569,9 @@ private fun CategoryCard(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(GlassRadius.control))
                     .background(tone.copy(alpha = 0.14f))
-                    .border(1.dp, tone.copy(alpha = 0.30f), RoundedCornerShape(14.dp)),
+                    .border(1.dp, tone.copy(alpha = 0.30f), RoundedCornerShape(GlassRadius.control)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(category.icon, color = tone, fontSize = 18.sp)

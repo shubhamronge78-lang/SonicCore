@@ -369,9 +369,9 @@ private fun GlassIntensityOption(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(backgroundColor)
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(GlassRadius.tile))
             .clickable(onClick = onSelected)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
@@ -394,7 +394,7 @@ private fun GlassIntensityOption(
             
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(GlassRadius.chip))
                     .background(borderColor.copy(alpha = 0.20f))
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
@@ -433,9 +433,9 @@ private fun ThemeOption(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(backgroundColor)
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(GlassRadius.tile))
             .clickable(onClick = onSelected)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
@@ -479,9 +479,9 @@ private fun SystemSettingButton(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.ElevatedSurface)
-            .border(1.dp, SonicCoreColors.Border.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .border(1.dp, SonicCoreColors.Border.copy(alpha = 0.30f), RoundedCornerShape(GlassRadius.tile))
             .clickable(onClick = onClick)
             .padding(16.dp)
             .semantics { contentDescription = "Open $title settings" }
@@ -568,9 +568,9 @@ fun DeviceToolCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.ElevatedSurface)
-            .border(1.dp, SonicCoreColors.Border.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .border(1.dp, SonicCoreColors.Border.copy(alpha = 0.30f), RoundedCornerShape(GlassRadius.tile))
             .clickable(onClick = onClick)
             .padding(16.dp)
             .semantics { contentDescription = "Open $title settings" }

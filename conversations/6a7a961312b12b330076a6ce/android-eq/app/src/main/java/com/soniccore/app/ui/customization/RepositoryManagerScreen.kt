@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.customization
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -180,7 +181,7 @@ fun RepositoryManagerScreen(modifier: Modifier = Modifier) {
                     focusedTextColor = SonicCoreColors.PrimaryText,
                     unfocusedTextColor = SonicCoreColors.PrimaryText
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             )
 
             Spacer(Modifier.height(10.dp))
@@ -271,9 +272,9 @@ fun RepositoryManagerScreen(modifier: Modifier = Modifier) {
 private fun InventoryStat(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(color.copy(alpha = 0.12f))
-            .border(1.dp, color.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+            .border(1.dp, color.copy(alpha = 0.30f), RoundedCornerShape(GlassRadius.tile))
             .padding(vertical = 8.dp, horizontal = 4.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -288,9 +289,9 @@ private fun InventoryStat(label: String, value: String, color: Color, modifier: 
 private fun InventoryChip(title: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(GlassRadius.chip))
             .background(if (selected) SonicCoreColors.Cyan.copy(alpha = 0.22f) else SonicCoreColors.ElevatedSurface)
-            .border(1.dp, if (selected) SonicCoreColors.Cyan else SonicCoreColors.Border, RoundedCornerShape(8.dp))
+            .border(1.dp, if (selected) SonicCoreColors.Cyan else SonicCoreColors.Border, RoundedCornerShape(GlassRadius.chip))
             .clickable(onClick = onClick)
             .semantics { contentDescription = "Filter repositories by $title" }
             .padding(horizontal = 10.dp, vertical = 6.dp)
@@ -378,7 +379,7 @@ private fun RepositoryCard(entry: RepositoryEntry, onOpenSource: () -> Unit) {
                     containerColor = SonicCoreColors.Cyan.copy(alpha = 0.20f),
                     contentColor = SonicCoreColors.Cyan
                 ),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(GlassRadius.chip)
             ) {
                 Text("View source", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }

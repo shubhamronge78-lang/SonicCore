@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.category
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -131,7 +132,7 @@ private fun ToolList(
     capabilityFor: (SonicCoreTool) -> SonicCoreCapability,
     title: String
 ) {
-    LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(18.dp)) {
+    LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(GlassRadius.card)) {
         Text(
             title,
             color = SonicCoreColors.SecondaryText,
@@ -232,7 +233,7 @@ private fun AudioCategoryHub(
         LiquidGlassSurface(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = 14.dp,
-            shape = RoundedCornerShape(18.dp)
+            shape = RoundedCornerShape(GlassRadius.card)
         ) {
             Text(
                 "AUDIO CENTER",
@@ -444,9 +445,9 @@ private fun ShizukuCategoryHub(
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(GlassRadius.card))
                         .background(tone.color().copy(alpha = 0.14f))
-                        .border(1.dp, tone.color().copy(alpha = 0.32f), RoundedCornerShape(18.dp)),
+                        .border(1.dp, tone.color().copy(alpha = 0.32f), RoundedCornerShape(GlassRadius.card)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("⇄", color = tone.color(), fontSize = 22.sp)
@@ -566,12 +567,12 @@ private fun CustomizationCategoryHub(
                     Box(
                         modifier = Modifier
                             .size(if (selected) 24.dp else 20.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(GlassRadius.chip))
                             .background(accent.color)
                             .border(
                                 width = if (selected) 2.dp else 1.dp,
                                 color = if (selected) SonicCoreColors.PrimaryText else SonicCoreColors.Border.copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(GlassRadius.chip)
                             )
                             .clickable {
                                 AppearanceState.accent = accent
@@ -675,7 +676,7 @@ private fun SettingsCategoryHub(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(18.dp)) {
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(GlassRadius.card)) {
             Text(
                 "APP",
                 color = SonicCoreColors.SecondaryText,

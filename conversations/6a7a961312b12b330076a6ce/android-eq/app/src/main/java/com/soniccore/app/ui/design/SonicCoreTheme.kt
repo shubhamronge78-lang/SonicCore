@@ -1,30 +1,38 @@
 package com.soniccore.app.ui.design
 
+import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
+/**
+ * The live SonicCore palette.
+ *
+ * These are Compose state values read directly by the shared components, so a
+ * theme change repaints every reader. They are written by [SonicCoreTheme]
+ * *during* composition (see the comment there) and never by a screen.
+ */
 object SonicCoreColors {
-    var Background by mutableStateOf(Color(0xFF080B11))
+    var Background by mutableStateOf(SonicCoreGlassDark.background)
         private set
-    var Surface by mutableStateOf(Color(0xFF111722))
+    var Surface by mutableStateOf(SonicCoreGlassDark.backgroundRaised)
         private set
-    var ElevatedSurface by mutableStateOf(Color(0xFF171F2C))
+    var ElevatedSurface by mutableStateOf(SonicCoreGlassDark.elevated)
         private set
-    var PrimaryText by mutableStateOf(Color(0xFFF2F5FA))
+    var PrimaryText by mutableStateOf(SonicCoreGlassDark.textPrimary)
         private set
-    var SecondaryText by mutableStateOf(Color(0xFF9AA8BA))
+    var SecondaryText by mutableStateOf(SonicCoreGlassDark.textSecondary)
         private set
-    var Cyan by mutableStateOf(Color(0xFF62D5E5))
+    var Cyan by mutableStateOf(SonicCoreGlassDark.audioAccent)
         private set
-    var Violet by mutableStateOf(Color(0xFF9A8CFF))
+    var Violet by mutableStateOf(SonicCoreGlassDark.customizationAccent)
         private set
     var Success by mutableStateOf(Color(0xFF6DD6A2))
         private set
@@ -32,7 +40,7 @@ object SonicCoreColors {
         private set
     var Error by mutableStateOf(Color(0xFFFF7785))
         private set
-    var Border by mutableStateOf(Color(0xFFDAE7F7))
+    var Border by mutableStateOf(SonicCoreGlassDark.border)
         private set
 
     fun apply(palette: SonicCorePalette) {
@@ -50,21 +58,43 @@ object SonicCoreColors {
     }
 }
 
+/**
+ * A resolved appearance. The surface ramp is what a theme owns; the glass
+ * *behaviour* (opacity, edge, radius, elevation) always comes from the tokens
+ * in `GlassTokens.kt`, so the twelve themes stay visually coherent.
+ */
 data class SonicCorePalette(
-    val background: Color = Color(0xFF080B11),
-    val surface: Color = Color(0xFF111722),
-    val elevatedSurface: Color = Color(0xFF171F2C),
-    val primaryText: Color = Color(0xFFF2F5FA),
-    val secondaryText: Color = Color(0xFF9AA8BA),
-    val primary: Color = Color(0xFF62D5E5),
-    val secondary: Color = Color(0xFF9A8CFF),
+    val background: Color = SonicCoreGlassDark.background,
+    val surface: Color = SonicCoreGlassDark.backgroundRaised,
+    val elevatedSurface: Color = SonicCoreGlassDark.elevated,
+    val primaryText: Color = SonicCoreGlassDark.textPrimary,
+    val secondaryText: Color = SonicCoreGlassDark.textSecondary,
+    val primary: Color = SonicCoreGlassDark.audioAccent,
+    val secondary: Color = SonicCoreGlassDark.customizationAccent,
     val success: Color = Color(0xFF6DD6A2),
     val warning: Color = Color(0xFFF0BD68),
     val error: Color = Color(0xFFFF7785),
-    val border: Color = Color(0xFFDAE7F7)
+    val border: Color = SonicCoreGlassDark.border
 )
 
+/** The active palette, for screens that need the whole record (not one token). */
 val LocalSonicCorePalette = compositionLocalOf { SonicCorePalette() }
+
+/**
+ * The active palette as a [GlassPalette], so the shared glass components read
+ * the same source as the tokens file's defaults.
+ */
+fun SonicCorePalette.toGlassPalette(): GlassPalette = GlassPalette(
+    background = background,
+    backgroundRaised = surface,
+    card = surface,
+    elevated = elevatedSurface,
+    textPrimary = primaryText,
+    textSecondary = secondaryText,
+    audioAccent = primary,
+    customizationAccent = secondary,
+    border = border
+)
 
 @Composable
 fun SonicCoreTheme(
@@ -72,11 +102,25 @@ fun SonicCoreTheme(
     palette: SonicCorePalette = LocalSonicCorePalette.current,
     content: @Composable () -> Unit
 ) {
+    // GL-05 (stale colours): this used to run in a `SideEffect`, which fires
+    // *after* composition and layout — so the first frame after a theme, accent
+    // or appearance-mode change still painted the previous palette, and any
+    // screen whose read was skipped kept the old colours until something else
+    // invalidated it. Applying it inside a `remember(palette)` runs during
+    // composition, before `content()` composes, so every reader in this frame
+    // already sees the new palette. `remember(palette)` keeps it to one apply
+    // per palette value instead of one per recomposition.
+    remember(palette) { SonicCoreColors.apply(palette) }
+
+    val glassPalette = remember(palette) { palette.toGlassPalette() }
+    val nativeBlur = remember { glassNativeBlurSupported(Build.VERSION.SDK_INT) }
+
     CompositionLocalProvider(
         LocalGlassIntensity provides glassLevel.coerceIn(0, 2),
-        LocalSonicCorePalette provides palette
+        LocalSonicCorePalette provides palette,
+        LocalGlassPalette provides glassPalette,
+        LocalGlassNativeBlur provides nativeBlur
     ) {
-        SideEffect { SonicCoreColors.apply(palette) }
         MaterialTheme(
             colorScheme = darkColorScheme(
                 primary = palette.primary,
@@ -98,36 +142,8 @@ fun SonicCoreTheme(
     }
 }
 
+/**
+ * Glass intensity: 0 Subtle · 1 Liquid · 2 Crystal. Rendering only — it never
+ * reaches DSP, capture, buffers, latency or the sample rate.
+ */
 val LocalGlassIntensity = compositionLocalOf { 1 }
-
-internal data class LiquidGlassMaterialSpec(
-    val surfaceAlpha: Float,
-    val tintAlpha: Float,
-    val edgeAlpha: Float,
-    val reflectionAlpha: Float,
-    val shadowElevationDp: Float
-)
-
-internal fun liquidGlassMaterialSpec(level: Int): LiquidGlassMaterialSpec = when (level.coerceIn(0, 2)) {
-    0 -> LiquidGlassMaterialSpec(
-        surfaceAlpha = 0.84f,
-        tintAlpha = 0.035f,
-        edgeAlpha = 0.10f,
-        reflectionAlpha = 0.055f,
-        shadowElevationDp = 8f
-    )
-    2 -> LiquidGlassMaterialSpec(
-        surfaceAlpha = 0.58f,
-        tintAlpha = 0.12f,
-        edgeAlpha = 0.24f,
-        reflectionAlpha = 0.16f,
-        shadowElevationDp = 18f
-    )
-    else -> LiquidGlassMaterialSpec(
-        surfaceAlpha = 0.70f,
-        tintAlpha = 0.075f,
-        edgeAlpha = 0.16f,
-        reflectionAlpha = 0.105f,
-        shadowElevationDp = 13f
-    )
-}

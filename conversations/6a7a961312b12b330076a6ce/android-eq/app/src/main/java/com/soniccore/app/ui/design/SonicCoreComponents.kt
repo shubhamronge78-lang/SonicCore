@@ -5,6 +5,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,125 +27,50 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
-private val CardShape = RoundedCornerShape(20.dp)
-private val CapsuleShape = RoundedCornerShape(50)
+/**
+ * SONICCORE — SHARED GLASS WIDGETS
+ *
+ * The controls and read-out blocks that sit *inside* a [GlassSurface]. They are
+ * the second half of the design system: `GlassComponents.kt` owns the surfaces
+ * and the chrome, this file owns the widgets.
+ *
+ * Every value here comes from `GlassTokens.kt`. Nothing in this file touches
+ * DSP, capture, audio buffers, latency or the sample rate.
+ */
 
 @Composable
 fun LiquidGlassSurface(
     modifier: Modifier = Modifier,
     depth: LiquidGlassDepth = LiquidGlassDepth.Floating,
-    shape: Shape = CardShape,
-    contentPadding: androidx.compose.ui.unit.Dp = 16.dp,
+    shape: Shape = RoundedCornerShape(GlassRadius.surface),
+    contentPadding: Dp = GlassSpacing.card,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
-    val isInset = depth == LiquidGlassDepth.Inset
-    val surfaceAlpha = if (isInset) (material.surfaceAlpha + 0.14f).coerceAtMost(0.94f)
-        else material.surfaceAlpha
-    val shadowElevation = if (isInset) 1.dp else material.shadowElevationDp.dp
-    val surface = SonicCoreColors.Surface
-    val tint = SonicCoreColors.Cyan
-    val edge = SonicCoreColors.Border
-    Column(
-        modifier = modifier
-            .shadow(shadowElevation, shape)
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        surface.copy(alpha = surfaceAlpha),
-                        SonicCoreColors.ElevatedSurface.copy(alpha = surfaceAlpha * 0.76f),
-                        surface.copy(alpha = surfaceAlpha * 0.94f)
-                    )
-                )
-            )
-            .drawWithCache {
-                val reflectionHeight = 26.dp.toPx().coerceAtMost(size.height)
-                val reflection = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = material.reflectionAlpha),
-                        tint.copy(alpha = material.tintAlpha),
-                        Color.Transparent
-                    ),
-                    startY = 0f,
-                    endY = reflectionHeight
-                )
-                val topEdge = Brush.horizontalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        Color.White.copy(alpha = material.reflectionAlpha * 0.9f),
-                        tint.copy(alpha = material.edgeAlpha),
-                        Color.White.copy(alpha = material.reflectionAlpha * 0.55f),
-                        Color.Transparent
-                    )
-                )
-                val sideEdge = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = material.edgeAlpha),
-                        edge.copy(alpha = material.edgeAlpha * 0.48f),
-                        Color.Transparent
-                    )
-                )
-                val glow = Brush.radialGradient(
-                    colors = listOf(
-                        tint.copy(alpha = material.tintAlpha),
-                        SonicCoreColors.Violet.copy(alpha = material.tintAlpha * 0.28f),
-                        Color.Transparent
-                    ),
-                    center = Offset(size.width * 0.18f, 0f),
-                    radius = size.width * 0.78f
-                )
-                onDrawWithContent {
-                    drawRect(reflection, size = Size(size.width, reflectionHeight))
-                    drawRect(glow)
-                    drawContent()
-                    drawRoundRect(
-                        brush = sideEdge,
-                        topLeft = Offset(0.5.dp.toPx(), 0.5.dp.toPx()),
-                        size = Size(size.width - 1.dp.toPx(), size.height - 1.dp.toPx()),
-                        cornerRadius = CornerRadius(20.dp.toPx()),
-                        style = Stroke(width = 0.8.dp.toPx())
-                    )
-                    drawLine(
-                        brush = topEdge,
-                        start = Offset(20.dp.toPx(), 0.8.dp.toPx()),
-                        end = Offset(size.width - 20.dp.toPx(), 0.8.dp.toPx()),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-            }
-            .padding(contentPadding),
+    GlassSurface(
+        modifier = modifier,
+        depth = depth,
+        shape = shape,
+        contentPadding = contentPadding,
         content = content
     )
-}
-
-enum class LiquidGlassDepth {
-    Floating,
-    Inset
 }
 
 @Composable
@@ -157,23 +86,16 @@ fun LiquidGlassInset(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    LiquidGlassSurface(
-        modifier = modifier,
-        depth = LiquidGlassDepth.Inset,
-        contentPadding = 12.dp,
-        shape = RoundedCornerShape(16.dp),
-        content = content
-    )
+    GlassInset(modifier = modifier, content = content)
 }
 
-@Composable
-fun GlassCard(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    LiquidGlassPanel(modifier = modifier, content = content)
-}
-
+/**
+ * Glass button.
+ *
+ * Gains the states the old button was missing: pressed, focused, hovered and
+ * disabled are all visible, and the target is at least [GlassSpacing.touchTarget]
+ * tall so it stays reachable with large font scaling and on a small phone.
+ */
 @Composable
 fun LiquidGlassButton(
     text: String,
@@ -186,39 +108,56 @@ fun LiquidGlassButton(
 ) {
     val accent = accentColor ?: if (secondary) SonicCoreColors.Violet else SonicCoreColors.Cyan
     val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val focused by interaction.collectIsFocusedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
+
     val container by animateColorAsState(
-        targetValue = if (enabled && selected) accent.copy(alpha = material.tintAlpha + 0.08f)
-        else SonicCoreColors.ElevatedSurface.copy(alpha = material.surfaceAlpha * 0.54f),
+        targetValue = when {
+            !enabled -> SonicCoreColors.ElevatedSurface.copy(alpha = 0.45f)
+            selected -> accent.copy(alpha = material.tintAlpha + 0.14f)
+            pressed -> SonicCoreColors.ElevatedSurface.copy(alpha = 0.95f)
+            hovered -> SonicCoreColors.ElevatedSurface.copy(alpha = 0.85f)
+            else -> SonicCoreColors.ElevatedSurface.copy(alpha = material.surfaceAlpha * 0.54f)
+        },
         label = "glassButtonContainer"
     )
-    val buttonContentColor = if (enabled) accent else SonicCoreColors.SecondaryText
+    val contentColor = when {
+        !enabled -> SonicCoreColors.SecondaryText.copy(alpha = 0.45f)
+        else -> accent
+    }
+    val ringColor by animateColorAsState(
+        targetValue = when {
+            focused -> accent.copy(alpha = 0.85f)
+            selected -> accent.copy(alpha = material.edgeAlpha * 1.3f)
+            else -> SonicCoreColors.Border.copy(alpha = material.edgeAlpha * 0.6f)
+        },
+        label = "glassButtonRing"
+    )
+
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-        shape = CapsuleShape,
+        interactionSource = interaction,
+        modifier = modifier.defaultMinSize(minWidth = 48.dp, minHeight = GlassSpacing.touchTarget),
+        shape = RoundedCornerShape(GlassRadius.control),
         color = container,
-        contentColor = buttonContentColor,
-        border = BorderStroke(
-            0.8.dp,
-            Brush.verticalGradient(
-                listOf(
-                    Color.White.copy(alpha = material.reflectionAlpha * if (selected) 1.2f else 0.62f),
-                    accent.copy(alpha = material.edgeAlpha * if (selected) 1.3f else 0.48f)
-                )
-            )
-        ),
-        shadowElevation = if (selected) 5.dp else 1.dp
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, ringColor),
+        shadowElevation = if (selected) GlassElevation.control else GlassElevation.flat
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = buttonContentColor
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = contentColor
             )
         }
     }
@@ -242,6 +181,12 @@ fun GlassButton(
     )
 }
 
+/**
+ * Square glass icon button.
+ *
+ * Slightly wider than the stock 48dp target when it carries a glyph, and it
+ * keeps its content description so TalkBack and Switch Access name it.
+ */
 @Composable
 fun GlassIconButton(
     contentDescription: String,
@@ -251,27 +196,36 @@ fun GlassIconButton(
     content: @Composable () -> Unit
 ) {
     val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val focused by interaction.collectIsFocusedAsState()
+
+    val container by animateColorAsState(
+        targetValue = when {
+            !enabled -> SonicCoreColors.ElevatedSurface.copy(alpha = 0.40f)
+            pressed -> SonicCoreColors.ElevatedSurface.copy(alpha = 0.98f)
+            else -> SonicCoreColors.ElevatedSurface.copy(alpha = material.surfaceAlpha * 0.72f)
+        },
+        label = "glassIconContainer"
+    )
+    val ringColor by animateColorAsState(
+        targetValue = if (focused) SonicCoreColors.Cyan.copy(alpha = 0.85f)
+        else SonicCoreColors.Border.copy(alpha = material.edgeAlpha * 0.6f),
+        label = "glassIconRing"
+    )
+
     Surface(
         onClick = onClick,
         enabled = enabled,
+        interactionSource = interaction,
         modifier = modifier
-            .size(48.dp)
+            .size(GlassSpacing.touchTarget)
             .semantics { this.contentDescription = contentDescription },
-        shape = RoundedCornerShape(17.dp),
-        color = SonicCoreColors.ElevatedSurface.copy(
-            alpha = material.surfaceAlpha * 0.72f
-        ),
+        shape = RoundedCornerShape(GlassRadius.control),
+        color = container,
         contentColor = SonicCoreColors.PrimaryText,
-        border = BorderStroke(
-            0.8.dp,
-            Brush.verticalGradient(
-                listOf(
-                    Color.White.copy(alpha = material.reflectionAlpha),
-                    SonicCoreColors.Border.copy(alpha = material.edgeAlpha * 0.6f)
-                )
-            )
-        ),
-        shadowElevation = 3.dp
+        border = BorderStroke(1.dp, ringColor),
+        shadowElevation = GlassElevation.control
     ) {
         Box(contentAlignment = Alignment.Center) {
             content()
@@ -305,18 +259,14 @@ fun LiquidGlassValueChip(
     val accent = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(
-                Brush.verticalGradient(
-                    listOf(
-                        SonicCoreColors.ElevatedSurface.copy(alpha = material.surfaceAlpha * 0.82f),
-                        SonicCoreColors.Surface.copy(alpha = material.surfaceAlpha * 0.72f)
-                    )
-                )
+                SonicCoreColors.ElevatedSurface.copy(alpha = material.surfaceAlpha * 0.82f)
             )
             .border(
-                BorderStroke(0.8.dp, accent.copy(alpha = material.edgeAlpha * 0.65f)),
-                RoundedCornerShape(14.dp)
+                1.dp,
+                accent.copy(alpha = material.edgeAlpha * 0.75f),
+                RoundedCornerShape(GlassRadius.tile)
             )
             .padding(horizontal = 11.dp, vertical = 9.dp)
     ) {
@@ -326,11 +276,20 @@ fun LiquidGlassValueChip(
             color = if (active) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 2.dp)
         )
-        }
+    }
 }
 
+/**
+ * Glass slider.
+ *
+ * The track is thick enough to read against a busy backdrop, the thumb has a
+ * defined edge so it stays visible at the extremes of the range, and the
+ * disabled state is genuinely greyed rather than merely motionless.
+ */
 @Composable
 fun GlassSlider(
     value: Float,
@@ -343,16 +302,19 @@ fun GlassSlider(
     Slider(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = modifier.defaultMinSize(minHeight = GlassSpacing.touchTarget),
         enabled = enabled,
         valueRange = valueRange,
         steps = steps,
         colors = SliderDefaults.colors(
             thumbColor = SonicCoreColors.Cyan,
             activeTrackColor = SonicCoreColors.Cyan,
-            inactiveTrackColor = SonicCoreColors.Border.copy(alpha = 0.17f),
-            activeTickColor = SonicCoreColors.Background.copy(alpha = 0.45f),
-            inactiveTickColor = SonicCoreColors.SecondaryText.copy(alpha = 0.45f)
+            inactiveTrackColor = SonicCoreColors.Border.copy(alpha = 0.28f),
+            activeTickColor = SonicCoreColors.Background.copy(alpha = 0.55f),
+            inactiveTickColor = SonicCoreColors.SecondaryText.copy(alpha = 0.45f),
+            disabledThumbColor = SonicCoreColors.SecondaryText.copy(alpha = 0.5f),
+            disabledActiveTrackColor = SonicCoreColors.SecondaryText.copy(alpha = 0.35f),
+            disabledInactiveTrackColor = SonicCoreColors.Border.copy(alpha = 0.16f)
         )
     )
 }
@@ -380,35 +342,14 @@ fun StatusIndicator(
     val animatedColor by animateColorAsState(color, label = "statusIndicatorColor")
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(50))
+            .clip(RoundedCornerShape(GlassRadius.pill))
             .background(
-                Brush.verticalGradient(
-                    listOf(
-                        SonicCoreColors.ElevatedSurface.copy(alpha = material.surfaceAlpha * 0.88f),
-                        SonicCoreColors.Surface.copy(alpha = material.surfaceAlpha * 0.80f)
-                    )
-                )
+                SonicCoreColors.ElevatedSurface.copy(alpha = material.surfaceAlpha * 0.88f)
             )
-            .border(0.8.dp, animatedColor.copy(alpha = material.edgeAlpha), RoundedCornerShape(50))
-            .drawWithCache {
-                val reflection = Brush.horizontalGradient(
-                    listOf(
-                        Color.Transparent,
-                        Color.White.copy(alpha = material.reflectionAlpha * 0.8f),
-                        Color.Transparent
-                    )
-                )
-                onDrawWithContent {
-                    drawContent()
-                    drawLine(
-                        reflection,
-                        Offset(12.dp.toPx(), 0.5.dp.toPx()),
-                        Offset(size.width - 12.dp.toPx(), 0.5.dp.toPx()),
-                        0.8.dp.toPx()
-                    )
-                }
-            }
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .border(1.dp, animatedColor.copy(alpha = material.edgeAlpha + 0.10f), RoundedCornerShape(GlassRadius.pill))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            // Never colour-only: the dot is decorative, the label carries the state.
+            .semantics { contentDescription = "Status: $label" },
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -420,7 +361,7 @@ fun StatusIndicator(
         )
         Text(
             text = label,
-            color = animatedColor,
+            color = SonicCoreColors.PrimaryText,
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -428,6 +369,11 @@ fun StatusIndicator(
     }
 }
 
+/**
+ * Section header. Delegates to [GlassSectionHeader] so a header looks the same
+ * wherever it is written — the app used to have two of these with different
+ * type scales and no shared accent.
+ */
 @Composable
 fun SectionHeader(
     title: String,
@@ -435,28 +381,12 @@ fun SectionHeader(
     subtitle: String? = null,
     action: (@Composable RowScope.() -> Unit)? = null
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = SonicCoreColors.PrimaryText,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    color = SonicCoreColors.SecondaryText,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 3.dp)
-                )
-            }
-        }
-        if (action != null) action()
-    }
+    GlassSectionHeader(
+        title = title,
+        modifier = modifier,
+        subtitle = subtitle,
+        action = action
+    )
 }
 
 @Composable
@@ -478,6 +408,8 @@ fun MetricCard(
             color = accent,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 8.dp)
         )
         if (supportingText != null) {
@@ -502,7 +434,8 @@ fun DSPModuleCard(
     GlassCard(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(GlassSpacing.gapSmall)
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -518,16 +451,10 @@ fun DSPModuleCard(
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
-            Switch(
+            GlassSwitch(
                 checked = enabled,
                 onCheckedChange = onEnabledChange,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = SonicCoreColors.Background,
-                    checkedTrackColor = SonicCoreColors.Cyan,
-                    uncheckedThumbColor = SonicCoreColors.SecondaryText,
-                    uncheckedTrackColor = SonicCoreColors.ElevatedSurface,
-                    uncheckedBorderColor = SonicCoreColors.Border.copy(alpha = 0.17f)
-                )
+                modifier = Modifier.semantics { contentDescription = title }
             )
         }
     }
@@ -543,32 +470,44 @@ fun PresetCard(
 ) {
     val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
     val borderColor by animateColorAsState(
-        if (selected) SonicCoreColors.Cyan.copy(alpha = material.edgeAlpha * 1.8f)
-        else SonicCoreColors.Border.copy(alpha = material.edgeAlpha * 0.65f),
+        if (selected) SonicCoreColors.Cyan.copy(alpha = material.edgeAlpha + 0.20f)
+        else SonicCoreColors.Border.copy(alpha = material.edgeAlpha * 0.7f),
         label = "presetCardBorder"
     )
-    LiquidGlassSurface(
-        modifier = modifier
-            .shadow(if (selected) 8.dp else 2.dp, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
-            .border(0.8.dp, borderColor, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
+    GlassSurface(
+        modifier = modifier.clickable(onClick = onClick),
         contentPadding = 15.dp,
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Text(
-            text = name,
-            color = if (selected) SonicCoreColors.Cyan else SonicCoreColors.PrimaryText,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = description,
-            color = SonicCoreColors.SecondaryText,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 5.dp)
-        )
-    }
+        shape = RoundedCornerShape(GlassRadius.card),
+        ringColor = borderColor,
+        content = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(GlassSpacing.gapSmall)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = name,
+                        color = if (selected) SonicCoreColors.Cyan else SonicCoreColors.PrimaryText,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = description,
+                        color = SonicCoreColors.SecondaryText,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 5.dp)
+                    )
+                }
+                // Selection is stated, not only tinted.
+                if (selected) Text("✓", color = SonicCoreColors.Cyan, fontSize = 14.sp)
+            }
+        }
+    )
 }
 
 @Composable
@@ -592,7 +531,9 @@ fun SettingRow(
             Text(
                 text = title,
                 color = SonicCoreColors.PrimaryText,
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             if (description != null) {
                 Text(
@@ -613,7 +554,7 @@ fun AudioMeterContainer(
     title: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    LiquidGlassInset(modifier = modifier.fillMaxWidth()) {
+    GlassInset(modifier = modifier.fillMaxWidth()) {
         if (title != null) {
             Text(
                 text = title,

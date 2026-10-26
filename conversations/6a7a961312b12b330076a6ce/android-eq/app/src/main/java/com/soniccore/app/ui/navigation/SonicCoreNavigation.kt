@@ -26,12 +26,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.soniccore.app.ui.design.GlassIconButton
-import com.soniccore.app.ui.design.LiquidGlassSurface
-import com.soniccore.app.ui.design.LocalGlassIntensity
+import com.soniccore.app.ui.design.GlassNavItem
+import com.soniccore.app.ui.design.GlassNavigation
+import com.soniccore.app.ui.design.GlassTopBar
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.design.SonicCoreTone
 import com.soniccore.app.ui.design.color
-import com.soniccore.app.ui.design.liquidGlassMaterialSpec
 
 /**
  * SonicCore navigation model.
@@ -477,40 +477,17 @@ fun SonicCoreScreenHeader(
     onBackClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                destination.title.uppercase(),
-                color = SonicCoreColors.PrimaryText,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.1.sp
-            )
-            Text(
-                destination.subtitle,
-                color = SonicCoreColors.SecondaryText,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        if (onBackClick != null) {
-            GlassIconButton(
-                contentDescription = "Back to previous screen",
-                onClick = onBackClick
-            ) {
-                Text("‹", color = SonicCoreColors.Cyan, fontSize = 28.sp)
-            }
-        } else {
-            GlassIconButton(
-                contentDescription = "Open settings",
-                onClick = onSettingsClick
-            ) {
-                Text("⚙", color = SonicCoreColors.Cyan, fontSize = 20.sp)
-            }
-        }
-    }
+    // Delegates to the shared top bar so every screen's header — back control,
+    // title scale, action button — is the same component (defect GL-04/GL-06).
+    GlassTopBar(
+        title = destination.title,
+        subtitle = destination.subtitle,
+        modifier = modifier,
+        onBack = onBackClick,
+        actionIcon = if (onBackClick == null) "\u2699" else null,
+        actionDescription = "Open settings",
+        onAction = if (onBackClick == null) onSettingsClick else null
+    )
 }
 
 /**
@@ -576,67 +553,22 @@ fun SonicCoreBottomNavigation(
     landscape: Boolean,
     modifier: Modifier = Modifier
 ) {
-    LiquidGlassSurface(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = if (landscape) 18.dp else 10.dp, vertical = 8.dp),
-        contentPadding = 7.dp,
-        shape = RoundedCornerShape(30.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            SonicCoreCategory.entries.forEach { category ->
-                val active = selected == category
-                val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
-                val tone = category.color()
-                val activeSurface by animateColorAsState(
-                    targetValue = if (active) tone.copy(alpha = material.tintAlpha + 0.10f)
-                    else Color.Transparent,
-                    label = "dockSelection"
-                )
-                Surface(
-                    onClick = { onSelect(category) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp)
-                        .semantics {
-                            contentDescription = category.title
-                            stateDescription = if (active) "Selected" else "Not selected"
-                        },
-                    shape = RoundedCornerShape(22.dp),
-                    color = activeSurface,
-                    contentColor = if (active) tone else SonicCoreColors.SecondaryText,
-                    border = BorderStroke(
-                        0.8.dp,
-                        (if (active) tone else SonicCoreColors.Border)
-                            .copy(alpha = if (active) material.edgeAlpha else 0f)
-                    ),
-                    shadowElevation = if (active) 4.dp else 0.dp
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            category.icon,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            color = if (active) tone else SonicCoreColors.SecondaryText
-                        )
-                        Text(
-                            category.label,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                            maxLines = 1,
-                            color = if (active) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText
-                        )
-                    }
-                }
-            }
-        }
+    // One shared dock component (GlassNavigation) rather than a bespoke pill
+    // per surface: it carries the glass tokens, the minimum touch target, the
+    // navigation-bar inset and a real disabled state.
+    val items = SonicCoreCategory.entries.map { category ->
+        GlassNavItem(
+            label = category.label,
+            icon = category.icon,
+            selected = selected == category,
+            onClick = { onSelect(category) }
+        )
     }
+    val toneByIndex = SonicCoreCategory.entries.map { it.color() }
+    GlassNavigation(
+        items = items,
+        modifier = modifier,
+        landscape = landscape,
+        accentOf = { item -> toneByIndex.getOrElse(items.indexOf(item)) { SonicCoreColors.Cyan } }
+    )
 }

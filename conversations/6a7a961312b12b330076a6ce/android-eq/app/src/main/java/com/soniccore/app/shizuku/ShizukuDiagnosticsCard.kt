@@ -1,5 +1,6 @@
 package com.soniccore.app.shizuku
 
+import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -104,7 +105,7 @@ fun ShizukuDiagnosticsCard(
                 disabledContainerColor = SonicCoreColors.ElevatedSurface,
                 disabledContentColor = SonicCoreColors.SecondaryText
             ),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(GlassRadius.chip)
         ) {
             Text(
                 when {

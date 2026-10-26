@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.audio
 
+import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -243,12 +244,12 @@ private fun PresetRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(if (active) SonicCoreColors.Cyan.copy(alpha = 0.09f) else SonicCoreColors.Background.copy(alpha = 0.35f))
             .border(
                 0.8.dp,
                 if (active) SonicCoreColors.Cyan.copy(alpha = 0.35f) else SonicCoreColors.Border.copy(alpha = 0.12f),
-                RoundedCornerShape(12.dp)
+                RoundedCornerShape(GlassRadius.tile)
             )
             .padding(horizontal = 11.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -302,9 +303,9 @@ private fun PresetAction(label: String, modifier: Modifier = Modifier, onClick: 
         letterSpacing = 0.8.sp,
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
-            .border(0.8.dp, SonicCoreColors.Cyan.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
+            .border(0.8.dp, SonicCoreColors.Cyan.copy(alpha = 0.28f), RoundedCornerShape(GlassRadius.tile))
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp)
             .semantics { contentDescription = label }
@@ -455,7 +456,7 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(GlassRadius.tile))
                     .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
                     .clickable {
                         report = runCatching { DeviceDiagnosticsManager.generateRedactedReport(context) }.getOrNull()
@@ -483,7 +484,7 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .padding(top = 6.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(GlassRadius.tile))
                         .background(SonicCoreColors.ElevatedSurface.copy(alpha = 0.8f))
                         .clickable { host.onShareText("SonicCore audio diagnostics", text) }
                         .padding(horizontal = 11.dp, vertical = 9.dp)

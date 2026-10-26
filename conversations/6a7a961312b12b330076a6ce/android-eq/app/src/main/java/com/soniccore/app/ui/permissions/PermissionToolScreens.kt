@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.permissions
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -320,7 +321,7 @@ fun LocalDataExportsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 10.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(GlassRadius.tile))
                     .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
                     .clickable {
                         host.onShareText(
@@ -364,7 +365,7 @@ fun ClearHistoryScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(GlassRadius.tile))
                         .background(SonicCoreColors.Error.copy(alpha = 0.10f))
                         .clickable {
                             host.onClearOperationLog()
@@ -382,7 +383,7 @@ fun ClearHistoryScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(GlassRadius.tile))
                         .background(SonicCoreColors.Error.copy(alpha = 0.10f))
                         .clickable {
                             val ok = host.onClearSessionHistory()
@@ -402,7 +403,7 @@ fun ClearHistoryScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
                 Text(it, color = SonicCoreColors.Success, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
             }
         }
-        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(18.dp)) {
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(GlassRadius.card)) {
             Text("NOT CLEARED BY THIS SCREEN", color = SonicCoreColors.SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
             SonicCoreDataRow("Custom presets", "Kept", SonicCoreCapability.AVAILABLE)
             SonicCoreDataRow("Appearance settings", "Kept", SonicCoreCapability.AVAILABLE)

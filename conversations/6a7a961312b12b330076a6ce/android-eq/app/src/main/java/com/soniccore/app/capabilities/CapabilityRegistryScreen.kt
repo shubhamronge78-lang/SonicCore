@@ -1,5 +1,6 @@
 package com.soniccore.app.capabilities
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -119,7 +120,7 @@ fun CapabilityRegistryScreen(
                     focusedTextColor = SonicCoreColors.PrimaryText,
                     unfocusedTextColor = SonicCoreColors.PrimaryText
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             )
 
             Spacer(Modifier.height(10.dp))
@@ -171,9 +172,9 @@ fun CapabilityRegistryScreen(
 private fun StatPill(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(color.copy(alpha = 0.12f))
-            .border(1.dp, color.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+            .border(1.dp, color.copy(alpha = 0.30f), RoundedCornerShape(GlassRadius.tile))
             .padding(vertical = 8.dp, horizontal = 6.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -188,9 +189,9 @@ private fun StatPill(label: String, value: String, color: Color, modifier: Modif
 private fun CategoryChip(title: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(GlassRadius.chip))
             .background(if (selected) SonicCoreColors.Cyan.copy(alpha = 0.22f) else SonicCoreColors.ElevatedSurface)
-            .border(1.dp, if (selected) SonicCoreColors.Cyan else SonicCoreColors.Border, RoundedCornerShape(8.dp))
+            .border(1.dp, if (selected) SonicCoreColors.Cyan else SonicCoreColors.Border, RoundedCornerShape(GlassRadius.chip))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
@@ -289,7 +290,7 @@ private fun CapabilityCard(
                         containerColor = SonicCoreColors.Cyan.copy(alpha = 0.20f),
                         contentColor = SonicCoreColors.Cyan
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(GlassRadius.chip)
                 ) {
                     Text("Resolve", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }

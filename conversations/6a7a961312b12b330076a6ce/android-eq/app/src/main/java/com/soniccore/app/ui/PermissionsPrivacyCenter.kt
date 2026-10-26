@@ -1,5 +1,6 @@
 package com.soniccore.app.ui
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -110,7 +111,7 @@ fun PermissionsPrivacyCenter(
                     containerColor = SonicCoreColors.Cyan.copy(alpha = 0.20f),
                     contentColor = SonicCoreColors.Cyan
                 ),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             ) {
                 Text("REFRESH STATUS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
@@ -215,7 +216,7 @@ private fun PermissionCard(
                     containerColor = SonicCoreColors.Violet.copy(alpha = 0.20f),
                     contentColor = SonicCoreColors.Violet
                 ),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(GlassRadius.chip)
             ) {
                 Text("OPEN SETTINGS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }

@@ -1,5 +1,6 @@
 package com.soniccore.app.shizuku
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -180,7 +181,7 @@ fun ShizukuCenterScreen(
                         containerColor = SonicCoreColors.Cyan.copy(alpha = 0.20f),
                         contentColor = SonicCoreColors.Cyan
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(GlassRadius.chip)
                 ) {
                     Text("REFRESH", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
@@ -200,7 +201,7 @@ fun ShizukuCenterScreen(
                             containerColor = SonicCoreColors.Warning.copy(alpha = 0.22f),
                             contentColor = SonicCoreColors.Warning
                         ),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(GlassRadius.chip)
                     ) {
                         Text("AUTHORIZE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
@@ -227,7 +228,7 @@ fun ShizukuCenterScreen(
                             containerColor = SonicCoreColors.Violet.copy(alpha = 0.22f),
                             contentColor = SonicCoreColors.Violet
                         ),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(GlassRadius.chip)
                     ) {
                         Text("OPEN MANAGER", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
