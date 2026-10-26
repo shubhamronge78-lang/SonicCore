@@ -5,6 +5,16 @@ object Presets {
     private const val MAX_IMPORT_JSON_CHARS = 256 * 1024
     private const val MAX_IMPORTED_PRESETS = 500
 
+    /**
+     * Longest custom-preset name this store keeps.
+     *
+     * It matches the importer's own cap ([AutoEqProfile.MAX_NAME_CHARS]), so a
+     * profile stored under a long name is not silently renamed when the bundle is
+     * exported and read back. Existing names are all shorter, so widening this
+     * from the old 40 changes nothing that is already stored.
+     */
+    const val MAX_NAME_CHARS = 64
+
     data class Preset(val name: String, val levels: ShortArray)
 
     // Extended preset that includes effect settings (bass, virtualizer, loudness)
@@ -180,7 +190,7 @@ object Presets {
                         levelsArr.optInt(idx, 0).coerceIn(-15, 20).toShort()
                     }
                     out.add(CustomPreset(
-                        name = name.take(40),
+                        name = name.take(MAX_NAME_CHARS),
                         levels = levels,
                         // Effect strengths: app scale 0..1000, loudness 0..300.
                         bassBoost = obj.optInt("bass", 0).coerceIn(0, 1000),

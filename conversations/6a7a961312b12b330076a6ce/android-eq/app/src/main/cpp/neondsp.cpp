@@ -33,6 +33,28 @@
 #define MAXBANDS 31
 #define MAXPEQ 8
 #define MAXIR 2048
+
+/* ── The eight processing stages, and the chain editor ─────────────────────
+   The chain is a fixed SET of eight stages processed in a user-visible ORDER
+   that the engine really honours: `stageOrder[]` is the sequence the audio
+   thread walks, `stageOn[]` is each stage's own enable. Both are published
+   through the same cfg seqlock as every other parameter and committed at a
+   block boundary, so the audio thread never observes a half-written chain.
+
+   The default order below IS the historical hard-coded sequence, so an
+   untouched chain behaves byte-for-byte as before. Moving the limiter off the
+   end really does move it: it is not a display-order preference, it is the
+   order the stages run in. The engine accepts only a full permutation of the
+   eight ids and refuses anything else without touching the committed chain. */
+#define STAGE_PREAMP      0
+#define STAGE_PEQ         1
+#define STAGE_GRAPHIC     2
+#define STAGE_SHELVES     3
+#define STAGE_STEREO      4
+#define STAGE_CONVOLVER   5
+#define STAGE_COMPRESSOR  6
+#define STAGE_LIMITER     7
+#define STAGE_COUNT       8
 static const double TAU = 6.28318530717958647692;
 
 struct Biquad {
@@ -133,10 +155,23 @@ typedef struct {
     double stWidth, stBalance; int stSwap, stMono;
     int limOn; double limThreshDb;
     int convOn;
+    /* Chain editor: the order the eight stages run in, and each stage's own
+       enable. Part of the same coherent snapshot, so a reorder and a bypass
+       land together or not at all. */
+    int stageOn[STAGE_COUNT];
+    int stageOrder[STAGE_COUNT];
 } CfgScalar;
 static CfgScalar cfgTarget = { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005,
-                               1.0, 0.0, 0, 0, 1, -1.0, 0 };
+                               1.0, 0.0, 0, 0, 1, -1.0, 0,
+                               { 1, 1, 1, 1, 1, 1, 1, 1 },
+                               { STAGE_PREAMP, STAGE_PEQ, STAGE_GRAPHIC, STAGE_SHELVES,
+                                 STAGE_STEREO, STAGE_CONVOLVER, STAGE_COMPRESSOR, STAGE_LIMITER } };
 static CfgScalar cfgApplied = cfgTarget;
+/* The committed chain the audio thread actually walks. Written only by
+   applyPendingParams() at a block boundary. */
+static int stageOrderApplied[STAGE_COUNT] = { STAGE_PREAMP, STAGE_PEQ, STAGE_GRAPHIC, STAGE_SHELVES,
+                                              STAGE_STEREO, STAGE_CONVOLVER, STAGE_COMPRESSOR, STAGE_LIMITER };
+static int stageOnApplied[STAGE_COUNT] = { 1, 1, 1, 1, 1, 1, 1, 1 };
 static volatile int cfgSeq = 0;   /* seqlock: even = stable */
 static PeqParam peqTarget[MAXPEQ];
 static double grafTarget[MAXBANDS];
@@ -365,6 +400,13 @@ static void applyPendingParams() {
         stSwap = snap2.stSwap; stMono = snap2.stMono;
         limOn = snap2.limOn; limThreshDb = snap2.limThreshDb;
         convOn = snap2.convOn;
+        /* Chain editor: the order and the per-stage enables commit with the
+           rest of the snapshot — the audio thread starts walking the new chain
+           on the very next block, never mid-block. */
+        for (i = 0; i < STAGE_COUNT; i++) {
+            stageOrderApplied[i] = snap2.stageOrder[i];
+            stageOnApplied[i] = snap2.stageOn[i];
+        }
         cfgApplied = snap2;
         cfgVersion++;
         break;
@@ -374,75 +416,114 @@ static void applyPendingParams() {
 static inline void processFrame(jshort* p) {
     jshort inL = p[0], inR = p[1];
     double l = (double) inL, r = (double) inR;
-    /* preamp */
-    if (preampDb != 0.0) {
-        double g = pow(10.0, preampDb / 20.0);
-        l *= g; r *= g;
-    }
-    /* parametric EQ — held open while a disable-glide still lands */
-    for (int i = 0; i < MAXPEQ; i++) {
-        if (peqOn[i] || peq[i][0].ramp > 0) { l = runB(&peq[i][0], l); r = runB(&peq[i][1], r); }
-    }
-    /* graphic EQ */
-    for (int i = 0; i < nbands; i++) {
-        l = runB(&graphic[i][0], l);
-        r = runB(&graphic[i][1], r);
-    }
-    /* shelves — held open while a glide back to identity still lands */
-    if (bassDb != 0.0 || bassSh[0].ramp > 0) { l = runB(&bassSh[0], l); r = runB(&bassSh[1], r); }
-    if (trebleDb != 0.0 || trebSh[0].ramp > 0) { l = runB(&trebSh[0], l); r = runB(&trebSh[1], r); }
-    /* stereo stage: width, balance, swap, mono */
-    if (stMono) { l = r = (l + r) * 0.5; }
-    if (stSwap) { double tmp = l; l = r; r = tmp; }
-    {
-        double m = (l + r) * 0.5;
-        double s = (l - r) * 0.5 * stWidth;
-        l = m + s; r = m - s;
-    }
-    if (stBalance != 0.0) {
-        if (stBalance > 0) l *= (1.0 - stBalance * 0.99);
-        else r *= (1.0 + stBalance * 0.99);
-    }
-    /* convolver */
-    if (convOn && irTaps > 0) {
-        histL[histIdx] = (float) l;
-        histR[histIdx] = (float) r;
-        double ol = 0.0, orr = 0.0;
-        int h = histIdx;
-        for (int i = 0; i < irTaps; i++) {
-            ol += irL[i] * histL[h];
-            orr += irR[i] * histR[h];
-            if (--h < 0) h = MAXIR - 1;
+    /* -- the chain the user arranged --------------------------------------
+       The eight stages run in the order the chain editor committed; a stage
+       the chain switches off is skipped entirely, and its parameters and
+       filter history are kept, so switching it back on restores the same
+       sound rather than a reset one. The default order is the historical
+       hard-coded sequence, so an untouched chain processes exactly as it
+       always did. Written only by applyPendingParams() at a block boundary. */
+    for (int si = 0; si < STAGE_COUNT; si++) {
+        int stage = stageOrderApplied[si];
+        if (!stageOnApplied[stage]) continue;
+        switch (stage) {
+        case STAGE_PREAMP: {
+            /* preamp */
+            if (preampDb != 0.0) {
+                double g = pow(10.0, preampDb / 20.0);
+                l *= g; r *= g;
+            }
+            break;
         }
-        l = ol; r = orr;
-        if (++histIdx >= MAXIR) histIdx = 0;
-    }
-    /* compressor, stereo-linked — GAIN-REDUCTION domain (v146).
-     * targetGr is exactly 0 below threshold (unity, no pumping, no
-     * within-cycle modulation) and -(over)·(1-1/ratio) above it. The
-     * envelope smooths the REDUCTION, never the signal level. Attack
-     * applies when more reduction is needed, release when recovering. */
-    if (compOn) {
-        double det = (fabs(l) + fabs(r)) * 0.5 / 32768.0;
-        double detDb = 20.0 * log10(det > 1e-9 ? det : 1e-9);
-        double over = detDb - compThreshDb;
-        double targetGr = over > 0.0 ? -over * (1.0 - 1.0 / compRatio) : 0.0;
-        double coef = targetGr < compGrDb ? compAtkCoef : compRelCoef;
-        compGrDb += coef * (targetGr - compGrDb);
-        double g = pow(10.0, compGrDb / 20.0);
-        l *= g; r *= g;
-    }
-    /* output limiter, stereo-linked — GAIN-REDUCTION domain (v146).
-     * Transparent safety stage, not a loudness maximizer: exactly 0 dB
-     * reduction below the ceiling (measured unity), smooth bounded
-     * reduction above it, envelope preserved across audio blocks. */
-    if (limOn) {
-        double det = fabs(l) > fabs(r) ? fabs(l) : fabs(r);
-        double detDb = 20.0 * log10((det / 32768.0) > 1e-9 ? det / 32768.0 : 1e-9);
-        double targetGr = detDb > limThreshDb ? (limThreshDb - detDb) : 0.0;
-        limGrDb += (targetGr < limGrDb ? 0.30 : 0.02) * (targetGr - limGrDb);
-        double g = pow(10.0, limGrDb / 20.0);
-        l *= g; r *= g;
+        case STAGE_PEQ: {
+            /* parametric EQ — held open while a disable-glide still lands */
+            for (int i = 0; i < MAXPEQ; i++) {
+                if (peqOn[i] || peq[i][0].ramp > 0) { l = runB(&peq[i][0], l); r = runB(&peq[i][1], r); }
+            }
+            break;
+        }
+        case STAGE_GRAPHIC: {
+            /* graphic EQ */
+            for (int i = 0; i < nbands; i++) {
+                l = runB(&graphic[i][0], l);
+                r = runB(&graphic[i][1], r);
+            }
+            break;
+        }
+        case STAGE_SHELVES: {
+            /* shelves — held open while a glide back to identity still lands */
+            if (bassDb != 0.0 || bassSh[0].ramp > 0) { l = runB(&bassSh[0], l); r = runB(&bassSh[1], r); }
+            if (trebleDb != 0.0 || trebSh[0].ramp > 0) { l = runB(&trebSh[0], l); r = runB(&trebSh[1], r); }
+            break;
+        }
+        case STAGE_STEREO: {
+            /* stereo stage: width, balance, swap, mono */
+            if (stMono) { l = r = (l + r) * 0.5; }
+            if (stSwap) { double tmp = l; l = r; r = tmp; }
+            {
+                double m = (l + r) * 0.5;
+                double s = (l - r) * 0.5 * stWidth;
+                l = m + s; r = m - s;
+            }
+            if (stBalance != 0.0) {
+                if (stBalance > 0) l *= (1.0 - stBalance * 0.99);
+                else r *= (1.0 + stBalance * 0.99);
+            }
+            break;
+        }
+        case STAGE_CONVOLVER: {
+            /* convolver */
+            if (convOn && irTaps > 0) {
+                histL[histIdx] = (float) l;
+                histR[histIdx] = (float) r;
+                double ol = 0.0, orr = 0.0;
+                int h = histIdx;
+                for (int i = 0; i < irTaps; i++) {
+                    ol += irL[i] * histL[h];
+                    orr += irR[i] * histR[h];
+                    if (--h < 0) h = MAXIR - 1;
+                }
+                l = ol; r = orr;
+                if (++histIdx >= MAXIR) histIdx = 0;
+            }
+            break;
+        }
+        case STAGE_COMPRESSOR: {
+            /* compressor, stereo-linked — GAIN-REDUCTION domain (v146).
+             * targetGr is exactly 0 below threshold (unity, no pumping, no
+             * within-cycle modulation) and -(over)·(1-1/ratio) above it. The
+             * envelope smooths the REDUCTION, never the signal level. Attack
+             * applies when more reduction is needed, release when recovering. */
+            if (compOn) {
+                double det = (fabs(l) + fabs(r)) * 0.5 / 32768.0;
+                double detDb = 20.0 * log10(det > 1e-9 ? det : 1e-9);
+                double over = detDb - compThreshDb;
+                double targetGr = over > 0.0 ? -over * (1.0 - 1.0 / compRatio) : 0.0;
+                double coef = targetGr < compGrDb ? compAtkCoef : compRelCoef;
+                compGrDb += coef * (targetGr - compGrDb);
+                double g = pow(10.0, compGrDb / 20.0);
+                l *= g; r *= g;
+            }
+            break;
+        }
+        case STAGE_LIMITER: {
+            /* output limiter, stereo-linked — GAIN-REDUCTION domain (v146).
+             * Transparent safety stage, not a loudness maximizer: exactly 0 dB
+             * reduction below the ceiling (measured unity), smooth bounded
+             * reduction above it, envelope preserved across audio blocks. */
+            if (limOn) {
+                double det = fabs(l) > fabs(r) ? fabs(l) : fabs(r);
+                double detDb = 20.0 * log10((det / 32768.0) > 1e-9 ? det / 32768.0 : 1e-9);
+                double targetGr = detDb > limThreshDb ? (limThreshDb - detDb) : 0.0;
+                limGrDb += (targetGr < limGrDb ? 0.30 : 0.02) * (targetGr - limGrDb);
+                double g = pow(10.0, limGrDb / 20.0);
+                l *= g; r *= g;
+            }
+            break;
+        }
+        default:
+            break;
+        }
     }
     /* NaN/Inf safety (spec 17): flush all filter states and pass the raw
        frame through — the audio service must never crash or emit garbage. */
@@ -500,8 +581,17 @@ Java_com_soniccore_app_dsp_NeonDsp_init(JNIEnv* env, jobject thiz, jint rate, ji
         sh[i]->tb0 = sh[i]->b0; sh[i]->tb1 = sh[i]->b1; sh[i]->tb2 = sh[i]->b2;
         sh[i]->ta1 = sh[i]->a1; sh[i]->ta2 = sh[i]->a2; sh[i]->ramp = 0;
     }
-    cfgTarget = CfgScalar { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005, 1.0, 0.0, 0, 0, 1, -1.0, 0 };
+    cfgTarget = CfgScalar { 0.0, 0.0, 0.0, 0, -18.0, 4.0, 0.05, 0.005, 1.0, 0.0, 0, 0, 1, -1.0, 0,
+                            { 1, 1, 1, 1, 1, 1, 1, 1 },
+                            { STAGE_PREAMP, STAGE_PEQ, STAGE_GRAPHIC, STAGE_SHELVES,
+                              STAGE_STEREO, STAGE_CONVOLVER, STAGE_COMPRESSOR, STAGE_LIMITER } };
     cfgApplied = cfgTarget;
+    /* Chain editor: a new session starts on the engine's own default order with
+       every stage enabled. Kotlin reapplies the persisted chain right after. */
+    for (int i = 0; i < STAGE_COUNT; i++) {
+        stageOrderApplied[i] = cfgTarget.stageOrder[i];
+        stageOnApplied[i] = cfgTarget.stageOn[i];
+    }
     preampDb = 0.0; bassDb = 0.0; trebleDb = 0.0;
     compOn = 0; compThreshDb = -18.0; compRatio = 4.0; compGrDb = 0.0;
     stWidth = 1.0; stBalance = 0.0; stSwap = 0; stMono = 0;
@@ -877,6 +967,63 @@ Java_com_soniccore_app_dsp_NeonDsp_spectrum(JNIEnv* env, jobject thiz, jfloatArr
     }
     (void) prevBin;
     env->ReleaseFloatArrayElements(out, dst, 0);
+}
+
+/* -- Chain editor: stage order and per-stage enable -------------------------
+   Both go through the same cfg seqlock as every other parameter and commit at
+   a block boundary, so the audio thread never walks a half-written chain.
+   setStageOrder refuses anything that is not a full permutation of the eight
+   stage ids and returns JNI_FALSE without touching the committed order: the
+   Kotlin chain model validates first, and this is the second, authoritative
+   guard right at the audio boundary. */
+
+JNIEXPORT jboolean JNICALL
+Java_com_soniccore_app_dsp_NeonDsp_setStageOrder(JNIEnv* env, jobject thiz, jintArray order) {
+    if (order == NULL) return JNI_FALSE;
+    if (env->GetArrayLength(order) != STAGE_COUNT) return JNI_FALSE;
+    jint* v = env->GetIntArrayElements(order, NULL);
+    if (v == NULL) return JNI_FALSE;
+    int next[STAGE_COUNT];
+    unsigned int seen = 0;
+    int ok = 1;
+    for (int i = 0; i < STAGE_COUNT; i++) {
+        int id = (int) v[i];
+        if (id < 0 || id >= STAGE_COUNT || (seen & (1u << id))) { ok = 0; break; }
+        seen |= (1u << id);
+        next[i] = id;
+    }
+    env->ReleaseIntArrayElements(order, v, JNI_ABORT);
+    if (!ok) return JNI_FALSE;      /* not a permutation: the committed chain stays */
+    int s = cfgSeq; cfgSeq = s + 1; __sync_synchronize();
+    for (int i = 0; i < STAGE_COUNT; i++) cfgTarget.stageOrder[i] = next[i];
+    __sync_synchronize(); cfgSeq = s + 2;
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_soniccore_app_dsp_NeonDsp_setStageEnabled(JNIEnv* env, jobject thiz, jint stage, jboolean on) {
+    if (stage < 0 || stage >= STAGE_COUNT) return JNI_FALSE;
+    int s = cfgSeq; cfgSeq = s + 1; __sync_synchronize();
+    cfgTarget.stageOn[stage] = (on == JNI_TRUE) ? 1 : 0;
+    __sync_synchronize(); cfgSeq = s + 2;
+    return JNI_TRUE;
+}
+
+/** The chain the audio thread is actually walking, in order (diagnostic). */
+JNIEXPORT void JNICALL
+Java_com_soniccore_app_dsp_NeonDsp_appliedStageOrder(JNIEnv* env, jobject thiz, jintArray out) {
+    if (out == NULL) return;
+    if (env->GetArrayLength(out) < STAGE_COUNT) return;
+    jint* v = env->GetIntArrayElements(out, NULL);
+    if (v == NULL) return;
+    for (int i = 0; i < STAGE_COUNT; i++) v[i] = stageOrderApplied[i];
+    env->ReleaseIntArrayElements(out, v, 0);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_soniccore_app_dsp_NeonDsp_stageEnabled(JNIEnv* env, jobject thiz, jint stage) {
+    if (stage < 0 || stage >= STAGE_COUNT) return JNI_FALSE;
+    return stageOnApplied[stage] ? JNI_TRUE : JNI_FALSE;
 }
 
 } /* extern "C" */

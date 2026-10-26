@@ -32,6 +32,8 @@ import com.soniccore.app.LiquidToggle
 import com.soniccore.app.ui.category.CapabilityBadge
 import com.soniccore.app.ui.category.SonicCoreCapability
 import com.soniccore.app.ui.design.GlassCard
+import com.soniccore.app.ui.design.GlassInset
+import com.soniccore.app.ui.design.GlassSpacing
 import com.soniccore.app.ui.design.GlassSlider
 import com.soniccore.app.ui.design.LiquidGlassButton
 import com.soniccore.app.ui.design.SonicCoreColors
@@ -75,6 +77,125 @@ fun AudioSection(
         }
         Spacer(Modifier.height(8.dp))
         content()
+    }
+}
+
+/** The toggle an effect card carries: its real stage enable, never a stand-in. */
+data class AudioEffectToggle(
+    val checked: Boolean,
+    val onCheckedChange: (Boolean) -> Unit,
+    /** Screen-reader name, e.g. "Enable the compressor". */
+    val label: String,
+    /** Shown when the effect is running. */
+    val onState: String = "Enabled",
+    /** Shown when it is out of the path. */
+    val offState: String = "Bypassed"
+)
+
+/**
+ * One effect, inline: title, its own enable/bypass toggle on the same row, the
+ * parameter controls underneath, and — immediately below them, in the same card
+ * — whatever output that effect can actually show.
+ *
+ * This is the shape every effect in the Audio Console uses, so the console reads
+ * as one surface instead of one page per effect. [output] is deliberately a slot
+ * and not a value: an effect that cannot measure anything passes a line saying
+ * which of "waiting for audio" or "not measurable" applies, and there is no way
+ * for a card to draw a number it does not have.
+ */
+@Composable
+fun AudioEffectCard(
+    title: String,
+    status: String,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+    toggle: AudioEffectToggle? = null,
+    capability: SonicCoreCapability? = null,
+    output: (@Composable ColumnScope.() -> Unit)? = null,
+    controls: @Composable ColumnScope.() -> Unit
+) {
+    GlassCard(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = GlassSpacing.touchTarget),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title.uppercase(),
+                    color = SonicCoreColors.Cyan,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+                Text(
+                    status,
+                    color = SonicCoreColors.PrimaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                if (description != null) {
+                    Text(
+                        description,
+                        color = SonicCoreColors.SecondaryText,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                if (capability != null) {
+                    CapabilityBadge(capability, modifier = Modifier.padding(top = 3.dp), compact = true)
+                }
+            }
+            if (toggle != null) {
+                LiquidToggle(
+                    checked = toggle.checked,
+                    modifier = Modifier.semantics {
+                        contentDescription = toggle.label
+                        stateDescription = if (toggle.checked) toggle.onState else toggle.offState
+                    },
+                    onCheckedChange = toggle.onCheckedChange
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        controls()
+        if (output != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "OUTPUT",
+                color = SonicCoreColors.SecondaryText,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp
+            )
+            Spacer(Modifier.height(4.dp))
+            GlassInset(modifier = Modifier.fillMaxWidth()) {
+                output()
+            }
+        }
+    }
+}
+
+/** One line of an effect's output block: label on the left, value on the right. */
+@Composable
+fun AudioOutputLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            color = SonicCoreColors.SecondaryText,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            value,
+            color = SonicCoreColors.PrimaryText,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 

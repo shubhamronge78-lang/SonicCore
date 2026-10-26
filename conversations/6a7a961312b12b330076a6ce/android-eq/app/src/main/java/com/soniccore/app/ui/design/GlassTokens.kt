@@ -185,6 +185,14 @@ object GlassSpacing {
 
     /** Narrowest a single-number tile may get. */
     val minTileWidthNumeric = 112.dp
+
+    /**
+     * Narrowest a parameter control (label + value + slider) may get before a
+     * control row drops a column. Below this the value label and the slider thumb
+     * start to compete for the same pixels, which is how two "side by side"
+     * controls end up clipping each other on a narrow phone.
+     */
+    val minControlWidth = ResponsiveBreakpoints.MIN_CONTROL_WIDTH_DP.dp
 }
 
 /** Elevation (GL-03). Soft separation, never a heavy glow. */

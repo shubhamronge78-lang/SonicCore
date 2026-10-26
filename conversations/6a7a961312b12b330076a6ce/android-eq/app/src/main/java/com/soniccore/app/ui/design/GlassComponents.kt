@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -276,7 +277,21 @@ fun GlassScaffold(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (applyInsets) Modifier.statusBarsPadding().imePadding() else Modifier)
+                .then(
+                    if (applyInsets) {
+                        // The app is edge-to-edge (`enableEdgeToEdge()` in
+                        // MainActivity), so the decorative backdrop runs under
+                        // the system bars while the content is inset once, here:
+                        // status bar, display cutout in any orientation, and the
+                        // keyboard. The bottom navigation bar is inset by
+                        // `GlassNavigation` itself — the one component that sits
+                        // against that edge — so it is deliberately not added
+                        // again here (that would double-pad the dock).
+                        Modifier.statusBarsPadding().displayCutoutPadding().imePadding()
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
             content()
         }

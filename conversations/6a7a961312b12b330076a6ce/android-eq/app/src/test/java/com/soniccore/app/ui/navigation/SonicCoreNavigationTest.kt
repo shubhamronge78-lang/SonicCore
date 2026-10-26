@@ -118,7 +118,7 @@ class SonicCoreNavigationTest {
         assertEquals(
             listOf(
                 "Audio Dashboard",
-                "Equalizer", "Bass & Treble", "Stereo & Spatial", "Dynamics",
+                "Audio Console", "Equalizer", "Bass & Treble", "Stereo & Spatial", "Dynamics",
                 "DSP Studio",
                 "Player", "Audio Capture", "Audio Sessions",
                 "Output & Devices", "Signal Path",
@@ -146,7 +146,10 @@ class SonicCoreNavigationTest {
             assertNotNull("$destination is no longer reachable", tool)
             assertEquals(SonicCoreCategory.AUDIO, tool!!.category)
         }
-        listOf("audio.presets", "audio.diagnostics", "audio.bass_treble", "audio.spatial", "audio.devices")
+        listOf(
+            "audio.console", "audio.presets", "audio.diagnostics", "audio.bass_treble",
+            "audio.spatial", "audio.devices"
+        )
             .forEach { id ->
                 val tool = SonicCoreToolRegistry.find(id)
                 assertNotNull("$id disappeared from the Audio Center", tool)

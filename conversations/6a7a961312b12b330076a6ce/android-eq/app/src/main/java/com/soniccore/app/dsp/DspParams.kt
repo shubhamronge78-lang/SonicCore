@@ -27,7 +27,29 @@ class DspParams {
     var limThresh = -1f
     var slots = List(8) { PeqSlot() }
 
-    fun applyTo(dsp: NeonDsp) {
+    /**
+     * The order the eight native stages run in, as stage ids (see [DspChain]).
+     *
+     * This is not a display preference: `applyTo` hands it to
+     * [NeonDsp.setStageOrder], which is what the audio thread walks.
+     */
+    var stageOrder: List<Int> = DspChainRules.DEFAULT_ORDER.map { it.id }
+
+    /**
+     * Stage ids the chain editor switched off. A stage's own parameters are
+     * never cleared by a bypass, and a mandatory stage (the limiter) is never
+     * in here — [DspChain] enforces both.
+     */
+    var stageBypassed: Set<Int> = emptySet()
+
+    /**
+     * Pushes every parameter to the native engine.
+     *
+     * @return true when every setter completed. A missing native library or a
+     *   failing setter reports false instead of being absorbed silently, so a
+     *   caller that must not claim a write it could not make can tell the truth.
+     */
+    fun applyTo(dsp: NeonDsp): Boolean =
         try {
             dsp.setPreamp(preamp)
             dsp.setShelves(bass, treble)
@@ -35,17 +57,29 @@ class DspParams {
             dsp.setCompressor(compOn, compThresh, 4f, 5f, 150f)
             dsp.setLimiter(limiterOn, limThresh)
             slots.forEachIndexed { i, s -> dsp.setParametric(i, s.on, s.freq, s.gain, s.q) }
-        } catch (_: Throwable) { }
-    }
+            // The chain editor's two controls. The engine re-validates the order
+            // and answers whether it took it, so the outcome is part of this
+            // method's own answer instead of being swallowed: a caller that must
+            // not claim a write it could not make can see that it failed.
+            var chainAccepted = dsp.setStageOrder(stageOrder.toIntArray())
+            ChainStage.entries.forEach { stage ->
+                val enabled = !(stage.bypassable && stageBypassed.contains(stage.id))
+                chainAccepted = dsp.setStageEnabled(stage.id, enabled) && chainAccepted
+            }
+            chainAccepted
+        } catch (_: Throwable) { false }
 
-    fun save(engine: EqualizerEngine) {
-        try {
+    /** @return true when the parameter set was persisted; see [applyTo]. */
+    fun save(engine: EqualizerEngine): Boolean {
+        return try {
             val o = JSONObject()
             o.put("preamp", preamp.toDouble()); o.put("bass", bass.toDouble()); o.put("treble", treble.toDouble())
             o.put("width", width.toDouble()); o.put("balance", balance.toDouble())
             o.put("mono", mono); o.put("swap", swap)
             o.put("compOn", compOn); o.put("compThresh", compThresh.toDouble())
             o.put("limiterOn", limiterOn); o.put("limThresh", limThresh.toDouble())
+            o.put("stageOrder", JSONArray(stageOrder))
+            o.put("stageBypassed", JSONArray(stageBypassed.sorted()))
             val arr = JSONArray()
             slots.forEach { s ->
                 val p = JSONObject()
@@ -54,7 +88,8 @@ class DspParams {
             }
             o.put("peq", arr)
             engine.setDspParamsJson(o.toString())
-        } catch (_: Throwable) { }
+            true
+        } catch (_: Throwable) { false }
     }
 
     companion object {
@@ -73,6 +108,21 @@ class DspParams {
                 p.compThresh = o.optDouble("compThresh", -18.0).toFloat().coerceIn(-60f, 0f)
                 p.limiterOn = o.optBoolean("limiterOn", true)
                 p.limThresh = o.optDouble("limThresh", -1.0).toFloat().coerceIn(-60f, 0f)
+                // Stored chain ids are untrusted input: DspChain.of falls back to
+                // the engine's default order when they are not a valid chain, so a
+                // damaged store can never hand the audio thread a bad order.
+                val orderArr = o.optJSONArray("stageOrder")
+                if (orderArr != null) {
+                    val ids = ArrayList<Int>(orderArr.length())
+                    for (i in 0 until orderArr.length()) ids.add(orderArr.optInt(i, -1))
+                    p.stageOrder = DspChain.of(ids, emptySet()).stageOrderIds
+                }
+                val offArr = o.optJSONArray("stageBypassed")
+                if (offArr != null) {
+                    val off = LinkedHashSet<Int>()
+                    for (i in 0 until offArr.length()) off.add(offArr.optInt(i, -1))
+                    p.stageBypassed = DspChain.of(p.stageOrder, off).bypassedIds
+                }
                 val arr = o.optJSONArray("peq")
                 if (arr != null) {
                     val list = ArrayList<PeqSlot>()

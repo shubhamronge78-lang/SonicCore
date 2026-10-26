@@ -90,17 +90,21 @@ link check. Nothing in this document claims a visual check that did not happen.
 
 ## 6. Verification executed
 
-Run from the container built from this source
-(`docker compose -f docker-compose.base44.yml run --rm --no-deps app …`):
+Run inside the builder container, against the mounted source
+(`docker compose --project-name app -f $BASE44_CONFIG_ROOT/docker-compose.base44.yml exec -T app …`),
+and re-measured from a **clean** build for this revision so no up-to-date task
+stands in for a run:
 
 | Check | Command | Result |
 | --- | --- | --- |
-| JVM unit tests | `./gradlew :app:testDebugUnitTest` | **311 tests, 36 classes, 0 failures, 0 skipped** — 14 more than before this pass (`AutoEqProfileTest` 10, `ScrollOwnershipTest` 4), and 38 more again after the AutoEQ import flow was completed (`AutoEqProfileTest` +18, `AutoEqImportTest` +19, `ScrollOwnershipTest` +1) |
-| Native DSP harness | part of the container entrypoint (ASan + UBSan over the real `neondsp.cpp`) | `HARNESS PASS (0 failures)` |
-| Debug build | `./gradlew :app:assembleDebug` | `BUILD SUCCESSFUL`, `app-debug.apk` produced |
-| Lint | `./gradlew :app:lintDebug` | **PASS** (`BUILD SUCCESSFUL`). The six errors that used to fail this task are fixed in source rather than suppressed wholesale: the two `MissingPermission` calls in the capture path now check the permission (and report the app's own error code), the API-28 signing read is version-guarded with the pre-28 accessor below it, and the two `RestrictedApi` `Shizuku.getServerPatchVersion` calls are narrowed to one guarded helper each with the reason stated. `lintDebug` is part of the container pipeline now, so this failure cannot come back unnoticed |
+| JVM unit tests | `sh gradlew clean :app:testDebugUnitTest` | **374 tests, 40 classes, 0 failures, 0 errors, 0 skipped** — re-run from a clean build. The 311/36 that this table carried before was the state of the pass that added the responsive layer, before the console and the chain editor landed |
+| Native DSP harness | `g++ … harness.cpp` (ASan + UBSan over the real `neondsp.cpp`) | `HARNESS PASS (0 failures)`, exit 0 |
+| Loudness harness | `gcc -std=gnu11 … ebur128.c` + `g++ … loudness_harness.cpp` under the same sanitizers | `LOUDNESS HARNESS PASS (0 failures)`, exit 0 |
+| Debug build | `sh gradlew :app:assembleDebug` | `BUILD SUCCESSFUL`; `app-debug.apk`, 13 998 228 bytes |
+| Lint | `sh gradlew :app:lintDebug` | **PASS: 0 errors, 67 warnings.** The six errors that used to fail this task are fixed in source rather than suppressed wholesale: the two `MissingPermission` calls in the capture path now check the permission (and report the app's own error code), the API-28 signing read is version-guarded with the pre-28 accessor below it, and the two `RestrictedApi` `Shizuku.getServerPatchVersion` calls are narrowed to one guarded helper each with the reason stated. The 67 remaining warnings are pre-existing and none is in a file this pass changed |
+| Lint — **correction** | as above | An earlier revision of this document claimed lint "is part of the container pipeline now, so this failure cannot come back unnoticed". **It was not, and it did.** The edge-to-edge pass (8.1) added `android:windowLightNavigationBar` (API 27) and `android:enforceNavigationBarContrast` (API 29) to an unqualified `values/styles.xml`, and `:app:lintDebug` failed again with 2 `[NewApi]` errors against minSdk 26. Both attributes now live in `values-v27/styles.xml` and `values-v29/styles.xml` over a shared `Theme.NeonEQ.Base`, and every result in this table comes from a **clean** `clean … :app:lintDebug` run, so this defect is fixed and provably so. **What was not achievable here:** adding `:app:lintDebug` and the loudness harness to the environment-owned compose file the sandbox actually runs. The platform's configuration store rejected the update in this session (`409 Configuration changed or was not inspected`), so that file still invokes only `testDebugUnitTest` and `assembleDebug`. Until it carries all four gates, lint and the loudness harness have to be run by hand from the container — which is how this defect got in, and the reason it is written down here rather than assumed fixed |
 | Licence audit | `python3 tools/license_check.py` | `PASS: no copyleft licence on any resolved configuration` |
-| Documentation links | `python3 tools/check_docs_links.py` | PASS |
+| Documentation links | `python3 tools/check_docs_links.py` | `PASS: every relative link resolves in 14 file(s)` |
 
 The tests added by this pass:
 
@@ -139,6 +143,29 @@ The tests added by this pass:
   a failed activation and a failed preamp write each leaving the sound and the
   profiles as they were, and the review text stating what is replaced and what is
   kept.
+- `dsp/DspChainTest` (15) — the chain model behind the console: the default order
+  is the engine's own sequence, every stage id round-trips, the limiter is the
+  only stage that cannot be bypassed, a bypass keeps a stage's parameters *and*
+  its place in the order, a stage can be moved but moving the limiter off the end
+  or any stage past it is refused with a reason, a move outside the chain is
+  refused instead of crashing, a no-op move changes nothing, an invalid order is
+  not a valid chain, stored ids are untrusted, and `reset` returns the engine
+  default after edits.
+- `dsp/DspChainPresetsTest` (14) — the saved-chain store *and* the telemetry
+  wording: a chain round-trips through its stored line, a damaged line yields
+  nothing instead of a bad chain, a stored order that is not a valid chain falls
+  back to the engine default, names are sanitised and a long name still
+  round-trips, saving the same name replaces in place, the store is capped and
+  drops the oldest, `remove` leaves the rest alone — plus the `DspTelemetryText`
+  decisions (a missing bridge is "not measurable" *with its reason*, a running
+  bridge with no frames is "waiting for audio" rather than zero reduction, a real
+  measurement is a number, clipping is named when it was measured).
+- `dsp/AudioControlStateTest` (9) — the validation contract for every Audio
+  screen: numeric fields clamp to the engine's own ranges, `NaN` and infinity
+  never reach the DSP, merging writes the controls and leaves the parametric slots
+  alone, a snapshot reads back what was merged, and the modelled shelf curve is
+  flat at zero, shapes opposite ends independently and stays inside the engine's
+  range across the audible band.
 
 ## 7. Not verified, and what still needs a device
 
@@ -173,10 +200,186 @@ The tests added by this pass:
   contract is reasoned about here, never observed. This is the item that most
   deserves the first emulator run.
 - **The AutoEQ import has a device half that cannot be checked here.** The parser,
-  the band mapping and now the whole import flow are covered by 47 JVM tests
-  (`AutoEqProfileTest` 28, `AutoEqImportTest` 19) driven through the same lambdas
+  the band mapping and now the whole import flow are covered by 56 JVM tests
+  (`AutoEqProfileTest` 29, `AutoEqImportTest` 27) driven through the same lambdas
   `MainActivity` wires, so what an import *does* is pinned. What it *sounds like*
   is not: no emulator or device exists here, so "import a profile and hear the
   correction" — including the system file picker's own gesture and reading a real
   `ParametricEQ.txt` from storage — remains a device check. It is a real gap and
   is reported as one rather than inferred from the tests.
+- **The chain editor's effect on *sound* is reasoned from the harness, not heard.**
+  Section [18] of the DSP harness measures that the committed order changes the
+  processed samples and that a bypassed stage passes at unity, which is the part
+  a unit test cannot reach. What no check here covers is the audible result on a
+  phone: that a reorder is glitch-free across the block boundary in a real
+  AudioTrack session, and that the 40 ms-ish ramp on a coefficient change is
+  inaudible through the device's own volume and codec path.
+- **The eight stages and the bypass flags are exercised on the host JVM and in
+  the host DSP harness only.** The Android side of the same code — `NeonDsp`
+  loading `libneondsp.so` through `System.loadLibrary`, the JNI `setStageOrder`
+  guard and the `appliedStageOrder` read-back — is compiled by `assembleDebug`
+  but has never run on a device. `LoudnessTest` pins the same pattern for the
+  loudness library by asserting the *honest refusal* on a host JVM, where
+  `available == false`; the DSP chain has no equivalent device-side assertion.
+- **The edge-to-edge theme fix is verified by lint and the build, not by eye.**
+  The two API-gated attributes now live in `values-v27/styles.xml` and
+  `values-v29/styles.xml` over a shared `Theme.NeonEQ.Base`; `:app:lintDebug`
+  reports `0 errors` and the APK builds, which proves the resources resolve.
+  That the bars actually look right behind the glass — and separately on API 26,
+  API 27–28 and API 29+ — is a device check.
+- **The loudness numbers are the reference implementation's, not a phone's.**
+  The harness pins what the vendored libebur128 produces for known signals, and
+  what the app *reports* is JVM-tested; neither says the numbers match a
+  measurement taken on real hardware from a real file. The module's own doc
+  comment says the same thing.
+
+## 8. Full-screen layout, one inline console, and a real chain editor
+
+This pass took the same shared layer further, and it is the pass that makes the
+window the only thing that decides the layout:
+
+### 8.1 The window is now edge-to-edge, with the insets owned in one place
+
+- `MainActivity.onCreate` calls `enableEdgeToEdge()` before `setContent`, and
+  `Theme.NeonEQ` sets **transparent** status and navigation bars
+  (`windowDrawsSystemBarBackgrounds`, `enforceNavigationBarContrast="false"`), so
+  the glass backdrop runs to the screen edges instead of stopping at a black
+  band no theme could match.
+- `GlassScaffold` applies `statusBarsPadding() + displayCutoutPadding() +
+  imePadding()` **once** for the whole app. The cutout inset is the part the old
+  code lacked: in landscape a cutout sits on a *side*, and a status-bar-only inset
+  put the first card under it. `GlassNavigation` keeps its own
+  `navigationBarsPadding()` because the dock is the component that sits against
+  that edge — applying it in the scaffold too would double-pad the dock, which is
+  why it is deliberately not added there.
+- The activity keeps `android:windowSoftInputMode="adjustResize"`, which is what
+  makes the `imePadding()` above receive a real keyboard inset.
+- **RD-15 (new):** no screen may add its own system-bar padding now that the
+  scaffold is edge-to-edge. A screen that does will double-pad; the rule is the
+  same shape as the existing "the shell owns the scroll" rule.
+
+### 8.2 Related controls share a row, and never below a floor
+
+`controlColumnCount` (pure, in `ResponsiveLayout.kt`) and `AdaptiveControlRow`
+put parameter controls side by side when each can keep
+`GlassSpacing.minControlWidth` (148 dp) and stack them when they cannot. Nothing
+hard-codes "two sliders": a 412 dp phone gets two columns because two cells of
+148 dp plus the gap fit its content width, and a 1280 dp tablet gets three. A
+cell narrower than the floor wraps to the next row instead of squeezing its own
+value label into the slider — which is the specific clipping this rule exists to
+prevent (`ResponsiveLayoutTest`).
+
+### 8.3 One console, every effect inline
+
+`ui/audio/AudioConsoleScreen.kt` (new Audio tool `audio.console`, first entry in
+the Sound Controls group) renders every effect as an inline card built from the
+shared vocabulary: `AudioEffectCard` gives it a title, a live status, its own
+enable/bypass toggle on the same row, its controls, and an `OUTPUT` block
+immediately underneath. The per-band faders stay on the Equalizer screen by
+design — 31 touch targets do not fit a dense console without shrinking below a
+usable size — and the console says so where it links to them.
+
+Two rules the console keeps, both testable:
+
+- **A toggle is the real control.** An effect card's switch moves either the
+  native stage enable (`NeonDsp.setStageEnabled`) or the parameter switch the
+  engine already has (`compOn`, `limiterOn`). No card flips a UI-only boolean.
+- **Output is measured or declined.** `DspTelemetryText` (unit-tested) decides
+  whether a dynamics card shows a measured reduction, "Waiting for audio", or
+  "Not measurable" plus the bridge's own reason. The offline loudness analysis is
+  a shared card (`ui/audio/LoudnessAnalysisSection.kt`, used by both the console
+  and Audio Diagnostics) and stays explicitly offline — it is analysis, not a
+  processing stage, and it is never presented as a live meter.
+
+### 8.4 The chain editor moves audio, not just pixels
+
+The reorder is real in the engine, not in the UI:
+
+- `dsp/DspChain.kt` (pure) holds the eight stages, their ids, the engine's default
+  order, and the rules — including that the limiter stays last, refused *before*
+  anything is applied, with the reason a screen shows.
+- `neondsp.cpp` **walks the committed order** instead of a hard-coded sequence:
+  `stageOrder[8]` and `stageOn[8]` live in the same seqlock-published snapshot as
+  every other parameter and commit at a block boundary, so the audio thread can
+  never observe a half-written chain. `setStageOrder` refuses anything that is not
+  a full permutation of the eight ids and keeps the order it had.
+- `tools/dspharness/harness.cpp` section **[18]** measures it: with the limiter
+  last a +20 dB signal is held at the −1 dBFS ceiling (≈29 200), and with the
+  limiter moved first the *same* signal reaches 32 767. Same input, same
+  parameters, different measured output — that is what makes the reorder honest.
+  The same section measures a bypassed preamp passing at unity while keeping its
+  +20 dB setting, a refused non-permutation leaving the committed chain untouched,
+  and the mandatory stage staying enabled.
+
+### 8.5 The eight stages, the order rule, and what a saved chain does and does not store
+
+The chain editor is backed by one pure file, `dsp/DspChain.kt`, so "can SonicCore
+run this chain?" is a function rather than a branch inside a screen.
+
+**Supported stages.** Exactly the eight the native engine processes, carrying the
+ids `neondsp.cpp` uses: Preamp (0), Parametric EQ (1 — eight peaking slots),
+Graphic EQ (2 — 10 / 15 / 31 bands), Bass & Treble (3 — one low and one high
+shelf), Stereo (4 — width / balance / swap / mono), Convolver (5), Compressor (6)
+and Limiter (7). The convolver is bypassable but **no impulse response can be
+loaded in this build**, so it passes audio through unchanged and its row says so.
+There is no reverb, no virtualizer, no haptic bass and no system-wide stage: the
+console lists each of those under "Not available on this path" with its reason and
+renders **no control** for it — a toggle that changed nothing would be worse than
+saying so.
+
+**Chain-order validation.** `DspChainRules.isValidOrder` requires a full
+permutation of the eight ids with the limiter last, and `DspChainRules.move`
+refuses a move that would break it **before** anything is applied — the refusal
+carries the sentence the screen shows, and a refused move leaves the chain exactly
+as it was (`DspChainTest`). The engine re-validates at the audio boundary:
+`NeonDsp.setStageOrder` returns `false` for anything that is not a permutation and
+does not touch the committed order, so the UI is not the last line of defence.
+`DspChain.of` applies the same rule to *stored* ids and falls back to the engine's
+default order instead of forwarding a damaged chain to the audio thread.
+
+**The mandatory limiter.** `ChainStage.LIMITER` has `bypassable = false`; its row
+renders no toggle (it reads "Always last — output ceiling"), it cannot be dragged
+or moved past the end, and no stored chain can place a stage after it. That is
+what makes "nothing runs after the output ceiling" true. One honest caveat: the
+engine's **own** limiter enable (`limiterOn`) is a separate, older parameter that
+the console's Limiter card and Settings expose, and it *can* switch the stage off.
+The chain editor cannot disable the limiter; the app can, through that control.
+The native output clamp and the NaN/Inf guard still bound whatever leaves the
+chain either way.
+
+**What a saved chain stores — and what it does not.** `DspChainPresets` encodes
+one chain as a single short line (`order=…;off=…`) in the app's own
+`dsp_chain_presets` preferences, up to eight entries; past that the oldest is
+dropped. It stores the **order and the bypass flags only**. An effect's
+*parameters* (preamp gain, shelf gains, thresholds, band values) are not part of a
+chain preset — they live in the persisted `DspParams` JSON — so loading a chain
+reorders and re-enables stages without moving a single value
+(`applyDspChain` reloads the persisted parameters and re-applies them unchanged),
+and a chain preset can never overwrite a preset bundle or an AutoEQ import: those
+go through `Presets` / `saveCustomPreset`, a different store. That is a deliberate
+limitation rather than an oversight — a chain preset is a routing decision, and
+bundling values with it would make "load" silently move controls the user did not
+ask to move. Names are sanitised and capped (`DspChainPresets.sanitizeName`), a
+damaged stored line decodes to `null` rather than to a chain the engine must not
+run, and saving under an existing name replaces it in place (`DspChainPresetsTest`).
+
+### 8.6 What the console shows, and what it declines to show
+
+A card's output block holds a measurement from the native bridge
+(`DspTelemetry`: processed frames, compressor/limiter gain reduction, output
+peak, clip state) or one of `DspTelemetryText`'s sentences — "Waiting for audio",
+"Not measurable: <the bridge's own reason>", "Output peak: not measured". The text
+decisions are pure and pinned by JVM tests, so a card cannot draw a number it does
+not have. The two scope sentences that matter are both in the UI, not only here:
+the counters belong to the capture path that runs the native chain, so on the
+in-app player path gain reduction is genuinely not measurable and is reported as
+such rather than borrowed from the other path; and the response curves are
+modelled from the parameters the DSP was given, labelled as such, and never
+presented as a measurement. One known discrepancy is recorded rather than fixed:
+the shelf curve's corner constants in `dsp/AudioControlState.kt`
+(`LOW_SHELF_HZ` / `HIGH_SHELF_HZ` = 200 Hz / 4000 Hz) do not match the frequencies
+the native shelves are actually built at (100 Hz and 8000 Hz in `neondsp.cpp`), so
+the corners the UI states are wrong by an octave each. The one-pole shape the
+curve uses cannot represent the engine's RBJ shelf at 8 kHz without changing the
+curve and the thresholds `AudioControlStateTest` pins, so it is reported here
+instead of being silently re-tuned; fix both together if you touch it.

@@ -720,13 +720,12 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
             }
         }
 
+        // One shared implementation, also shown inline in the Audio Console —
+        // the measurement and its wording cannot drift between the two screens.
+        LoudnessAnalysisSection()
+
         LimitNote2("SonicCore reports only counters it measures. Metrics a device does not expose stay “Not readable” rather than being estimated.")
     }
-}
-
-@Composable
-private fun LimitNote2(text: String) {
-    com.soniccore.app.ui.category.LimitNote(text, SonicCoreCategory.AUDIO.tone)
 }
 
 /** Platform capability states expressed in the one vocabulary every screen uses. */
@@ -736,4 +735,10 @@ private fun CapState.toAudioCapability(): SonicCoreCapability = when (this) {
     CapState.UNSUPPORTED -> SonicCoreCapability.UNSUPPORTED
     CapState.BLOCKED_BY_SOURCE_APP -> SonicCoreCapability.BLOCKED
     CapState.UNKNOWN -> SonicCoreCapability.UNKNOWN
+}
+
+/** The Audio diagnostics screen's own limit strip, in the Audio tone. */
+@Composable
+private fun LimitNote2(text: String) {
+    com.soniccore.app.ui.category.LimitNote(text, SonicCoreCategory.AUDIO.tone)
 }

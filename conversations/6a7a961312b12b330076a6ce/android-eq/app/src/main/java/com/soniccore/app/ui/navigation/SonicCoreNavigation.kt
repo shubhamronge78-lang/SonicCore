@@ -250,6 +250,10 @@ object SonicCoreToolRegistry {
             SonicCoreAudioGroup.OVERVIEW),
 
         // ── AUDIO · SOUND CONTROLS ──
+        tool("audio.console", SonicCoreCategory.AUDIO, "Audio Console",
+            "Every effect inline: chain order, per-effect toggle, parameters and that effect's own output",
+            "⊞", null, "console inline effects chain order reorder toggle inline output side by side",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
         tool("audio.equalizer", SonicCoreCategory.AUDIO, "Equalizer",
             "Graphic EQ, parametric bands, presets, preamp and per-band controls",
             "∿", SonicCoreDestination.EQUALIZER, "parametric q factor bands preamp graphic",

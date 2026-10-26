@@ -195,7 +195,7 @@ object RepositoryInventory {
             IntegrationStatus.INTEGRATED, PrivilegeRequirement.NONE,
             Maintenance.ACTIVE, "2026-10-20", 16377, Coverage.ADOPTED,
             "Headphone measurement database plus target curves, used to derive correction filters.",
-            "Its ParametricEQ and GraphicEQ profile formats are read by engine/AutoEqProfile.kt: the profile is reviewed first (filters or measurement points, preamp, band curve, every clamp applied) and only then saved as a custom preset on the engine's own 31-slot curve, or applied to the active curve with its preamp line written once to the native preamp parameter — the paths presets and the preamp control already use. Refusals name what they refused, and a cancellation or a failed import leaves the active sound and the stored profiles untouched. Formats only, so no AutoEQ measurement data or source is redistributed; the curve is an approximation evaluated at SonicCore's band centres. Covered by AutoEqProfileTest (28 tests) and AutoEqImportTest (19)."
+            "Its ParametricEQ and GraphicEQ profile formats are read by engine/AutoEqProfile.kt: the profile is reviewed first (filters or measurement points, preamp, band curve, every clamp applied) and only then saved as a custom preset on the engine's own 31-slot curve, or applied to the active curve with its preamp line written once to the native preamp parameter — the paths presets and the preamp control already use. Refusals name what they refused, and a cancellation or a failed import leaves the active sound and the stored profiles untouched. Formats only, so no AutoEQ measurement data or source is redistributed; the curve is an approximation evaluated at SonicCore's band centres. Covered by AutoEqProfileTest (29 tests) and AutoEqImportTest (27)."
         ),
         RepositoryEntry(
             "xiph/speexdsp", "SpeexDSP", gh("xiph/speexdsp"),
@@ -208,10 +208,10 @@ object RepositoryInventory {
         RepositoryEntry(
             "jiixyj/libebur128", "libebur128", gh("jiixyj/libebur128"),
             InventoryCategory.AUDIO, "MIT", LicenseCompatibility.PERMISSIVE,
-            IntegrationStatus.READY_TO_INTEGRATE, PrivilegeRequirement.NONE,
-            Maintenance.SLOW, "2023-06-25", 493, Coverage.NONE,
+            IntegrationStatus.INTEGRATED, PrivilegeRequirement.NONE,
+            Maintenance.SLOW, "2023-06-25", 493, Coverage.ADOPTED,
             "EBU R128 / ITU-R BS.1770 loudness measurement in C.",
-            "The loudness-matching feature is not shipped; this is the audited implementation to build it on, and its MIT licence permits it."
+            "v1.2.6 is vendored unmodified at pinned commit 67b33ab under app/src/main/cpp/third_party/ebur128 (licence beside it, provenance in that directory's README) and compiled into its own libloudness.so, so the measurement never enters the playback DSP. Audio → Diagnostics measures one 16-bit PCM .wav the user picks and reports integrated loudness (LUFS), loudness range (LU) and true peak (dBTP) with the format, the measured span and a plain-language note for every limit — and says it is offline, because SonicCore does not measure live playback or system-wide audio. Refuses non-PCM formats, non-mono/stereo audio and buffers too short to gate. Pinned by the loudness host harness under ASan+UBSan (LoudnessTest + WavPcmTest for the app-side decisions). Not device-verified, and loudness matching is not implemented."
         ),
         RepositoryEntry(
             "google/oboe", "Oboe", gh("google/oboe"),

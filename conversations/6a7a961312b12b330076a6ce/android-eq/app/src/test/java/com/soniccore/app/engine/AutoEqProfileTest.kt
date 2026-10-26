@@ -127,6 +127,29 @@ class AutoEqProfileTest {
     }
 
     @Test
+    fun aHostileNameCannotBecomeAPathOrAMalformedStoredName() {
+        // The name comes from the user's paste or from a picked file name, so it
+        // is untrusted input that is stored and matched on later.
+        val traversal = ok(parametric, "../../data/data/com.soniccore.app/evil").name
+        assertFalse("no path separator may survive: “$traversal”", traversal.contains("/"))
+        assertFalse("no path separator may survive: “$traversal”", traversal.contains("\\"))
+        assertFalse("no traversal may survive: “$traversal”", traversal.contains(".."))
+
+        // Control characters are flattened to spaces, never carried into a stored
+        // name (they would break anything that renders, matches or logs it).
+        val control = ok(parametric, "H\u0001D\t6\r\n50").name
+        assertFalse("no control character may survive", control.any { it.isISOControl() })
+        assertEquals("H D 6 50", control)
+
+        // Quotes and a dot prefix are handled too, so a stored name never starts
+        // with a dot and never carries a doubled space.
+        assertEquals("hidden", ok(parametric, "  \".hidden\"  ").name)
+
+        // A name longer than the cap is truncated to it, never stored whole.
+        assertEquals(AutoEqProfile.MAX_NAME_CHARS, ok(parametric, "x".repeat(400)).name.length)
+    }
+
+    @Test
     fun detectsAutoEqTextButNotAJsonBundle() {
         assertTrue(AutoEqProfile.looksLikeAutoEq(parametric))
         assertTrue(AutoEqProfile.looksLikeAutoEq("GraphicEQ: 20 0; 200 1"))

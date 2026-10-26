@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased — production hardening (`harden-autoeq`)
+
+The AutoEQ import is hardened, and one new, deliberately small native module is
+added. Nothing in the DSP chain, the capture path or the existing presets changes
+behaviour; `libneondsp.so` still exports the same 34 JNI symbols.
+
+### AutoEQ import: three gaps closed
+
+- **A preamp write that does not land is now detected, and the import is rolled
+  back.** `AutoEqImport.apply` used to assume the native preamp write succeeded —
+  and the app's own preamp path (`DspParams.applyTo` → `applyAudioControl`)
+  swallowed every error, so it could not report otherwise. The preamp sink now
+  returns whether the value reached the parameter, and when it did not, the
+  active profile is put back to the one that was active before the import
+  (`previousCurve`), with a message saying so. The native preamp parameter and
+  the preset store are still two separate writes with no transaction between
+  them; the order and the rollback are what keep every failure from leaving a
+  curve playing without its headroom compensation.
+- **An import named like a built-in preset is stored under its own name.** A
+  custom preset is activated *by name* and the engine resolves a built-in first,
+  so an import stored as "Flat" would have activated the built-in flat curve
+  while reporting the imported one. It is now stored as "Flat (AutoEQ)" and the
+  review says why.
+- **Profile names are sanitised as untrusted input.** Path separators, quotes,
+  control characters and a leading dot are removed (not just quotes and
+  newlines), whitespace is collapsed, and the stored name is capped at 64
+  characters. `Presets.MAX_NAME_CHARS` now matches that cap, so a long name no
+  longer comes back truncated after an export/import round-trip.
+
+Covered by `AutoEqProfileTest` (29) and `AutoEqImportTest` (27), including the
+rollback, the collision, the hostile name and the bundle round-trip.
+
+### Loudness measurement (offline) — libebur128 v1.2.6, vendored
+
+`app/src/main/cpp/third_party/ebur128` holds libebur128 v1.2.6 (MIT, pinned
+commit `67b33ab`, licence and provenance beside the source), compiled into its
+**own** shared library `libloudness.so` via `app/src/main/cpp/loudness/loudness_jni.cpp`.
+Audio → Diagnostics gains a **Loudness (offline)** section: pick a 16-bit PCM
+`.wav` file and it reports integrated loudness (LUFS), loudness range (LU) and
+true peak (dBTP) together with the input format, the channel count and the
+measured span. It is offline by construction — nothing calls it from the audio
+thread, so playback latency is untouched — and the report says so, including that
+SonicCore does not measure live playback or system-wide audio because the system
+route supplies PCM only while a capture session is running. Non-PCM formats,
+non-mono/stereo audio, buffers shorter than one 400 ms gating block (or silence)
+and any span longer than three minutes are each handled in words rather than
+guessed at. Pinned by `tools/dspharness/loudness_harness.cpp` under ASan+UBSan and
+by `LoudnessTest` (12) + `WavPcmTest` (9) on the JVM. **Not device-verified.**
+
 ## Unreleased — responsive refinement (`app-responsive-redesign`)
 
 Full audit: `docs/responsive-audit.md` (RD-01 … RD-13). Layout only — DSP,

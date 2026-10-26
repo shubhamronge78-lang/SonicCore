@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 27+ only: light navigation-bar icons are a 27 API, and minSdk is 26.
+         Dark-theme app, so the icons stay light. See values/styles.xml. -->
+    <style name="Theme.NeonEQ" parent="Theme.NeonEQ.Base">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
