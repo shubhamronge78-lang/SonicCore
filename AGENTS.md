@@ -91,7 +91,7 @@ Everything lives in **one long-running service, `app`**:
    integrated loudness, an fs/4 sine's true peak, every refused input). A change
    to the measurement fails here instead of reaching a report.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` — the JVM
-   unit tests (374 tests across 40 classes: the platform expansion, the Shizuku IPC
+   unit tests (394 tests across 43 classes: the platform expansion, the Shizuku IPC
    work, the Home/layout contracts, the responsive decisions and scroll-ownership
    rule, the DSP chain model (`DspChainTest` — the eight stages, the limiter-last
    rule, refused moves) with its saved-chain store (`DspChainPresetsTest`, which
@@ -100,9 +100,25 @@ Everything lives in **one long-running service, `app`**:
    import flow (including the preamp-write rollback and the built-in name
    collision) and the offline loudness measurement's own decisions, the
    twelve-theme catalogue, the splash, the Audio Center grouping/rendering
-   contract and the Liquid Glass token contracts), the
-   debug APK, and lint — all built from the mounted source. All 374 tests pass with
-   0 skipped.
+   contract and the Liquid Glass token contracts, plus the two render tests below
+   and `ChainEditorInteractionTest`, which *presses* the chain editor — a stage
+   switch, the reorder buttons and the Audio Console's inline switch — and asserts
+   the chain that leaves the screen, so a switch that only looks right fails),
+   the debug APK, and lint — all built from the mounted source. All 394 tests pass
+   with 0 skipped.
+
+   **What the screens paint, and what the file you download is.** There is no
+   emulator here (`/dev/kvm` is absent), so the rendered result is captured
+   instead: `ScreenRenderSnapshotTest` renders single screens and
+   `ShippedScreenSnapshotTest` drives the real shell through its own navigation
+   state, and both write PNGs to `app/build/ui-screenshots/`. The compose step
+   copies them to `build-output/ui-png/` and serves them at `/screens.html`, so a
+   browser can show an Android screen. The same step writes
+   `build-output/apk-info.txt` (branch, commit when passed in, size, SHA-256,
+   package/versionCode/versionName), which the status page displays: a downloaded
+   APK that does not match it is not the APK that was built.
+   `conversations/…/android-eq/docs/apk-verification.md` is the procedure for
+   telling which build a phone is actually running.
    **`:app:lintDebug` is part of the pipeline on purpose.** It used to fail with 6
    errors and was therefore left out (the capture path's two `MissingPermission`
    calls, `SettingsToolScreens`' API-28 signing-info read, and the two Shizuku
@@ -164,7 +180,9 @@ docker compose -f docker-compose.base44.yml logs -f app     # harness + Gradle o
 ```bash
 curl -fsS http://localhost:3000/                     # status page
 curl -fsSI http://localhost:3000/NeonEQ-debug.apk    # APK present
-ls build-output/                                     # NeonEQ-debug.apk, build.log, dsp-test.log, loudness-test.log, tests/
+ls build-output/                                     # NeonEQ-debug.apk, apk-info.txt, build.log, dsp-test.log, loudness-test.log, tests/, screens.html, ui-png/
+cat build-output/apk-info.txt                        # branch, commit, size, SHA-256, package/versionCode/versionName
+curl -fsSI http://localhost:3000/screens.html        # the rendered screens
 tail -5 build-output/dsp-test.log                    # must end with "HARNESS PASS (0 failures)"
 tail -5 build-output/loudness-test.log               # must end with "LOUDNESS HARNESS PASS (0 failures)"
 tail -5 build-output/build.log                       # must end with "BUILD SUCCESSFUL"
@@ -315,7 +333,11 @@ Rules:
 ## The Audio Console, the eight DSP stages and the chain editor
 
 `ui/audio/AudioConsoleScreen.kt` is the Audio tool `audio.console` (first entry in
-the Sound Controls group). It is one continuous surface: the chain editor, then
+the Sound Controls group). Its `SignalChainEditor` is `internal` on purpose: the
+**DSP Studio** body in `MainActivity` renders the very same editor, so a reorder
+or a bypass means the same thing on both screens and the DSP Studio no longer has
+a second, chip-row rendering of the chain. The console is one continuous surface:
+the chain editor, then
 one inline card per effect — preamp, shelves, graphic EQ, parametric EQ, stereo,
 compressor, limiter — each with its own enable/bypass toggle, its controls, and an
 `OUTPUT` block immediately underneath. Two rules hold there and are the reason the
@@ -574,7 +596,11 @@ It is now the engine's own response, from one documented set of constants:
 - `app/build.gradle.kts` pins the debug signing keystore (`app/debug.keystore.p12`,
   password `android`) so every CI build is signed identically and installs
   update cleanly instead of Android refusing the update.
-- `versionCode` comes from `GITHUB_RUN_NUMBER` when set (1 locally/elsewhere).
+- `versionCode` is `1_000_000 + GITHUB_RUN_NUMBER` (so `1_000_000` for a build
+  that does not run on CI). The base is above every run-numbered build that was
+  already published, so a fresh local or CI build always replaces an installed
+  one; a `versionCode` that goes *down* is silently rejected by the installer and
+  leaves the phone on the old UI. `docs/apk-verification.md` is the procedure.
 - The three `*.jpg` files under `app/src/main/res/drawable-nodpi/` are real
   binaries in git: `.gitattributes` routes most binary types through LFS but
   `.base44`-unrelated rule `.../android-eq/app/src/main/res/** -filter` exempts

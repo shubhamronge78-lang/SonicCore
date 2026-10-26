@@ -28,10 +28,24 @@ android {
         applicationId = "com.soniccore.app"
         minSdk = 26
         targetSdk = 34
-        // Tie versionCode/versionName to the CI run so it's easy to confirm on-device
-        // (Settings > Apps > Neon EQ > version) that you're actually running the
-        // build you think you're running.
-        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
+        // versionCode must only ever go UP. Android refuses to install a lower
+        // versionCode over the same applicationId, and the failure is silent in
+        // practice: the phone keeps the build it already has, so the "new APK"
+        // that was just installed is not the APK on screen. That is exactly how a
+        // finished redesign looks like the old UI.
+        //
+        // The code used to be GITHUB_RUN_NUMBER, or 1 for a build that did not run
+        // on CI (the sandbox, a local build) — so a local APK was LOWER than every
+        // published CI APK and could never replace one. Every build now starts
+        // from a base that is permanently above the CI-numbered builds already
+        // published, and moves up with the CI run number, which keeps it monotonic
+        // on both paths.
+        //
+        // versionName stays the released version ("3.6.0"); the exact build is
+        // identified by versionCode plus the artifact's SHA-256 (see
+        // docs/apk-verification.md).
+        val versionBase = 1_000_000
+        versionCode = versionBase + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
         versionName = "3.6.0"
         // On-device tap tests (app/src/androidTest): the only place the launcher's
         // interactions can actually be pressed. Run with

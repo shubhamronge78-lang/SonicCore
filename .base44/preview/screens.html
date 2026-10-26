@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SonicCore — rendered screens</title>
+<style>
+  :root { color-scheme: dark; }
+  html { scroll-behavior: auto; }
+  body { margin: 0; background: #080d18; color: #f3f7ff;
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { max-width: 760px; margin: 0 auto; padding: 28px 16px 4px; }
+  h1 { font-size: 18px; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 6px; }
+  p.lead { color: #9eacc2; margin: 0; font-size: 13px; }
+  nav { max-width: 760px; margin: 12px auto 0; padding: 0 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+  nav a { color: #48ddf5; font-size: 12px; text-decoration: none; border: 1px solid #182438;
+          border-radius: 999px; padding: 4px 10px; }
+  figure { margin: 0; padding: 16px; scroll-margin-top: 0; text-align: center; }
+  figcaption { font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+               color: #48ddf5; margin: 0 0 8px; }
+  img { max-width: 100%; max-height: 86vh; width: auto; border-radius: 14px;
+        border: 1px solid #182438; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SonicCore — rendered screens</h1>
+  <p class="lead">Each image is painted by the shipped Compose screens themselves
+     (<code>ShippedScreenSnapshotTest</code>), from the same source as the APK on the main page.</p>
+</header>
+<nav>
+  <a href="#s1">1 Launcher</a><a href="#s2">2 Audio Console</a><a href="#s3">3 Equalizer</a>
+  <a href="#s4">4 DSP Studio</a><a href="#s5">5 Player</a><a href="#s6">6 Sessions</a>
+  <a href="#s7">7 Signal path</a>
+</nav>
+<figure id="s1"><figcaption>1 · Launcher / dashboard</figcaption><img src="ui-png/shipped-home.png" alt="SonicCore launcher"></figure>
+<figure id="s2"><figcaption>2 · Audio Console</figcaption><img src="ui-png/shipped-audio-dashboard.png" alt="Audio Console"></figure>
+<figure id="s3"><figcaption>3 · Equalizer</figcaption><img src="ui-png/shipped-audio-equalizer.png" alt="Equalizer"></figure>
+<figure id="s4"><figcaption>4 · DSP Studio</figcaption><img src="ui-png/shipped-audio-dsp.png" alt="DSP Studio"></figure>
+<figure id="s5"><figcaption>5 · Player</figcaption><img src="ui-png/shipped-audio-player.png" alt="Player"></figure>
+<figure id="s6"><figcaption>6 · Sessions</figcaption><img src="ui-png/shipped-audio-sessions.png" alt="Sessions"></figure>
+<figure id="s7"><figcaption>7 · Signal path</figcaption><img src="ui-png/shipped-audio-signal-path.png" alt="Signal path"></figure>
+</body>
+</html>

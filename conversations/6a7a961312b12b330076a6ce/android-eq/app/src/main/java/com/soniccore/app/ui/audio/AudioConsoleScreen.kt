@@ -175,7 +175,7 @@ private const val TELEMETRY_INTERVAL_MS = 700L
  * whose order the engine is really walking.
  */
 @Composable
-private fun SignalChainEditor(
+internal fun SignalChainEditor(
     chain: DspChain,
     limiterOn: Boolean,
     onChainChange: (DspChain) -> Boolean,

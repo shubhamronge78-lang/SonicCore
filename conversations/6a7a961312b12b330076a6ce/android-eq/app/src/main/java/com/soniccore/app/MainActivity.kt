@@ -172,6 +172,8 @@ import com.soniccore.app.ui.home.HomeQuickPresetSection
 import com.soniccore.app.ui.home.HomeResponsiveColumns
 import com.soniccore.app.ui.home.HomeSpectrumCard
 import com.soniccore.app.ui.home.HomeTopBar
+import com.soniccore.app.ui.audio.AudioLimitNote
+import com.soniccore.app.ui.audio.SignalChainEditor
 import com.soniccore.app.ui.category.CategoryHubHost
 import com.soniccore.app.ui.category.SonicCoreCategoryHub
 import com.soniccore.app.ui.category.SonicCoreToolHost
@@ -3080,232 +3082,29 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             Text(if (dspMoving) "● DSP processing frames are advancing — measured, live" else "○ No measured frame advance (idle, bypassed, or no capture)", fontSize = 9.sp, color = if (dspMoving) T.primary else T.secondary)
             Text("Master bypass routes captured PCM around the native DSP (capture path only). Engine state is always read from the authoritative DSP, never assumed.", fontSize = 8.sp, color = T.secondary)
             Spacer(Modifier.height(8.dp))
-            Text("PROCESSING CHAIN", fontSize = 11.sp, color = T.accent)
-            Spacer(Modifier.height(2.dp))
-            // ── The chain below is READ from the engine, never mirrored ──
-            // This card used to keep its own `stOn` map and implement "bypass" by
-            // writing zeros over the parameters — preamp 0 dB, all eight PEQ slots
-            // reset, the graphic curve flattened — from a snapshot taken when the
-            // card first composed. Two real consequences: toggling one stage also
-            // pushed that stale snapshot back over every other stage, and the
-            // limiter row disagreed with the Limiter switch the rest of the app
-            // writes. A bypass is now the native stage flag, applied through the
-            // same `DspChain` the Audio Console edits; parameters are left
-            // untouched, so re-enabling a stage restores what the user had.
-            val chainNow = toolHost.dspChain
-            val limiterOnNow = toolHost.audioControl.limiterOn
-            val stBase = remember(dspTick) { try { DspParams.load(engine) } catch (_: Throwable) { DspParams() } }
-            var stEdit by remember { mutableStateOf<String?>(null) }
-
-            fun stageKey(stage: ChainStage): String = when (stage) {
-                ChainStage.PREAMP -> "preamp"
-                ChainStage.PARAMETRIC_EQ -> "parametric"
-                ChainStage.GRAPHIC_EQ -> "graphic"
-                ChainStage.SHELVES -> "bass"
-                ChainStage.STEREO -> "stereo"
-                ChainStage.CONVOLVER -> "convolver"
-                ChainStage.COMPRESSOR -> "comp"
-                ChainStage.LIMITER -> "limiter"
+            // ── The redesigned chain editor ──
+            // This section used to be its own rendering of the eight stages: a
+            // row of ~24 dp "EDIT / BYPASS / ENABLE" chips (below the 48 dp touch
+            // target every other control in the app keeps) and a dialog per
+            // parameter, so a reorder was possible only from the Audio Console.
+            // It now renders the SAME chain editor the Audio Console renders, and
+            // both go through the one `DspChain.moved` decision, so dragging a
+            // stage here moves the order the engine really processes — and an
+            // order SonicCore refuses says so in words instead of being applied.
+            var chainStatus by remember { mutableStateOf<String?>(null) }
+            SignalChainEditor(
+                chain = toolHost.dspChain,
+                limiterOn = toolHost.audioControl.limiterOn,
+                onChainChange = { next ->
+                    pushUndo(true, "Chain")
+                    toolHost.onDspChainChange(next)
+                },
+                onStatus = { message -> chainStatus = message }
+            )
+            chainStatus?.let { message ->
+                AudioLimitNote(message)
             }
 
-            /** Is this stage running? Order and bypass are the chain's, the limiter's is `limiterOn`. */
-            fun stageOn(stage: ChainStage): Boolean = chainNow.enableOf(stage, limiterOnNow)
-
-            /** Bypasses or enables one stage. `on == false` means bypass. */
-            fun stPush(key: String, on: Boolean) {
-                val stage = chainNow.order.firstOrNull { stageKey(it) == key } ?: return
-                if (!stage.bypassable) return
-                pushUndo(true, "Stage: " + key)
-                toolHost.onDspChainChange(chainNow.withBypass(stage, !on))
-            }
-
-            /** What a stage row says — every value read from the engine. */
-            fun stageLabel(stage: ChainStage): String = when (stage) {
-                ChainStage.PREAMP -> "PREAMP · " + "%+.1f dB".format(stBase.preamp)
-                ChainStage.PARAMETRIC_EQ -> "PARAMETRIC EQ · " + stBase.slots.count { it.on } + " slots"
-                ChainStage.GRAPHIC_EQ -> "GRAPHIC EQ · " + (if (bandLevels.any { it != 0f }) "custom curve" else "flat")
-                ChainStage.SHELVES -> "BASS & TREBLE · " + "%+.1f / %+.1f dB".format(stBase.bass, stBase.treble)
-                ChainStage.STEREO -> "STEREO · " + "%.0f%%".format(stBase.width * 100)
-                ChainStage.CONVOLVER -> "CONVOLVER · impulse engine (API-ready, not yet active)"
-                ChainStage.COMPRESSOR -> "COMPRESSOR · " + "%+.1f dB".format(stBase.compThresh)
-                ChainStage.LIMITER -> "LIMITER · ceiling " + "%+.1f dB".format(stBase.limThresh)
-            }
-
-            // The rows follow `chain.order` — the order the engine really walks,
-            // so a reorder made on the Audio Console shows up here.
-            val stages = chainNow.order
-
-            @Composable
-            fun StageCard(si: Int, stage: ChainStage) {
-                val key = stageKey(stage)
-                val on = stageOn(stage)
-                if (si > 0) Text("↓", fontSize = 10.sp, color = T.secondary, modifier = Modifier.padding(start = 10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text((if (dspMoving && on) "✓ " else "") + stageLabel(stage), fontSize = 10.sp,
-                        color = if (on) T.primary else T.secondary)
-                    Spacer(Modifier.weight(1f))
-                    if (key == "convolver") {
-                        // API-ready placeholder — honest label, no fake controls
-                        Text("API READY", fontSize = 9.sp, color = T.secondary,
-                            modifier = Modifier.clip(RoundedCornerShape(50)).background(T.secondary.copy(alpha = 0.10f))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                                .semantics { contentDescription = "Convolver: API-ready, not yet active" })
-                    } else {
-                        Text("EDIT", fontSize = 9.sp, color = T.primary,
-                            modifier = Modifier.clip(RoundedCornerShape(50)).background(T.primary.copy(alpha = 0.12f))
-                                .clickable { if (on) stEdit = key }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                                .semantics { contentDescription = "Edit stage " + key })
-                        if (!stage.bypassable) {
-                            // The limiter cannot be bypassed, only switched off, and
-                            // its one switch is the app-level `limiterOn` — the
-                            // same value the Limiter card and Settings write.
-                            GlassSwitch(
-                                checked = on,
-                                onCheckedChange = { next ->
-                                    pushUndo(true, "Limiter")
-                                    toolHost.onAudioControlChange(
-                                        toolHost.audioControl.copy(limiterOn = next)
-                                    )
-                                },
-                                modifier = Modifier
-                                    .padding(start = 6.dp)
-                                    .semantics {
-                                        contentDescription = "Enable the limiter"
-                                        stateDescription = if (on) "On" else "Off"
-                                    }
-                            )
-                        } else {
-                            Text(if (on) "BYPASS" else "ENABLE", fontSize = 9.sp,
-                                color = if (on) T.accent else T.primary,
-                                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(50)).background((if (on) T.accent else T.primary).copy(alpha = 0.12f))
-                                    .clickable { stPush(key, on != true) }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    .semantics { contentDescription = (if (on) "Bypass " else "Enable ") + key })
-                        }
-                    }
-                }
-
-            }
-            // Build #127: responsive rack — 2-column console in landscape,
-            // vertical rack with connectors in portrait.
-            val rackLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            if (rackLandscape && stages.size > 1) {
-                Row(Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f)) {
-                        stages.take((stages.size + 1) / 2).forEachIndexed { i, s -> StageCard(i, s) }
-                    }
-                    Column(Modifier.weight(1f)) {
-                        stages.drop((stages.size + 1) / 2).forEachIndexed { i, s -> StageCard(i, s) }
-                    }
-                }
-            } else {
-                stages.forEachIndexed { si, s -> StageCard(si, s) }
-            }
-            // Build #124: stage editor — only controls the native engine actually has
-            if (stEdit != null) {
-                val stKey = stEdit!!
-                val stStage = stages.firstOrNull { stageKey(it) == stKey }
-                val stName = stStage?.let { stageLabel(it) } ?: stKey
-                val stPosition = stStage?.let { stages.indexOf(it) } ?: -1
-                val curParams = try { DspParams.load(engine) } catch (_: Throwable) { DspParams() }
-                var stVal by remember(stKey) {
-                    mutableStateOf(when (stKey) {
-                        "preamp" -> curParams.preamp
-                        "bass" -> curParams.bass
-                        "treble" -> curParams.treble
-                        "stereo" -> curParams.width
-                        "comp" -> curParams.compThresh
-                        "limiter" -> curParams.limThresh
-                        else -> 0f
-                    })
-                }
-                fun stApply(mutate: (DspParams) -> Unit) {
-                    try {
-                        val p = DspParams.load(engine)
-                        mutate(p)
-                        p.applyTo(NeonDsp)
-                        p.save(engine)
-                    } catch (_: Throwable) { }
-                }
-                AlertDialog(
-                    containerColor = S.card.copy(alpha = glassSurfaceAlpha()),
-                    shape = RoundedCornerShape(24.dp),
-                    onDismissRequest = { stEdit = null },
-                    title = { Text(stName, color = T.primary, fontWeight = FontWeight.Bold) },
-                    text = {
-                        Column {
-                            when (stKey) {
-                                "preamp" -> { Text("Preamp gain", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = -12f..12f, onValueChangeFinished = { pushUndo(true, "Preamp"); stApply { it.preamp = stVal } }); Text("%+.1f dB".format(stVal), fontSize = 12.sp, color = T.primary) }
-                                "bass" -> { Text("Bass shelf gain", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = -15f..20f, onValueChangeFinished = { pushUndo(true, "Bass"); stApply { it.bass = stVal } }); Text("%+.1f dB".format(stVal), fontSize = 12.sp, color = T.primary) }
-                                "treble" -> { Text("Treble shelf gain", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = -15f..20f, onValueChangeFinished = { pushUndo(true, "Treble"); stApply { it.treble = stVal } }); Text("%+.1f dB".format(stVal), fontSize = 12.sp, color = T.primary) }
-                                "stereo" -> { Text("Stereo width", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = 0.5f..2f, onValueChangeFinished = { pushUndo(true, "Stereo"); stApply { it.width = stVal } }); Text("%.0f%%".format(stVal * 100), fontSize = 12.sp, color = T.primary) }
-                                "comp" -> { Text("Compressor threshold (the only control the native engine exposes)", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = -48f..0f, onValueChangeFinished = { pushUndo(true, "Compressor"); stApply { it.compThresh = stVal; it.compOn = true } }); Text("%.0f dB".format(stVal), fontSize = 12.sp, color = T.primary) }
-                                "limiter" -> { Text("Limiter threshold (the only control the native engine exposes)", fontSize = 10.sp, color = T.secondary); Slider(value = stVal, onValueChange = { stVal = it }, valueRange = -18f..0f, onValueChangeFinished = { pushUndo(true, "Limiter"); stApply { it.limThresh = stVal; it.limiterOn = true } }); Text("%.1f dB".format(stVal), fontSize = 12.sp, color = T.primary) }
-                                "parametric" -> Text("Parametric slots are edited in the DSP CHAIN card below — no duplicated controls here.", fontSize = 10.sp, color = T.secondary)
-                                "graphic" -> Text("Graphic bands are dragged on the EQ tab — no duplicated controls here.", fontSize = 10.sp, color = T.secondary)
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        Row {
-                            TextButton(onClick = {
-                                pushUndo(true, "Reset stage " + stKey)
-                                stApply {
-                                    when (stKey) {
-                                        "preamp" -> it.preamp = 0f
-                                        "bass" -> it.bass = 0f
-                                        "treble" -> it.treble = 0f
-                                        "stereo" -> it.width = 1f
-                                        "comp" -> { it.compOn = false }
-                                        "limiter" -> { it.limThresh = -1f; it.limiterOn = true }
-                                    }
-                                }
-                                stEdit = null
-                            }) { Text("RESET STAGE", color = T.accent) }
-                            // Reordering lives in the dialog: the rack rows are too
-                            // narrow on a phone to carry two more 48 dp targets. It
-                            // goes through the same DspChain rule the Audio Console
-                            // uses, so an order the engine would refuse is refused
-                            // in the same words and nothing is applied.
-                            TextButton(
-                                enabled = stPosition > 0 && stStage != null,
-                                onClick = {
-                                    val move = chainNow.moved(stPosition, stPosition - 1)
-                                    if (move is ChainMove.Applied) {
-                                        pushUndo(true, "Reorder chain")
-                                        toolHost.onDspChainChange(chainNow.copy(order = move.order))
-                                        stEdit = null
-                                    }
-                                }
-                            ) { Text("MOVE ↑", color = T.secondary) }
-                            TextButton(
-                                enabled = stStage != null && stPosition in 0 until stages.lastIndex,
-                                onClick = {
-                                    val move = chainNow.moved(stPosition, stPosition + 1)
-                                    if (move is ChainMove.Applied) {
-                                        pushUndo(true, "Reorder chain")
-                                        toolHost.onDspChainChange(chainNow.copy(order = move.order))
-                                        stEdit = null
-                                    }
-                                }
-                            ) { Text("MOVE ↓", color = T.secondary) }
-                            if (stStage?.bypassable == true) {
-                                TextButton(onClick = { stPush(stKey, false); stEdit = null }) { Text("BYPASS", color = T.accent) }
-                            } else if (stStage != null) {
-                                TextButton(onClick = {
-                                    pushUndo(true, "Limiter")
-                                    toolHost.onAudioControlChange(
-                                        toolHost.audioControl.copy(limiterOn = !limiterOnNow)
-                                    )
-                                    stEdit = null
-                                }) { Text(if (limiterOnNow) "LIMIT OFF" else "LIMIT ON", color = T.accent) }
-                            }
-                            TextButton(onClick = { stEdit = null }) { Text("DONE", color = T.secondary) }
-                        }
-                    }
-                )
-            }
             Text(
                 "A bypass here is the engine's own stage flag — the same one the Audio Console and the chain editor show — so the settings are kept and the order is untouched. The limiter's place is fixed last; only its enable moves, through the one limiter switch the app has.",
                 fontSize = 8.sp, color = T.secondary
@@ -6439,13 +6238,23 @@ fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composab
     }
 }
 
+/**
+ * The card the long-standing full-screen bodies were built with.
+ *
+ * It now renders the Liquid Glass card from `ui/design` rather than the older
+ * `LiquidGlassPanel`, because these bodies are on screen — the Equalizer, Player,
+ * DSP Studio, Sessions, Signal Path and Live Overview are all dispatched from
+ * `EqualizerScreen` — so leaving them on a second card treatment meant the
+ * redesign was visible on some screens and not others. One card, one look: the
+ * legacy wrapper is kept as the call site the bodies already use.
+ */
 @Composable
 fun NeonCard(
     modifier: Modifier = Modifier,
     riseDelayMs: Int = 0,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    LiquidGlassPanel(
+    GlassCard(
         modifier = modifier.fillMaxWidth().riseIn(riseDelayMs),
         content = content
     )
