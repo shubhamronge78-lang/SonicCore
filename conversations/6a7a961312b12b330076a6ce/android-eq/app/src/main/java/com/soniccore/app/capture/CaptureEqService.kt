@@ -3,9 +3,11 @@ package com.soniccore.app.capture
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.Manifest
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
@@ -21,6 +23,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.soniccore.app.MainActivity
 import com.soniccore.app.R
 import com.soniccore.app.dsp.DspParams
@@ -271,6 +274,17 @@ class CaptureEqService : Service() {
             val minIn = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
             if (minIn <= 0) {
                 lastError = AudioErrors.UNSUPPORTED_SAMPLE_RATE + ": AudioRecord buffer query returned $minIn for ${sr}Hz"
+                return
+            }
+            // Playback capture drives an AudioRecord, which the platform guards
+            // with RECORD_AUDIO. Checking it here (instead of letting the builder
+            // throw) keeps the failure a reported error code, and the check is what
+            // lint's MissingPermission requirement asks for: an explicit permission
+            // check before the guarded call.
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                lastError = AudioErrors.CAPTURE_PERMISSION_DENIED + ": RECORD_AUDIO permission is not granted"
                 return
             }
             recorder = AudioRecord.Builder()

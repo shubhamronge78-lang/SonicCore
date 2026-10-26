@@ -28,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -42,8 +41,11 @@ import com.soniccore.app.shizuku.ShizukuBridge
 import com.soniccore.app.shizuku.ShizukuState
 import com.soniccore.app.system.DeviceCapabilityProbe
 import com.soniccore.app.ui.customization.ThemeSwatchStrip
+import com.soniccore.app.ui.design.AdaptiveGrid
 import com.soniccore.app.ui.design.AppearanceState
 import com.soniccore.app.ui.design.GlassCard
+import com.soniccore.app.ui.design.GlassSpacing
+import com.soniccore.app.ui.design.LocalResponsiveMetrics
 import com.soniccore.app.ui.design.GlassSlider
 import com.soniccore.app.ui.design.LiquidGlassSurface
 import com.soniccore.app.ui.design.SonicCoreColors
@@ -159,9 +161,11 @@ private fun AudioCategoryHub(
 ) {
     val capabilityFor = ToolCapabilityResolver(SonicCoreCategory.AUDIO)
     val summary = host.audioSummary
-    // Phones get one group at a time behind compact chips; a tablet has the room
-    // for every group as a labelled list, so nothing needs a second tap.
-    val wideLayout = LocalConfiguration.current.screenWidthDp >= 840
+    // Phones get one group at a time behind compact chips; a window with room
+    // for two panes shows every group as a labelled list, so nothing needs a
+    // second tap. The breakpoint now comes from the shared responsive metrics
+    // instead of a literal compared here.
+    val wideLayout = LocalResponsiveMetrics.current.twoPane
     var selectedGroup by remember { mutableStateOf(SonicCoreAudioGroup.OVERVIEW) }
     val grouped = remember { SonicCoreToolRegistry.audioToolsByGroup() }
 
@@ -338,50 +342,53 @@ private fun DeviceCategoryHub(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.2.sp
             )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SonicCoreStatTile(
-                    label = "Cores",
-                    value = cpu.cores.toString(),
-                    tone = SonicCoreCategory.DEVICE.tone,
-                    footer = cpu.abis.firstOrNull() ?: "ABI unknown",
-                    modifier = Modifier.weight(1f)
-                )
-                SonicCoreStatTile(
-                    label = "Storage free",
-                    value = DeviceCapabilityProbe.formatStorage(storage.dataFreeBytes),
-                    tone = SonicCoreCategory.DEVICE.tone,
-                    footer = "${DeviceCapabilityProbe.storageUsagePercent(storage.dataTotalBytes, storage.dataFreeBytes)}% used",
-                    modifier = Modifier.weight(1f)
-                )
-                SonicCoreStatTile(
-                    label = "Battery",
-                    value = if (battery.levelPercent >= 0) "${battery.levelPercent}%" else "Not readable",
-                    tone = SonicCoreCategory.DEVICE.tone,
-                    footer = if (battery.isCharging) "Charging · ${battery.powerSource}" else "${battery.powerSource} · ${battery.health}",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SonicCoreStatTile(
-                    label = "Available RAM",
-                    value = DeviceCapabilityProbe.formatStorage(memory.availRamMb * 1024L * 1024L),
-                    tone = SonicCoreCategory.DEVICE.tone,
-                    footer = "of ${DeviceCapabilityProbe.formatStorage(memory.totalRamMb * 1024L * 1024L)}",
-                    modifier = Modifier.weight(1f)
-                )
-                SonicCoreStatTile(
-                    label = "Display",
-                    value = "${display.widthPx}×${display.heightPx}",
-                    tone = SonicCoreCategory.DEVICE.tone,
-                    footer = display.refreshHz?.let { "%.0f Hz".format(it) } ?: "${display.densityDpi} dpi",
-                    modifier = Modifier.weight(1f)
-                )
+            // Five tiles used to be forced into a 3 + 2 row pair: on a compact
+            // phone each cell was ~110 dp and "Not readable" / the battery
+            // footer were clipped. The adaptive grid drops to two columns before
+            // that happens and fills the last row.
+            AdaptiveGrid(
+                itemCount = 5,
+                modifier = Modifier.padding(top = 10.dp),
+                minItemWidth = GlassSpacing.minTileWidthWide,
+                maxColumns = 3
+            ) { index, tileModifier ->
+                when (index) {
+                    0 -> SonicCoreStatTile(
+                        label = "Cores",
+                        value = cpu.cores.toString(),
+                        tone = SonicCoreCategory.DEVICE.tone,
+                        footer = cpu.abis.firstOrNull() ?: "ABI unknown",
+                        modifier = tileModifier
+                    )
+                    1 -> SonicCoreStatTile(
+                        label = "Storage free",
+                        value = DeviceCapabilityProbe.formatStorage(storage.dataFreeBytes),
+                        tone = SonicCoreCategory.DEVICE.tone,
+                        footer = "${DeviceCapabilityProbe.storageUsagePercent(storage.dataTotalBytes, storage.dataFreeBytes)}% used",
+                        modifier = tileModifier
+                    )
+                    2 -> SonicCoreStatTile(
+                        label = "Battery",
+                        value = if (battery.levelPercent >= 0) "${battery.levelPercent}%" else "Not readable",
+                        tone = SonicCoreCategory.DEVICE.tone,
+                        footer = if (battery.isCharging) "Charging · ${battery.powerSource}" else "${battery.powerSource} · ${battery.health}",
+                        modifier = tileModifier
+                    )
+                    3 -> SonicCoreStatTile(
+                        label = "Available RAM",
+                        value = DeviceCapabilityProbe.formatStorage(memory.availRamMb * 1024L * 1024L),
+                        tone = SonicCoreCategory.DEVICE.tone,
+                        footer = "of ${DeviceCapabilityProbe.formatStorage(memory.totalRamMb * 1024L * 1024L)}",
+                        modifier = tileModifier
+                    )
+                    else -> SonicCoreStatTile(
+                        label = "Display",
+                        value = "${display.widthPx}×${display.heightPx}",
+                        tone = SonicCoreCategory.DEVICE.tone,
+                        footer = display.refreshHz?.let { "%.0f Hz".format(it) } ?: "${display.densityDpi} dpi",
+                        modifier = tileModifier
+                    )
+                }
             }
             Text(
                 "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
@@ -547,7 +554,9 @@ private fun CustomizationCategoryHub(
                     value = host.glassLevel.toFloat(),
                     onValueChange = { host.onGlassLevelChange(it.toInt().coerceIn(0, 2)) },
                     valueRange = 0f..2f,
-                    modifier = Modifier.weight(1f).height(30.dp)
+                    // No fixed height: `GlassSlider` already enforces the
+                    // 48 dp touch target, and `height(30.dp)` overrode it.
+                    modifier = Modifier.weight(1f)
                 )
                 Text(
                     listOf("Subtle", "Liquid", "Crystal").getOrElse(host.glassLevel.coerceIn(0, 2)) { "Liquid" },
@@ -617,28 +626,32 @@ private fun PrivacyCategoryHub(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.2.sp
             )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SonicCoreStatTile(
-                    label = "Granted",
-                    value = granted.toString(),
-                    tone = SonicCoreToneFor(granted > 0),
-                    modifier = Modifier.weight(1f)
-                )
-                SonicCoreStatTile(
-                    label = "Needs access",
-                    value = denied.toString(),
-                    tone = if (denied > 0) com.soniccore.app.ui.design.SonicCoreTone.BLUE else SonicCoreToneFor(true),
-                    modifier = Modifier.weight(1f)
-                )
-                SonicCoreStatTile(
-                    label = "Declared",
-                    value = entries.size.toString(),
-                    tone = tone.tone,
-                    modifier = Modifier.weight(1f)
-                )
+            AdaptiveGrid(
+                itemCount = 3,
+                modifier = Modifier.padding(top = 10.dp),
+                minItemWidth = GlassSpacing.minTileWidthNumeric,
+                maxColumns = 3
+            ) { index, tileModifier ->
+                when (index) {
+                    0 -> SonicCoreStatTile(
+                        label = "Granted",
+                        value = granted.toString(),
+                        tone = SonicCoreToneFor(granted > 0),
+                        modifier = tileModifier
+                    )
+                    1 -> SonicCoreStatTile(
+                        label = "Needs access",
+                        value = denied.toString(),
+                        tone = if (denied > 0) com.soniccore.app.ui.design.SonicCoreTone.BLUE else SonicCoreToneFor(true),
+                        modifier = tileModifier
+                    )
+                    else -> SonicCoreStatTile(
+                        label = "Declared",
+                        value = entries.size.toString(),
+                        tone = tone.tone,
+                        modifier = tileModifier
+                    )
+                }
             }
             entries.take(4).forEach { entry ->
                 SonicCoreDataRow(

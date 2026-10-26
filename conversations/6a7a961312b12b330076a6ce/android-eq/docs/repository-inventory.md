@@ -87,12 +87,22 @@ would need.
 Licence-compatible, verified, and waiting for an implementation batch. Nothing in
 this table is implemented today.
 
+(`jaakkopasanen/AutoEq` has left this table: its profile formats are now read by
+`engine/AutoEqProfile.kt`, and the import flow that stores or applies them by
+`engine/AutoEqImport.kt`. See the Integrated section above and
+[repository-integration.md](repository-integration.md) §1.1.)
+
+The three audio candidates below were re-read from their upstream source on
+**2026-10-26** (`/repos/{owner}/{repo}`, `/releases/latest`, the licence file
+itself and `/security-advisories`), because the first three rows are the ones the
+next implementation batch would touch. Verified then, and still true: all three
+are permissive, none is archived, and **none publishes a security advisory**.
+
 | Project | Licence | Latest release | What it would add |
 | --- | --- | --- | --- |
-| `jaakkopasanen/AutoEq` | MIT | data repository (no tagged release) | Headphone measurement database and target curves; the derived filters are ordinary parametric bands, so no engine change is needed. |
-| `xiph/speexdsp` | BSD-3-Clause | SpeexDSP-1.2.1 (2022-06-17) | Resampling, echo cancellation and preprocessor DSP. |
-| `jiixyj/libebur128` | MIT | v1.2.6 (2021-02-14) | EBU R128 / BS.1770 loudness measurement — the basis of a loudness-matching feature. |
-| `google/oboe` | Apache-2.0 | 1.11.0 (2026-09-15) | AAudio/OpenSL ES wrapper for a lower-latency output path (AAudio needs API 26+). |
+| `xiph/speexdsp` | BSD-3-Clause (read from the repository `COPYING`; GitHub's detector reports `Other` because the file is not canonical SPDX) | SpeexDSP-1.2.1 (2022-06-17) | Resampling, echo cancellation and preprocessor DSP. Build: autotools/CMake, plain C, no Android port needed. **No consumer today:** nothing in the engine resamples (the capture path runs at the device rate), and AEC needs a duplex/voice path a playback-capture EQ does not have. Audited, not started. |
+| `jiixyj/libebur128` | MIT (read from the repository `COPYING`) | v1.2.6 (2021-02-14), last push 2023-06-25 — **slow-moving** | EBU R128 / BS.1770 loudness measurement — the basis of a loudness-matching feature. Build: vendoring means `ebur128.c` (53 KB) + `ebur128.h` (15 KB) + one `queue.h` implementation (the repo ships them under `ebur128/queue/`) compiled into `libneondsp.so` under its own MIT notice. Use ≥ 1.2.6: v1.2.3 fixed an uninitialised-memory read in true-peak scanning and v1.2.5 added channel/rate limits against integer overflow. Blocked on hardware, not on licence — the meter's numbers can only be confirmed against real audio on a device. |
+| `google/oboe` | Apache-2.0 | 1.11.0 (2026-09-15), last push 2026-10-21 — **active** | AAudio/OpenSL ES wrapper for a lower-latency output path (AAudio needs API 26+, OpenSL ES covers API 16+). **Not started:** SonicCore drives its own JNI engine over `AudioTrack`/`AudioRecord` and that path works and is tested; swapping the transport is an audio-path rewrite whose only claimed benefit — latency — cannot be measured in this environment, so it would replace working code on a guess. |
 | `androidx/media` | Apache-2.0 | 1.11.1 (2026-09-11) | ExoPlayer and media-session libraries if the built-in player needs wider codec coverage. |
 | `chrisbanes/haze` | Apache-2.0 | 2.0.1 (2026-09-29) | Real background blur for Compose with a documented downlevel fallback — the first candidate if the glass vocabulary ever gains a blur layer. |
 | `material-foundation/material-color-utilities` | Apache-2.0 | no tagged release | Material You colour science: a full tonal palette from one seed colour. |
@@ -186,7 +196,7 @@ and test.
 
 | Batch | Contents | Needs |
 | --- | --- | --- |
-| A — no new dependency | AutoEq target curves → EQ preset library; `libebur128` loudness metering; `speexdsp` resampling/AEC; `material-color-utilities` seed-based palettes | Native/Native-bridge work plus unit tests; no new Gradle dependency. |
+| A — no new dependency | **AutoEQ profile import — done** (see [repository-integration.md](repository-integration.md) §1.1); `libebur128` loudness metering; `speexdsp` resampling/AEC (no consumer today); `material-color-utilities` seed-based palettes | Native/Native-bridge work plus unit tests; no new Gradle dependency. `libebur128` additionally needs a device to confirm the meter's numbers, and `speexdsp`/`material-color-utilities` need a consumer that does not exist yet. |
 | B — dependency decision | `haze` blur where the OS supports it; `coil` artwork; `vico` charts; `material-design-icons` | An explicit decision per dependency, then `tools/license_check.py` re-run. |
 | C — blocked by design | `AppOpsX` write path via a Shizuku user service; every root-only project | Out of scope while SonicCore ships no root code path; documented in [shizuku-operations.md](shizuku-operations.md). |
 | D — verification | Device testing of every Audio/Device/Shizuku/Customization feature; release-tag refresh for the remaining entries | A physical device; see [feature-matrix.md](feature-matrix.md). |

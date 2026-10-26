@@ -71,6 +71,11 @@ object AudioCapabilityManager {
             val ok = r.state == AudioRecord.STATE_INITIALIZED
             r.release()
             if (ok) CapState.SUPPORTED else CapState.UNSUPPORTED
+        } catch (se: SecurityException) {
+            // Constructing an AudioRecord without RECORD_AUDIO throws instead of
+            // merely failing to initialise, so the exception is handled explicitly:
+            // the probe reports a capability limit, never a crash.
+            CapState.UNSUPPORTED
         } catch (t: Throwable) { CapState.UNSUPPORTED }
     }
 

@@ -1,5 +1,77 @@
 # Changelog
 
+## Unreleased — responsive refinement (`app-responsive-redesign`)
+
+Full audit: `docs/responsive-audit.md` (RD-01 … RD-13). Layout only — DSP,
+JNI, capture, presets, permission logic and the repository data are untouched.
+
+### AutoEQ import completed (review, then save or apply)
+
+`engine/AutoEqImport.kt` is new: the parsing half (`AutoEqProfile.kt`) is
+unchanged in what it accepts, but the import is now two deliberate steps. The
+**review** parses and reports only — format, filter or measurement-point count,
+preamp, band curve, stored name and every clamp it applied — and changes nothing,
+so cancelling cannot disturb the active sound. **"Save profile"** stores the curve
+with the engine's existing `saveCustomPreset` and leaves the sound alone;
+**"Apply now"** also makes it the active curve through the existing preset-apply
+path and writes the profile's `Preamp:` line exactly once through the native
+preamp parameter. The profile's `.txt` can be pasted or opened through the system
+file picker (read capped at the parser's 128 KB). Every refusal now names its
+reason (unsupported filter type and index, unreadable value, unusable frequency,
+all-disabled profile, non-profile text, oversize, too few points, too many
+filters/points), out-of-range gains and Q are reported rather than silently
+normalised, and a failed store or activation reports itself instead of half-
+applying. Covered by `AutoEqProfileTest` (28) and `AutoEqImportTest` (19) — 47 of
+the suite's 311 tests; the audible result still needs a device.
+
+### One scroll key, in the navigation model
+
+The shell's scroll container is now keyed on `SonicCoreNavState.scrollKey`
+instead of an inline `(category, tool)` pair, so `ScrollOwnershipTest` pins that
+each destination opens at the top rather than the rule living only in an
+expression the compiler reads.
+
+### One scroll owner, and a crash removed
+
+Eight tool bodies (Device Diagnostics, Capabilities, Device Tools, App Manager,
+Shizuku Center, Customization Center, Settings hub, Permissions & Privacy) each
+rendered a root `Column(Modifier.verticalScroll(...))` **inside** the shell's
+own `verticalScroll`. Compose rejects a vertical scrollable measured with an
+unbounded height, and an outer vertical scroll hands its child exactly that.
+The shell now owns scrolling for the whole body, and the body's `ScrollState` is
+keyed on `(category, tool)` so navigating from a long screen to a short one no
+longer opens the short one part-way down.
+
+### Responsive layout
+
+`ui/design/ResponsiveLayout.kt` resolves the window once — Material's compact /
+medium / expanded classes from `LocalConfiguration.screenWidthDp` — and exposes
+gutter, section gap, content cap, two-pane, category columns and adaptive grid
+columns. The shared shell uses it, so every screen inherits: gutters of 16 / 24 /
+32 dp and a content column capped at 680 / 960 dp instead of a phone layout
+stretched across a tablet. Home's category grid gains a third column at expanded
+widths (a user's ONE/TWO preference still wins), and the Device Center, Privacy
+hub and Repository Manager stat rows become `AdaptiveGrid`s that drop a column
+before their cells have to truncate.
+
+### Repository Manager
+
+Added sorting (name / status / category) through a pure
+`RepositoryInventory.orderedBy`, collapsed the seven-row status legend that
+duplicated the badges on every card, gave the empty state an explanation and a
+**Clear filters** action, and raised the filter chips from ~28 dp to 36 dp.
+
+### Controls
+
+The glass-intensity slider was pinned to 30–32 dp, which overrode the shared
+slider's 48 dp touch target; the fixed heights are gone.
+
+Verification: 259 unit tests in 33 classes (0 failures — 18 new), DSP harness
+`HARNESS PASS`, `assembleDebug` successful, `lintDebug` at its 6 pre-existing
+errors with nothing new in a touched file, licence audit and documentation-link
+check passing. No screenshots: there is no device or emulator here, and an
+Android app cannot render in the browser preview.
+
 ## Unreleased — platform completion (six categories, twelve themes, splash)
 
 Not a tagged release: `versionName` is still **3.6.0** and `versionCode` still

@@ -187,12 +187,30 @@ enum class SonicCoreAudioGroup(
 }
 
 /**
+ * Who owns a destination's vertical scrolling.
+ *
+ * The shell owns one scroll container for the whole app (`mainContent` in
+ * `MainActivity.kt`), so a screen never has to know whether it is tall, and no
+ * screen may nest a second same-axis scroll inside it: Compose rejects a
+ * scrollable measured with the parent's infinite maximum height.
+ *
+ * A screen whose body *is* a lazy list is the one case that cannot use the
+ * shell's container — a lazy list needs a bounded height to scroll in. Such a
+ * screen declares [SCREEN], and the shell gives it the remaining height instead
+ * of wrapping it in a scroll container. Exactly one owner either way.
+ */
+enum class ScrollOwner { SHELL, SCREEN }
+
+/**
  * One tool inside a category. [destination] non-null reuses an existing
  * full-screen implementation; null means the tool has its own screen rendered
  * by the category tool router.
  *
  * [audioGroup] is set for Audio tools only — it is what places the tool in the
  * Audio Center's sub-navigation.
+ *
+ * [scrollOwner] is [ScrollOwner.SCREEN] only for a tool whose own screen is a
+ * lazy list; everything else leaves the shell in charge.
  */
 data class SonicCoreTool(
     val id: String,
@@ -202,7 +220,8 @@ data class SonicCoreTool(
     val category: SonicCoreCategory,
     val destination: SonicCoreDestination? = null,
     val keywords: String = "",
-    val audioGroup: SonicCoreAudioGroup? = null
+    val audioGroup: SonicCoreAudioGroup? = null,
+    val scrollOwner: ScrollOwner = ScrollOwner.SHELL
 ) {
     /** Text used by Home search — title, summary and the tool's category. */
     val searchText: String get() = "$title $summary $keywords ${category.title}"
@@ -218,8 +237,9 @@ object SonicCoreToolRegistry {
         icon: String,
         destination: SonicCoreDestination? = null,
         keywords: String = "",
-        audioGroup: SonicCoreAudioGroup? = null
-    ) = SonicCoreTool(id, title, summary, icon, category, destination, keywords, audioGroup)
+        audioGroup: SonicCoreAudioGroup? = null,
+        scrollOwner: ScrollOwner = ScrollOwner.SHELL
+    ) = SonicCoreTool(id, title, summary, icon, category, destination, keywords, audioGroup, scrollOwner)
 
     /** Every internal tool, in the order it appears in its category. */
     val all: List<SonicCoreTool> = listOf(
@@ -373,9 +393,13 @@ object SonicCoreToolRegistry {
         tool("custom.preview", SonicCoreCategory.CUSTOMIZE, "Preview & Reset",
             "Live preview of the current appearance, with a full reset",
             "◉", null, "preview reset restore default"),
+        // The catalogue is a lazy list, so this one tool owns its vertical scroll
+        // (see ScrollOwner): the shell hands it the remaining height instead of a
+        // scroll container, which is what keeps a large inventory scalable.
         tool("custom.repositories", SonicCoreCategory.CUSTOMIZE, "Repository Manager",
             "Every audited open-source project with its licence, privilege and integration status",
-            "⧉", null, "repository catalog inventory licence fork upstream attribution open source"),
+            "⧉", null, "repository catalog inventory licence fork upstream attribution open source",
+            null, ScrollOwner.SCREEN),
 
         // ── PERMISSIONS & PRIVACY ──
         tool("privacy.runtime", SonicCoreCategory.PRIVACY, "Runtime Permissions",

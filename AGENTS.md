@@ -76,16 +76,22 @@ Everything lives in **one long-running service, `app`**:
 1. Native DSP host self-test — compiles the **real** production DSP
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
-2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (241 tests across 32 classes: the platform expansion, the Shizuku IPC work, the
-   Home/layout contracts, the twelve-theme catalogue, the splash, the Audio Center
-   grouping/rendering contract, the Audio control-parameter validation and the
-   Liquid Glass token contracts) plus the
-   debug APK, built from the mounted source. All 241 pass with 0 skipped.
-   `:app:lintDebug` is **not** run here: it reports 6 pre-existing errors (the
-   capture path, `SettingsToolScreens`' API-28 signing-info read, and the two
-   Shizuku restricted-API calls), none of them in a file this work touches, so
-   adding it to the pipeline would make a green build impossible.
+2. `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` — the JVM
+   unit tests (311 tests across 36 classes: the platform expansion, the Shizuku IPC
+   work, the Home/layout contracts, the responsive decisions and scroll-ownership
+   rule, the AutoEQ profile parsing *and* import flow, the twelve-theme catalogue,
+   the splash, the Audio Center grouping/rendering contract, the Audio
+   control-parameter validation and the Liquid Glass token contracts), the
+   debug APK, and lint — all built from the mounted source. All 311 tests pass with
+   0 skipped.
+   **`:app:lintDebug` is part of the pipeline on purpose.** It used to fail with 6
+   errors and was therefore left out (the capture path's two `MissingPermission`
+   calls, `SettingsToolScreens`' API-28 signing-info read, and the two Shizuku
+   `RestrictedApi` calls). Those are now fixed in source — permission checks with
+   the app's own error codes, a version-guarded signing read, and one narrow,
+   documented `@SuppressLint("RestrictedApi")` helper per Shizuku call — so lint
+   passes and stays in the command: dropping it again would let the same failure
+   return unnoticed.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -207,6 +213,58 @@ Rules the rebuild established, and the tests that hold them:
   only the tests, the harness, `assembleDebug` and `lintDebug`. Say so in the
   report rather than claiming a visual check.
 
+## Responsive layout
+
+`docs/responsive-audit.md` is the audit (RD-01 … RD-13). The code is one new
+file plus the spacing tokens:
+
+- `ui/design/ResponsiveLayout.kt` — `WindowSizeClass` (compact < 600, medium
+  < 840, expanded ≥ 840 dp), `ResponsiveMetrics`, `LocalResponsiveMetrics`,
+  `rememberResponsiveMetrics()`, `AdaptiveGrid`, and the pure decisions
+  `windowSizeClassOf`, `adaptiveColumnCount`, `categoryColumnCount`. No new
+  dependency: the window comes from
+  `LocalConfiguration.screenWidthDp`, which invalidates on rotation,
+  split-screen resize and a foldable changing posture.
+- `ui/design/GlassTokens.kt` — the responsive half of `GlassSpacing`
+  (per-class gutters, section gaps, content caps, minimum tile widths).
+
+Rules:
+
+- **The shell owns vertical scrolling.** `mainContent` in `MainActivity` is one
+  `Column(Modifier.verticalScroll(...))` and its `ScrollState` is keyed on
+  `SonicCoreNavState.scrollKey` — the frame's category + tool — so every
+  destination opens at the top. That key lives in the navigation model rather
+  than in an expression only the compiler reads, and `ScrollOwnershipTest` pins
+  it: three distinct destinations have three distinct keys, one destination
+  reached twice keeps the same key, and no two tools share one. A tool body must
+  **never** add its own `verticalScroll`: an outer vertical scroll hands its
+  child an infinite maximum height, and Compose rejects a scrollable measured
+  with one (`checkScrollableContainerConstraints`). Eight bodies did exactly
+  that (RD-01) — that is why they no longer scroll themselves.
+- **One scroll owner, and exactly one exception, declared in the navigation
+  model.** A screen whose body *is* a lazy list cannot live inside that
+  container at all, so `SonicCoreTool.scrollOwner` defaults to
+  `ScrollOwner.SHELL` and only `custom.repositories` declares
+  `ScrollOwner.SCREEN`. `SonicCoreNavState.screenOwnsScroll` carries that to the
+  shell, which applies `verticalScroll` **only** when the frame does not own its
+  own and otherwise hands the screen the remaining height (bounded, so the
+  `LazyColumn` in `RepositoryManagerScreen` measures legally). Adding a second
+  screen-owned scroll means declaring it on its tool — and
+  `ScrollOwnershipTest` fails until that is deliberate.
+- **Never compare a breakpoint at a call site.** Use
+  `ResponsiveBreakpoints` / `ResponsiveMetrics` (`twoPane`, `contentMaxWidth`,
+  `screenPadding`, `sectionGap`, `categoryColumns`, `columnsFor`).
+  `homeUsesTwoColumns` reads the shared constant; the Audio hub reads `twoPane`.
+- **Do not reflow a fixed `Row { x.weight(1f) … }` with content that can
+  truncate.** Use `AdaptiveGrid`, which drops a column before the cells have to
+  squeeze; it measures its own width, so a grid inside a card still behaves.
+- **A fixed `.height()` on a control defeats its minimum touch target.**
+  `GlassSlider`/`GlassSwitch` enforce `GlassSpacing.touchTarget` through
+  `defaultMinSize`, which fixed constraints override (RD-13).
+- Tests: `ResponsiveLayoutTest` (classes, caps, gutters, two-pane boundary,
+  grid columns), `HomeResponsiveLayoutTest`, and
+  `RepositoryInventoryTest` for the Repository Manager's sort orders.
+
 ## Non-obvious quirks worth knowing
 
 - **Shizuku uses the official client, but only for read-only work.**
@@ -268,6 +326,25 @@ Rules the rebuild established, and the tests that hold them:
   requires. `docs/repository-inventory.md` mirrors the data — upstream facts there
   were read from the GitHub REST API on 2026-10-25, so re-verify them (and re-run
   `tools/license_check.py`) before repeating a licence claim.
+- **The one real repository integration is AutoEQ's profile *format*, not its
+  data.** Two pure-Kotlin files, both with JVM tests: `engine/AutoEqProfile.kt`
+  parses a pasted or picked AutoEQ `ParametricEQ.txt` / `GraphicEQ.txt` and
+  evaluates it at the same 31 band centres the engine's curve uses, and
+  `engine/AutoEqImport.kt` decides what an import does with the result.
+  `AutoEqImport.review` is deliberately side-effect free — it returns either a
+  refusal carrying its reason or a `Plan` the Audio → Presets screen shows — and
+  `AutoEqImport.apply` is the only mutating step, wired in `MainActivity` to the
+  existing `saveCustomPreset` and to `applyAudioControl(...)` for the preamp, so
+  the profile's `Preamp:` line is written **once** through the native preamp
+  parameter and no band is applied twice. Import is two steps on purpose (review →
+  "Save profile" or "Apply now"), which is what makes cancellation and every
+  refusal leave the active sound untouched. It is an approximation at SonicCore's
+  band centres and says so in the import status line; no AutoEQ data, curve or
+  source is bundled (see `docs/repository-integration.md` §1.1). Do not "improve"
+  it by bundling a measured-profile database: that would redistribute upstream
+  data whose own licence is not AutoEq's MIT. A clamp the import performs must
+  always be reported (`Plan.notes`), never silent — `AutoEqImportTest` fails if
+  that stops being true.
 - `gradle.properties` carries the original author's
   `android.cmake.path = /opt/soniccore-tools/cmake-3.22.6`. That directory does
   not exist here — and it does not need to: `android.cmake.path` is not an AGP

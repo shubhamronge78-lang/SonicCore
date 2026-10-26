@@ -24,6 +24,27 @@ data class SonicCoreNavState(val tokens: List<String> = listOf(SonicCoreRoutes.H
 
     val tool: SonicCoreTool? get() = SonicCoreRoutes.toolOf(current)
 
+    /**
+     * Who scrolls the frame on top: the screen's own declaration, or the shell.
+     * Home and the category hubs always use the shell's container.
+     */
+    val scrollOwner: ScrollOwner get() = tool?.scrollOwner ?: ScrollOwner.SHELL
+
+    /** True when the screen on top renders its own lazy list and needs a bounded height. */
+    val screenOwnsScroll: Boolean get() = scrollOwner == ScrollOwner.SCREEN
+
+    /**
+     * Identity of the destination on top, for state that must be kept per screen.
+     *
+     * The shell `remember`s its scroll container on this key, so every destination
+     * opens at the top instead of inheriting the previous screen's offset — and
+     * coming back to the same destination reuses one container rather than
+     * stacking a new one. It is `(category, tool)` and not the raw stack: two
+     * routes that render the same screen (a hub reached from the dock or from a
+     * tool's back press) share one scroll position on purpose.
+     */
+    val scrollKey: String get() = "${category?.name ?: "-"}/${tool?.id ?: "-"}"
+
     /** True on the Home screen — the floor of the stack. */
     val isHome: Boolean get() = current == SonicCoreRoutes.HOME
 

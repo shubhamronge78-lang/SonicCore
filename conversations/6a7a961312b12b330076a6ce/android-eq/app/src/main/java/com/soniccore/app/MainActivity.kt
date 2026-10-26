@@ -84,6 +84,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.soniccore.app.engine.AutoEqImport
 import com.soniccore.app.engine.EQService
 import com.soniccore.app.engine.EqualizerEngine
 import com.soniccore.app.engine.OutputContract
@@ -131,6 +132,7 @@ import com.soniccore.app.ui.design.GlassScaffold
 import com.soniccore.app.ui.design.LocalGlassNativeBlur
 import com.soniccore.app.ui.design.GlassSwitch
 import com.soniccore.app.ui.design.GlassRadius
+import com.soniccore.app.ui.design.GlassSpacing
 import com.soniccore.app.ui.design.SonicCoreTheme
 import com.soniccore.app.ui.design.SonicCorePalette
 import com.soniccore.app.ui.design.IndicatorStatus
@@ -140,6 +142,7 @@ import com.soniccore.app.ui.design.LiquidGlassButton
 import com.soniccore.app.ui.design.LiquidGlassChoiceChip
 import com.soniccore.app.ui.design.LiquidGlassPanel
 import com.soniccore.app.ui.design.LiquidGlassSurface
+import com.soniccore.app.ui.design.rememberResponsiveMetrics
 import com.soniccore.app.ui.design.SectionHeader
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.design.SonicCoreSplashOverlay
@@ -1167,6 +1170,43 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         audioControlTick++
     }
 
+    /**
+     * AutoEQ import (repository integration, Phase 4) — review first, then apply.
+     *
+     * [reviewAutoEqProfile] only parses: it returns what the profile contains and
+     * changes nothing, so cancelling an import or pasting rubbish cannot disturb
+     * the active sound or the stored profiles. [applyAutoEqProfile] is the
+     * deliberate step — it stores the curve with the engine's existing
+     * `saveCustomPreset`, and only when the user asks to apply does it make that
+     * profile the active curve and write the profile's preamp exactly once through
+     * the native preamp parameter (`DspParams.preamp` → `NeonDsp.setPreamp`, the
+     * same path the preamp control uses). One equalizer, one preamp write, no band
+     * applied twice.
+     */
+    fun reviewAutoEqProfile(name: String, text: String): AutoEqImport.Review =
+        AutoEqImport.review(text, name)
+
+    fun applyAutoEqProfile(review: AutoEqImport.Review, applyNow: Boolean): String =
+        AutoEqImport.apply(
+            review = review,
+            applyNow = applyNow,
+            savePreset = { preset ->
+                engine.saveCustomPreset(
+                    preset.name,
+                    preset.levels,
+                    preset.bassBoost,
+                    preset.virtualizer,
+                    preset.loudness
+                )
+                customPresets = engine.listCustomPresets()
+            },
+            // The existing atomic apply path the preset picker's APPLY button uses.
+            applyCurve = { name -> tryApplyPresetByName(name) },
+            // The existing validated preamp path — one write, through the Audio
+            // control snapshot the engine already merges and applies natively.
+            setPreamp = { value -> applyAudioControl(audioControl.copy(preamp = value)) }
+        )
+
     // The installed version string, shown by Settings and the About tool.
     val appVersion = remember {
         try {
@@ -1192,6 +1232,25 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         fun toolTargets(destination: SonicCoreDestination): Boolean =
             activeTool?.destination == destination
 
+    // One owner for the responsive frame: the gutter scales with the window
+    // class and the body is capped at a readable width, so on a tablet the same
+    // cards stay a centred column instead of being stretched edge to edge.
+    val responsive = rememberResponsiveMetrics()
+    // One scroll container for the whole body, and a fresh position per
+    // destination: the state used to be shared by every screen, so opening a
+    // short screen after a long one landed part-way down with its first cards
+    // already above the fold. Tool bodies therefore never scroll themselves —
+    // a nested vertical scroll is rejected by Compose at measure time. The key is
+    // `SonicCoreNavState.scrollKey`, so the reset rule is pinned by
+    // `ScrollOwnershipTest` instead of living as an expression only the compiler
+    // ever sees.
+    val bodyScroll = remember(navState.scrollKey) { ScrollState(0) }
+    // One scroll owner per screen. A destination that declares `ScrollOwner.SCREEN`
+    // (the Repository Manager's lazy catalogue) is handed the remaining height
+    // instead of this scroll container: a lazy list cannot be measured inside a
+    // `verticalScroll` parent at all. Every other destination keeps the shell's
+    // single scroll, so the nested-scroll class of defect (RD-01) stays closed.
+    val screenOwnsScroll = navState.screenOwnsScroll
     Column(
         modifier = Modifier.fillMaxSize().background(Color.Transparent),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1199,9 +1258,13 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         Column(
             modifier = Modifier
                 .weight(1f)
+                .widthIn(max = responsive.contentMaxWidth)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .then(if (screenOwnsScroll) Modifier else Modifier.verticalScroll(bodyScroll))
+                .padding(
+                    horizontal = responsive.screenPadding,
+                    vertical = GlassSpacing.screenVertical
+                ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
         // ── Navigation chrome: a breadcrumb on every screen but Home ──
@@ -1233,6 +1296,8 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             customPresetNames = customPresets.map { it.name },
             presetsExportJson = { buildPresetJson() },
             onImportPresets = { json -> importPresetJson(json) },
+            onReviewAutoEqProfile = { name, text -> reviewAutoEqProfile(name, text) },
+            onApplyAutoEqProfile = { review, applyNow -> applyAutoEqProfile(review, applyNow) },
             onApplyPreset = { name -> tryApplyPresetByName(name) },
             onSaveCustomPreset = { name ->
                 engine.saveCustomPreset(

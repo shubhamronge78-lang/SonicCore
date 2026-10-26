@@ -43,6 +43,7 @@ import com.soniccore.app.ui.design.HomeColumnChoice
 import com.soniccore.app.ui.design.LiquidGlassSurface
 import com.soniccore.app.ui.design.LocalMotionScale
 import com.soniccore.app.ui.design.SonicCoreColors
+import com.soniccore.app.ui.design.categoryColumnCount
 import com.soniccore.app.ui.design.color
 import com.soniccore.app.ui.design.motionDurationMillis
 import com.soniccore.app.ui.navigation.SonicCoreCategory
@@ -491,10 +492,13 @@ private fun CategoryGrid(
 ) {
     val choice = AppearanceState.homeColumns
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // AUTO follows the window: one column on a very narrow window, two on a
+        // phone, three once there is genuinely room (tablet, unfolded foldable).
+        // The user's own ONE/TWO preference always wins.
         val columns = when (choice) {
             HomeColumnChoice.ONE -> 1
             HomeColumnChoice.TWO -> 2
-            HomeColumnChoice.AUTO -> if (maxWidth >= 380.dp) 2 else 1
+            HomeColumnChoice.AUTO -> categoryColumnCount(maxWidth)
         }
         val categories = SonicCoreCategory.entries
         val rows = categories.chunked(columns)

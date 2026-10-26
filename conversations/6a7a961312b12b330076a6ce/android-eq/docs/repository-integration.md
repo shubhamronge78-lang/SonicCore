@@ -22,6 +22,7 @@ audit: **PASS**, 109 artifacts on `debugRuntimeClasspath` (shipped) and 112 on
 | [`RikkaApps/Shizuku-API`](https://github.com/RikkaApps/Shizuku-API) — `dev.rikka.shizuku:api` / `:provider` 13.1.5 | **MIT** (repo `LICENSE`; the Maven POM published by Rikka also declares `MIT License`) | Official client for the *optional* elevated bridge: the binder hand-off provider declared in the manifest, install/running/authorized state, `Shizuku.requestPermission`, and the read-only diagnostics call. Compatible with MIT: attribution only, no source copying. |
 | [`RikkaApps/Shizuku`](https://github.com/RikkaApps/Shizuku) (the manager app) | **Apache-2.0** | **Not bundled.** The user installs the manager themselves; it never enters this repository or the APK, so its licence does not propagate here. |
 | AndroidX / Jetpack Compose — `core-ktx` 1.12.0, `appcompat` 1.6.1, `compose-bom` 2024.02.00, `material` 1.11.0, `activity-compose` 1.8.2, `lifecycle-runtime-ktx` 2.7.0 | **Apache-2.0** | UI, lifecycle and platform-compat foundation. |
+| [`jaakkopasanen/AutoEq`](https://github.com/jaakkopasanen/AutoEq) | **MIT** (repository `LICENSE`) | **Its profile *file formats* only** — see section 1.1. `engine/AutoEqProfile.kt` reads a pasted `ParametricEQ.txt` / `GraphicEQ.txt`, evaluates the filters at SonicCore's 31 band centres and hands the result to the existing equalizer as a custom preset, with the profile's `Preamp:` line applied to the native preamp parameter. No AutoEQ source, measurement data or target curve is copied, vendored or redistributed, so nothing of AutoEQ ships inside the APK. |
 | `junit:junit` 4.13.2 | **EPL-1.0** | JVM unit tests only (`testImplementation`): never packaged into the APK. |
 | `org.json:json` 20240303 | **Public Domain** (as declared in the published POM) | Test-scope implementation of `org.json` so JSON contracts can be tested on the JVM; the shipped app uses Android's platform JSON. |
 | `com.google.guava:listenablefuture` 1.0, `org.hamcrest:hamcrest-core` 1.3 | **Apache-2.0** and **BSD-3-Clause**; the published POMs of these two carry **no licence metadata**, which is why `tools/license_check.py` prints `unknown` for them. The licences above come from their Maven Central / upstream project metadata. | Pulled in transitively (AndroidX `concurrent-futures`, JUnit). Both permissive; no action needed. |
@@ -29,6 +30,23 @@ audit: **PASS**, 109 artifacts on `debugRuntimeClasspath` (shipped) and 112 on
 `app/src/main` contains only originally written Kotlin and the project's own
 C++ (`app/src/main/cpp/neondsp.cpp`). There is no vendored or copied source
 directory tree anywhere in the project.
+
+### 1.1 AutoEQ profile import — the one integration built in this batch
+
+Implemented end-to-end, and its boundary is stated in the app itself:
+
+| | |
+| --- | --- |
+| **Reads** | The two text formats AutoEQ publishes for a model: `ParametricEQ.txt` (`Preamp:` plus `Filter n: ON <PK/LSC/HSC> Fc .. Hz Gain .. dB Q ..`) and `GraphicEQ.txt` (one `GraphicEQ:` line of `frequency gain;` points). A profile reaches the app by paste or by opening its `.txt` through the system file picker. Disabled (`OFF`) slots are skipped; an enabled low/high-pass filter is **refused with its index and type named**, never dropped or silently approximated; the text is size-limited to 128 KB (the picker reads no more than that either); filter gains are normalised into ±40 dB and Q into 0.1–10 **with the adjustment reported**; and a name is required because AutoEQ's text carries none (blank falls back to "AutoEQ profile" and says so). |
+| **Writes** | A **custom preset** on the engine's existing 31-slot curve (`engine.saveCustomPreset`, the same model `Presets.CustomPreset` uses) and the profile's preamp through the app's existing native preamp parameter (`DspParams.preamp`). Both are paths the app already used; no second equalizer exists and no band is applied twice. |
+| **Review, then decide** | Import is two steps. The **review** (`AutoEqImport.review`) parses and reports only — the formats, the filter/point count, the preamp, the band range, the stored name and every clamp it applied — and touches nothing, so cancelling cannot disturb the active sound. The **apply** (`AutoEqImport.apply`) is deliberate: "Save profile" stores the curve and changes nothing else; "Apply now" additionally makes it the active curve and writes the preamp **once**. The screen states what is replaced (a custom profile of the same name, the active curve, the preamp) and what is kept (every other profile, and bass/virtualizer/loudness). |
+| **Failure behaviour** | A refused profile reports its reason and applies nothing. If storing fails, nothing is applied and the existing profiles are untouched; if activation fails, the profile is reported as saved but not applied and the preamp is not written (`AutoEqImportTest` drives each of these through the real code path). A profile with no `Preamp:` line leaves the user's preamp alone. |
+| **Where it applies** | Wherever the engine already processes — SonicCore's own player, captured playback and any supported system route. It is not an effect outside the app. |
+| **Not taken** | No AutoEQ source code, measurement database, target curve, compensation value or generated profile file is copied or bundled. Only the documented file format is parsed, which is what keeps an MIT data repository's *data* out of this repository. |
+| **Approximation, stated** | A parametric profile is evaluated as a sum of bell/transition curves in log-frequency (a peaking filter returns to zero on both sides, a shelf holds its gain on its own side), a graphic profile is interpolated in log-frequency, and both are clamped to ±15 dB before they are stored. The result is an approximation at SonicCore's band centres, not AutoEQ's own biquad response — the import status line says so, and so does this file. |
+| **Coverage** | `engine/AutoEqProfileTest` (28 JVM tests) and `engine/AutoEqImportTest` (19) — 47 in total: both formats, the OFF slot, every refusal with its reason (unsupported type, unreadable value, unusable frequency, disabled-only profile, non-profile text, oversize paste, too few points, too many filters/points), the name sanitiser, log-frequency interpolation, the reported ±40 dB / Q normalisation, the reported ±15 dB curve clamp and ±30 dB preamp clamp, boundary input sizes (128 KB, 64 filters, 8192 points), preamp applied exactly once, save → reload → reapply, name-collision replacement, and cancellation / failed store / failed activation / failed preamp write each leaving the sound and the stored profiles unchanged. |
+| **Removal / replacement** | Delete `engine/AutoEqProfile.kt` and `engine/AutoEqImport.kt`, the `onReviewAutoEqProfile` / `onApplyAutoEqProfile` host callbacks and the import dialog in `ui/audio/AudioToolScreens.kt`; nothing else references them. Replacing them with a real `AutoEq`-generated filter import changes nothing else, because the output is an ordinary preset. |
+| **Device check still open** | Nothing here was heard: there is no emulator or device in this environment, so the audible result of an import (and the file picker's own gesture) remain unverified on hardware. The flow logic is covered on the JVM. |
 
 ## 2. Audited, deliberately not integrated
 
@@ -89,7 +107,7 @@ projects contributed any code, table, preset, impulse response or resource.
 
 ### 4.2 Licence-compatible and queued
 
-`jaakkopasanen/AutoEq` (MIT), `xiph/speexdsp` (BSD-3-Clause), `jiixyj/libebur128`
+`xiph/speexdsp` (BSD-3-Clause), `jiixyj/libebur128`
 (MIT), `google/oboe` (Apache-2.0), `androidx/media` (Apache-2.0),
 `chrisbanes/haze` (Apache-2.0), `material-foundation/material-color-utilities`
 (Apache-2.0), `google/material-design-icons` (Apache-2.0),

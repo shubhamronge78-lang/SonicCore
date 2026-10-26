@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -525,11 +526,17 @@ private fun buildTypeLabel(): String =
     if (Build.TYPE.equals("user", ignoreCase = true)) "Release / user" else "Debug (${Build.TYPE})"
 
 private fun signatureLabel(context: Context): String = try {
-    val info = context.packageManager.getPackageInfo(
-        context.packageName,
-        PackageManager.GET_SIGNING_CERTIFICATES
-    )
-    val signers = info.signingInfo?.apkContentsSigners
+    val pm = context.packageManager
+    // SigningInfo (API 28+) replaces the deprecated signatures array; minSdk is
+    // 26, so the older accessor is still needed below it.
+    val signers: Array<Signature>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            .signingInfo
+            ?.apkContentsSigners
+    } else {
+        @Suppress("DEPRECATION")
+        pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures
+    }
     if (signers.isNullOrEmpty()) "Not available" else "Present (${signers.first().toChars().size} chars)"
 } catch (_: Throwable) {
     "Not readable"
