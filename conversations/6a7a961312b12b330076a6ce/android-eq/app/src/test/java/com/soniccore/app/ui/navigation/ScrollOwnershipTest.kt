@@ -2,6 +2,7 @@ package com.soniccore.app.ui.navigation
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -62,6 +63,39 @@ class ScrollOwnershipTest {
                     frame.screenOwnsScroll
                 )
             }
+    }
+
+    @Test
+    fun theShellsScrollIsKeyedPerDestinationSoEveryScreenOpensAtTheTop() {
+        // The shell remembers its scroll container on `scrollKey`, so:
+        //  * two different destinations never share a scroll position,
+        val home = SonicCoreNavState()
+        val audioHub = SonicCoreNavState().selectCategory(SonicCoreCategory.AUDIO)
+        val presetsTool = registry.first { it.id == SonicCoreToolRoutes.AUDIO_PRESETS }
+        val presets = SonicCoreNavState().openTool(presetsTool)
+        assertEquals("AUDIO/audio.presets", presets.scrollKey)
+        assertEquals("AUDIO/-", audioHub.scrollKey)
+        assertEquals("-/-", home.scrollKey)
+        assertEquals(
+            "two destinations share one scroll key",
+            3,
+            setOf(home.scrollKey, audioHub.scrollKey, presets.scrollKey).size
+        )
+
+        //  * the same destination reached the same way gets the same key back, so
+        //    returning to it reuses one container instead of stacking another,
+        assertEquals(presets.scrollKey, SonicCoreNavState().openTool(presetsTool).scrollKey)
+
+        //  * and a hub is a different destination from the tools inside it, even
+        //    though they share a category.
+        assertNotEquals(audioHub.scrollKey, presets.scrollKey)
+
+        // Every tool in the registry has its own key, so none can be handed
+        // another screen's scroll offset.
+        assertEquals(
+            registry.size,
+            registry.map { SonicCoreNavState().openTool(it).scrollKey }.toSet().size
+        )
     }
 
     @Test

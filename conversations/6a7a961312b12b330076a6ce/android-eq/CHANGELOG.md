@@ -5,6 +5,32 @@
 Full audit: `docs/responsive-audit.md` (RD-01 … RD-13). Layout only — DSP,
 JNI, capture, presets, permission logic and the repository data are untouched.
 
+### AutoEQ import completed (review, then save or apply)
+
+`engine/AutoEqImport.kt` is new: the parsing half (`AutoEqProfile.kt`) is
+unchanged in what it accepts, but the import is now two deliberate steps. The
+**review** parses and reports only — format, filter or measurement-point count,
+preamp, band curve, stored name and every clamp it applied — and changes nothing,
+so cancelling cannot disturb the active sound. **"Save profile"** stores the curve
+with the engine's existing `saveCustomPreset` and leaves the sound alone;
+**"Apply now"** also makes it the active curve through the existing preset-apply
+path and writes the profile's `Preamp:` line exactly once through the native
+preamp parameter. The profile's `.txt` can be pasted or opened through the system
+file picker (read capped at the parser's 128 KB). Every refusal now names its
+reason (unsupported filter type and index, unreadable value, unusable frequency,
+all-disabled profile, non-profile text, oversize, too few points, too many
+filters/points), out-of-range gains and Q are reported rather than silently
+normalised, and a failed store or activation reports itself instead of half-
+applying. Covered by `AutoEqProfileTest` (28) and `AutoEqImportTest` (19) — 47 of
+the suite's 311 tests; the audible result still needs a device.
+
+### One scroll key, in the navigation model
+
+The shell's scroll container is now keyed on `SonicCoreNavState.scrollKey`
+instead of an inline `(category, tool)` pair, so `ScrollOwnershipTest` pins that
+each destination opens at the top rather than the rule living only in an
+expression the compiler reads.
+
 ### One scroll owner, and a crash removed
 
 Eight tool bodies (Device Diagnostics, Capabilities, Device Tools, App Manager,

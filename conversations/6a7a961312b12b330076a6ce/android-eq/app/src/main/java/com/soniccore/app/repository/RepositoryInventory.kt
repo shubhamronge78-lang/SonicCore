@@ -195,7 +195,7 @@ object RepositoryInventory {
             IntegrationStatus.INTEGRATED, PrivilegeRequirement.NONE,
             Maintenance.ACTIVE, "2026-10-20", 16377, Coverage.ADOPTED,
             "Headphone measurement database plus target curves, used to derive correction filters.",
-            "Its ParametricEQ and GraphicEQ profile formats are read by engine/AutoEqProfile.kt: a pasted profile becomes a custom preset on the engine's own 31-slot curve, and its preamp line is applied to the native preamp parameter — the paths presets and the preamp control already use. Formats only, so no AutoEQ measurement data or source is redistributed; the curve is an approximation evaluated at SonicCore's band centres. Covered by AutoEqProfileTest (10 tests)."
+            "Its ParametricEQ and GraphicEQ profile formats are read by engine/AutoEqProfile.kt: the profile is reviewed first (filters or measurement points, preamp, band curve, every clamp applied) and only then saved as a custom preset on the engine's own 31-slot curve, or applied to the active curve with its preamp line written once to the native preamp parameter — the paths presets and the preamp control already use. Refusals name what they refused, and a cancellation or a failed import leaves the active sound and the stored profiles untouched. Formats only, so no AutoEQ measurement data or source is redistributed; the curve is an approximation evaluated at SonicCore's band centres. Covered by AutoEqProfileTest (28 tests) and AutoEqImportTest (19)."
         ),
         RepositoryEntry(
             "xiph/speexdsp", "SpeexDSP", gh("xiph/speexdsp"),

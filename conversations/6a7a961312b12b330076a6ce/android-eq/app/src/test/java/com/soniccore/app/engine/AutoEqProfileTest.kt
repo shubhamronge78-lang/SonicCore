@@ -132,4 +132,163 @@ class AutoEqProfileTest {
         assertTrue(AutoEqProfile.looksLikeAutoEq("GraphicEQ: 20 0; 200 1"))
         assertFalse(AutoEqProfile.looksLikeAutoEq("""{"neoneq_preset":1,"levels":[0,1]}"""))
     }
+
+    // ── Refusals carry their reason (Phase 4 completion) ──
+
+    private fun refusal(text: String): String {
+        val result = AutoEqProfile.parse(text)
+        assertTrue("expected a refusal, got $result", result is AutoEqProfile.Unsupported)
+        return (result as AutoEqProfile.Unsupported).reason
+    }
+
+    @Test
+    fun aRefusedFilterTypeIsNamedInsteadOfBeingSilentlyDropped() {
+        val reason = refusal("Filter 1: ON LP Fc 1000 Hz Gain 0.0 dB Q 0.70")
+        assertTrue("reason was “$reason”", reason.contains("LP"))
+        assertTrue(reason.contains("Filter 1"))
+        assertTrue(reason.contains("refused"))
+    }
+
+    @Test
+    fun anOffSlotWithATypeItCannotRepresentIsStillIgnored() {
+        // The OFF slot is not part of the profile, so its type never matters.
+        val profile = ok(
+            "Filter 1: OFF LP Fc 1000 Hz Gain 0.0 dB Q 0.70\n" +
+                "Filter 2: ON PK Fc 1000 Hz Gain 2.0 dB Q 1.00"
+        )
+        assertEquals(1, profile.filters.size)
+    }
+
+    @Test
+    fun aProfileOfOnlyDisabledFiltersSaysWhyItCarriesNothing() {
+        val reason = refusal("Filter 1: OFF PK Fc 1000 Hz Gain 3.0 dB Q 1.00")
+        assertTrue("reason was “$reason”", reason.contains("switched off"))
+    }
+
+    @Test
+    fun plainTextAndForeignJsonAreRefusedWithTheirOwnReason() {
+        assertTrue(refusal("hello world").contains("not an AutoEQ"))
+        assertTrue(refusal("""{"neoneq_preset":1}""").contains("not an AutoEQ"))
+    }
+
+    @Test
+    fun anUnreadableFilterValueIsNamedInsteadOfBeingSkipped() {
+        val reason = refusal("Filter 7: ON PK Fc 1.2.3 Hz Gain 1.0 dB Q 1.00")
+        assertTrue("reason was “$reason”", reason.contains("Filter 7"))
+    }
+
+    @Test
+    fun anUnusableCentreFrequencyIsRefusedRatherThanMoved() {
+        val reason = refusal("Filter 2: ON PK Fc 0 Hz Gain 1.0 dB Q 1.00")
+        assertTrue("reason was “$reason”", reason.contains("Filter 2"))
+        assertTrue(reason.contains("0 Hz"))
+    }
+
+    @Test
+    fun anOversizePasteIsRefusedWithItsSizeAndTheLimit() {
+        val reason = refusal("Filter 1: ON PK Fc 1000 Hz Gain 3.0 dB Q 1.00" + "x".repeat(AutoEqProfile.MAX_TEXT_CHARS))
+        assertTrue("reason was “$reason”", reason.contains("128 KB"))
+    }
+
+    @Test
+    fun aGraphicLineThatIsNotFrequencyGainPairsIsRefused() {
+        val reason = refusal("GraphicEQ: 20 0.0; oops; 20000 -6.0")
+        assertTrue("reason was “$reason”", reason.contains("oops"))
+        assertTrue(refusal("GraphicEQ: 20 0.0; 1000 abc; 20000 -6.0").contains("1000 abc"))
+        assertTrue(refusal("GraphicEQ: 20 0.0; -5 1.0; 20000 -6.0").contains("unusable frequency"))
+    }
+
+    @Test
+    fun aGraphicLineWithTooFewPointsIsRefusedWithItsCount() {
+        assertTrue(refusal("GraphicEQ: 20 0.0").contains("at least two"))
+    }
+
+    // ── Normalisation is reported, never silent ──
+
+    @Test
+    fun aFilterGainOutsideTheEvaluatedRangeIsReportedAndNormalised() {
+        val profile = ok("Filter 1: ON PK Fc 1000 Hz Gain 60.0 dB Q 1.00")
+        assertEquals(AutoEqProfile.MAX_FILTER_GAIN_DB, profile.filters.single().gainDb, 0.0001)
+        assertTrue(profile.adjustments.any { it.contains("Filter 1") && it.contains("outside") })
+    }
+
+    @Test
+    fun anOutOfRangeQIsReportedAndNormalised() {
+        val profile = ok("Filter 1: ON PK Fc 1000 Hz Gain 2.0 dB Q 250.0")
+        assertEquals(AutoEqProfile.MAX_Q, profile.filters.single().q, 0.0001)
+        assertTrue(profile.adjustments.any { it.contains("Q 250.0") })
+    }
+
+    @Test
+    fun aCurveThatDoesNotFitTheStoredRangeReportsBothWhatItWantedAndTheClamp() {
+        val curve = AutoEqProfile.toCurve(ok("Filter 1: ON PK Fc 1000 Hz Gain 24.0 dB Q 1.00"))
+        assertTrue("the curve should report its clamp", curve.clamped)
+        assertEquals(24.0, curve.rawMaxDb, 0.5)
+        assertEquals(AutoEqProfile.MAX_BAND_DB, curve.levels[17].toInt())
+
+        // A profile that fits says nothing about clamping.
+        val fits = AutoEqProfile.toCurve(ok(parametric))
+        assertFalse(fits.clamped)
+    }
+
+    @Test
+    fun anOutOfRangeGraphicPointIsReportedRatherThanQuietlyMoved() {
+        val profile = ok("GraphicEQ: 20 90.0; 1000 0.0; 20000 -6.0", "Wild")
+        assertTrue(profile.adjustments.any { it.contains("outside") })
+        assertEquals(AutoEqProfile.MAX_FILTER_GAIN_DB, profile.graphicCurve.first().second, 0.0001)
+    }
+
+    // ── Preamp presence, and the input limits ──
+
+    @Test
+    fun aDeclaredPreampIsDistinguishedFromAProfileWithNoPreampLine() {
+        assertTrue(ok(parametric).preampDeclared)
+        // A GraphicEQ file normally carries none — that is not "preamp 0".
+        assertFalse(ok("GraphicEQ: 20 0.0; 1000 0.0").preampDeclared)
+        // ...but a declared zero is the profile's own instruction and is applied.
+        val declaredZero = ok("Preamp: 0.0 dB\nFilter 1: ON PK Fc 1000 Hz Gain 1.0 dB Q 1.00")
+        assertTrue(declaredZero.preampDeclared)
+        assertEquals(0f, AutoEqProfile.preampDb(declaredZero), 0.0001f)
+    }
+
+    @Test
+    fun preampClampingIsReportedNotSilent() {
+        val clamped = ok("Preamp: -45.0 dB\nFilter 1: ON PK Fc 1000 Hz Gain 1.0 dB Q 1.00")
+        assertEquals(-30f, AutoEqProfile.preampDb(clamped), 0.0001f)
+        assertTrue(AutoEqProfile.preampClamped(clamped))
+        assertFalse(AutoEqProfile.preampClamped(ok(parametric)))
+        // a profile with no preamp line is never "clamped"
+        assertFalse(AutoEqProfile.preampClamped(ok("GraphicEQ: 20 0.0; 1000 0.0")))
+    }
+
+    @Test
+    fun exactlyTheSupportedNumberOfFiltersIsReadAndOneMoreIsRefused() {
+        fun line(i: Int) = "Filter $i: ON PK Fc ${100 + i} Hz Gain 1.0 dB Q 1.00"
+        val atLimit = (1..AutoEqProfile.MAX_FILTERS).joinToString("\n") { line(it) }
+        val overLimit = (1..AutoEqProfile.MAX_FILTERS + 1).joinToString("\n") { line(it) }
+        assertEquals(AutoEqProfile.MAX_FILTERS, ok(atLimit).filters.size)
+        assertTrue(refusal(overLimit).contains("more than ${AutoEqProfile.MAX_FILTERS} filters"))
+    }
+
+    @Test
+    fun exactlyTheMaximumTextLengthIsReadAndOneCharacterMoreIsRefused() {
+        val base = "Filter 1: ON PK Fc 1000 Hz Gain 1.0 dB Q 1.00"
+        val atLimit = base + "x".repeat(AutoEqProfile.MAX_TEXT_CHARS - base.length)
+        assertEquals(AutoEqProfile.MAX_TEXT_CHARS, atLimit.length)
+        assertEquals(1, ok(atLimit).filters.size)
+
+        val overLimit = atLimit + "x"
+        assertTrue(AutoEqProfile.parse(overLimit) is AutoEqProfile.Unsupported)
+    }
+
+    @Test
+    fun exactlyTheMaximumNumberOfMeasurementPointsIsReadAndOneMoreIsRefused() {
+        fun graphic(count: Int) = "GraphicEQ: " + (1..count).joinToString("; ") { "$it 0.0" }
+        val atLimit = ok(graphic(AutoEqProfile.MAX_GRAPHIC_POINTS), "Big")
+        assertEquals(AutoEqProfile.MAX_GRAPHIC_POINTS, atLimit.graphicCurve.size)
+        assertTrue(
+            refusal(graphic(AutoEqProfile.MAX_GRAPHIC_POINTS + 1))
+                .contains("more than ${AutoEqProfile.MAX_GRAPHIC_POINTS} measurement points")
+        )
+    }
 }

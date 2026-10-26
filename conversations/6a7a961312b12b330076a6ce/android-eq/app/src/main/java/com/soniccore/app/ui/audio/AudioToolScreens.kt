@@ -1,5 +1,7 @@
 package com.soniccore.app.ui.audio
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +40,8 @@ import com.soniccore.app.capture.CaptureEqService
 import com.soniccore.app.diagnostics.DeviceDiagnosticsManager
 import com.soniccore.app.diagnostics.OperationLog
 import com.soniccore.app.dsp.NeonDsp
+import com.soniccore.app.engine.AutoEqImport
+import com.soniccore.app.engine.AutoEqProfile
 import com.soniccore.app.ui.category.CapabilityLegend
 import com.soniccore.app.ui.category.SonicCoreCapability
 import com.soniccore.app.ui.category.SonicCoreDataRow
@@ -63,8 +67,54 @@ fun AudioPresetsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
     var importText by remember { mutableStateOf("") }
     // AutoEQ's own files carry no model name, so the import takes one.
     var importName by remember { mutableStateOf("") }
+    // The reviewed profile, and the reason a review was refused. Both are pure
+    // state: while a review is on screen nothing has been stored or applied yet,
+    // which is what makes Cancel safe.
+    var importReview by remember { mutableStateOf<AutoEqImport.Review?>(null) }
+    var importProblem by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var exportText by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+    // Read the .txt file AutoEQ publishes, capped at the parser's own limit so an
+    // oversized pick is refused by the same rule as an oversized paste.
+    val pickProfileFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val text = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    val buffer = ByteArray(AutoEqProfile.MAX_TEXT_CHARS + 1)
+                    var read = 0
+                    while (read < buffer.size) {
+                        val n = input.read(buffer, read, buffer.size - read)
+                        if (n <= 0) break
+                        read += n
+                    }
+                    String(buffer, 0, read, Charsets.UTF_8)
+                }
+            }.getOrNull()
+            if (text == null) {
+                importProblem = "That file could not be read. Paste the profile text instead."
+            } else {
+                importText = text
+                if (importName.isBlank()) {
+                    // AutoEQ names a profile after the model, with the format as a
+                    // suffix: "Sennheiser HD 650 ParametricEQ.txt".
+                    importName = uri.lastPathSegment
+                        ?.substringAfterLast('/')
+                        ?.substringBeforeLast('.')
+                        ?.removeSuffix(" ParametricEQ")
+                        ?.removeSuffix(" GraphicEQ")
+                        ?.trim()
+                        ?.take(64)
+                        .orEmpty()
+                }
+                importProblem = null
+                importReview = null
+            }
+        }
+    }
 
     val builtin = host.builtinPresetNames
     val custom = host.customPresetNames
@@ -211,53 +261,142 @@ fun AudioPresetsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
     }
 
     if (showImport) {
+        // Step 1 pastes or opens a profile and changes nothing; step 2 shows what
+        // was parsed and offers the two deliberate actions. Cancelling at either
+        // step leaves the active sound and every stored profile exactly as they were.
+        val reviewed = importReview
+        val plan = (reviewed as? AutoEqImport.Ready)?.plan
         AlertDialog(
-            onDismissRequest = { showImport = false },
+            onDismissRequest = {
+                showImport = false
+                importReview = null
+                importProblem = null
+            },
             containerColor = SonicCoreColors.Surface,
-            title = { Text("Import profile", color = SonicCoreColors.PrimaryText) },
-            text = {
+            title = {
                 Text(
-                    "Paste a SonicCore exported bundle (JSON), or the text of an AutoEQ ParametricEQ / GraphicEQ profile.",
-                    color = SonicCoreColors.SecondaryText,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-                OutlinedTextField(
-                    value = importText,
-                    onValueChange = { importText = it },
-                    label = { Text("Paste JSON or AutoEQ profile") },
-                    modifier = Modifier.fillMaxWidth().height(140.dp)
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = importName,
-                    onValueChange = { importName = it },
-                    singleLine = true,
-                    label = { Text("Name (AutoEQ import)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    "An AutoEQ curve is stored as a custom profile and applied by the existing equalizer; its preamp is applied to the native preamp parameter.",
-                    color = SonicCoreColors.SecondaryText,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(top = 6.dp)
+                    if (plan == null) "Import profile" else "Review AutoEQ profile",
+                    color = SonicCoreColors.PrimaryText
                 )
             },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(onClick = {
-                        status = runCatching { host.onImportAutoEqProfile(importName, importText) }
-                            .getOrDefault("The AutoEQ profile could not be imported.")
-                        showImport = false
-                    }) { Text("Import AutoEQ") }
-                    TextButton(onClick = {
-                        val count = runCatching { host.onImportPresets(importText.trim()) }.getOrDefault(0)
-                        status = if (count > 0) "Imported $count profile(s)." else "Nothing could be imported from that text."
-                        showImport = false
-                    }) { Text("Import bundle") }
+            text = {
+                if (plan == null) {
+                    Column {
+                        Text(
+                            "Paste a SonicCore exported bundle (JSON), or paste or open an AutoEQ ParametricEQ / GraphicEQ profile. Nothing is stored or applied until you confirm on the next step.",
+                            color = SonicCoreColors.SecondaryText,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = importText,
+                            onValueChange = { importText = it; importProblem = null },
+                            label = { Text("Paste JSON or AutoEQ profile") },
+                            modifier = Modifier.fillMaxWidth().height(140.dp)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = importName,
+                            onValueChange = { importName = it },
+                            singleLine = true,
+                            label = { Text("Name (AutoEQ profile)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(
+                            onClick = {
+                                pickProfileFile.launch(
+                                    arrayOf("text/plain", "application/octet-stream")
+                                )
+                            },
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) { Text("Open a .txt profile") }
+                        importProblem?.let {
+                            Text(
+                                it,
+                                color = SonicCoreColors.Warning,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        Text(
+                            "An AutoEQ curve is stored as a custom profile and applied by the existing equalizer; its preamp is written to the native preamp parameter once, only when you apply.",
+                            color = SonicCoreColors.SecondaryText,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+                } else {
+                    Column {
+                        AutoEqImport.reviewLines(plan).forEach { line ->
+                            Text(
+                                "• $line",
+                                color = SonicCoreColors.PrimaryText,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(bottom = 3.dp)
+                            )
+                        }
+                        Text(
+                            AutoEqImport.scope(plan),
+                            color = SonicCoreColors.SecondaryText,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
                 }
             },
-            dismissButton = { TextButton(onClick = { showImport = false }) { Text("Cancel") } }
+            confirmButton = {
+                if (plan == null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(onClick = {
+                            val result = runCatching {
+                                host.onReviewAutoEqProfile(importName, importText)
+                            }.getOrElse {
+                                AutoEqImport.Unsupported("That profile could not be read.")
+                            }
+                            when (result) {
+                                is AutoEqImport.Ready -> {
+                                    importReview = result
+                                    importProblem = null
+                                }
+                                is AutoEqImport.Unsupported -> {
+                                    importReview = null
+                                    importProblem = result.reason
+                                }
+                                AutoEqImport.Empty -> {
+                                    importReview = null
+                                    importProblem = "Paste an AutoEQ ParametricEQ or GraphicEQ profile (or open its file) first."
+                                }
+                            }
+                        }) { Text("Review") }
+                        TextButton(onClick = {
+                            val count = runCatching { host.onImportPresets(importText.trim()) }.getOrDefault(0)
+                            status = if (count > 0) "Imported $count profile(s)." else "Nothing could be imported from that text."
+                            showImport = false
+                            importReview = null
+                        }) { Text("Import bundle") }
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(onClick = {
+                            status = host.onApplyAutoEqProfile(reviewed, false)
+                            showImport = false
+                            importReview = null
+                        }) { Text("Save profile") }
+                        TextButton(onClick = {
+                            status = host.onApplyAutoEqProfile(reviewed, true)
+                            showImport = false
+                            importReview = null
+                        }) { Text("Apply now") }
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (plan == null) showImport = false
+                    importReview = null
+                    importProblem = null
+                }) { Text(if (plan == null) "Cancel" else "Back") }
+            }
         )
     }
 }

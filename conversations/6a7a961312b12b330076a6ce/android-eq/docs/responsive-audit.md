@@ -30,7 +30,7 @@ link check. Nothing in this document claims a visual check that did not happen.
 | # | Severity | Defect | Root cause | Fix |
 | --- | --- | --- | --- | --- |
 | RD-01 | **Critical** | Eight tool bodies crash when opened: Device Diagnostics, Capabilities, Device Tools, App Manager, Shizuku Center, Customization Center, Settings hub and Permissions & Privacy each rendered a root `Column(Modifier.verticalScroll(…))` **inside** the launcher shell's own `Column(Modifier.verticalScroll(…))` | The restructure that introduced the single shell scroll left the per-screen scroll modifiers in place. Compose rejects a vertical scrollable measured with an unbounded height (`checkScrollableContainerConstraints`), and an outer `verticalScroll` hands its child an infinite maximum height | The shell is the single scroll owner. All eight bodies keep their `Column` but no longer scroll themselves — see `DeviceDiagnosticsScreen.kt` for the note that names the rule |
-| RD-02 | High | Navigating from a long screen to a short one opened the short one part-way down, with its first cards above the fold | One `rememberScrollState()` was shared by every destination, so the offset survived navigation | The body's `ScrollState` is keyed on `(category, tool)`, so each destination starts at the top |
+| RD-02 | High | Navigating from a long screen to a short one opened the short one part-way down, with its first cards above the fold | One `rememberScrollState()` was shared by every destination, so the offset survived navigation | The body's `ScrollState` is keyed on `SonicCoreNavState.scrollKey` (the frame's category + tool), so each destination starts at the top — pinned by `ScrollOwnershipTest` |
 | RD-03 | High | On a tablet, an unfolded foldable or a landscape phone every card stretched edge to edge: text lines ran over 1000 dp, cards became wide empty bands, and the 16 dp phone gutter was unchanged | The shell had one fixed `padding(horizontal = 16.dp)` and no content-width cap; nothing in the app read the window size | The shell reads `ResponsiveMetrics`: gutters scale 16 / 24 / 32 dp and the content column is capped at 680 dp (medium) / 960 dp (expanded) and centred |
 | RD-04 | Medium | Home's six category cards never showed more than two columns, even on a tablet | `CategoryGrid` computed `AUTO` as `if (maxWidth >= 380.dp) 2 else 1` — a third column was impossible | `categoryColumnCount` gives 1 / 2 / 3 by width; the user's ONE/TWO preference still overrides it |
 | RD-05 | Medium | Device Center's five hardware tiles were cramped on a phone: two fixed weighted rows (3 + 2) gave each tile ≈110 dp, so "Not readable" and the battery footer were truncated | `Row { tile.weight(1f) … }` repeats the available width across a fixed number of cells regardless of how narrow that is | `AdaptiveGrid` over 5 tiles with a 168 dp minimum cell: two columns on a phone, three when there is room, last row padded |
@@ -95,7 +95,7 @@ Run from the container built from this source
 
 | Check | Command | Result |
 | --- | --- | --- |
-| JVM unit tests | `./gradlew :app:testDebugUnitTest` | **273 tests, 35 classes, 0 failures, 0 skipped** — 14 more than before this pass (`AutoEqProfileTest` 10, `ScrollOwnershipTest` 4) |
+| JVM unit tests | `./gradlew :app:testDebugUnitTest` | **311 tests, 36 classes, 0 failures, 0 skipped** — 14 more than before this pass (`AutoEqProfileTest` 10, `ScrollOwnershipTest` 4), and 38 more again after the AutoEQ import flow was completed (`AutoEqProfileTest` +18, `AutoEqImportTest` +19, `ScrollOwnershipTest` +1) |
 | Native DSP harness | part of the container entrypoint (ASan + UBSan over the real `neondsp.cpp`) | `HARNESS PASS (0 failures)` |
 | Debug build | `./gradlew :app:assembleDebug` | `BUILD SUCCESSFUL`, `app-debug.apk` produced |
 | Lint | `./gradlew :app:lintDebug` | **PASS** (`BUILD SUCCESSFUL`). The six errors that used to fail this task are fixed in source rather than suppressed wholesale: the two `MissingPermission` calls in the capture path now check the permission (and report the app's own error code), the API-28 signing read is version-guarded with the pre-28 accessor below it, and the two `RestrictedApi` `Shizuku.getServerPatchVersion` calls are narrowed to one guarded helper each with the reason stated. `lintDebug` is part of the container pipeline now, so this failure cannot come back unnoticed |
@@ -116,11 +116,29 @@ The tests added by this pass:
   the Repository Manager may claim `ScrollOwner.SCREEN`, Home and every category
   hub stay on the shell's scroll, every other tool frame is measured by the
   shell, and the tool that claims its own scroll is still routed to its own
-  screen and not to a full-screen destination.
+  screen and not to a full-screen destination. It also pins the key the shell
+  `remember`s its scroll container on — `SonicCoreNavState.scrollKey`, which used
+  to be an inline `(category, tool)` pair only the compiler saw: three distinct
+  destinations have three distinct keys, the same destination reached twice keeps
+  the same key, a hub differs from the tools inside it, and no two tools share
+  one. That is what makes "every destination opens at the top" a checked rule.
 - `engine/AutoEqProfileTest` — the AutoEQ integration added in the same batch:
   both profile formats, the OFF-slot and unsupported-filter refusals, the
   oversize guard, the name sanitiser, and the mapping onto SonicCore's 31-band
-  curve including the clamp.
+  curve including the clamp. Extended when the import flow was completed: every
+  refusal now carries a reason that is asserted, out-of-range gains and Q are
+  reported when they are normalised, a curve that does not fit ±15 dB reports
+  what it wanted, a declared `Preamp:` is distinguished from no preamp line, and
+  the input limits (128 KB, 64 filters, 8192 points) are checked at the boundary
+  and one past it.
+- `engine/AutoEqImportTest` — the import *flow*, driven through the same lambdas
+  `MainActivity` wires: a valid parametric and a valid graphic profile, the preamp
+  applied exactly once (and not at all when the profile declares none), save →
+  reload → reapply unchanged, replacing a same-named profile while keeping the
+  others, the seven refusal inputs applying nothing, cancellation, a failed store,
+  a failed activation and a failed preamp write each leaving the sound and the
+  profiles as they were, and the review text stating what is replaced and what is
+  kept.
 
 ## 7. Not verified, and what still needs a device
 
@@ -154,8 +172,11 @@ The tests added by this pass:
   unboundedly on a real screen is a device check, because a Compose measurement
   contract is reasoned about here, never observed. This is the item that most
   deserves the first emulator run.
-- **The AutoEQ import added in this batch is a code-level integration too.** Its
-  parser and band mapping are covered by 10 JVM tests, but "paste a profile and
-  hear the correction" needs a device: the import writes a custom preset and the
-  preamp through the existing engine paths, and no emulator exists here to listen
-  to the result.
+- **The AutoEQ import has a device half that cannot be checked here.** The parser,
+  the band mapping and now the whole import flow are covered by 47 JVM tests
+  (`AutoEqProfileTest` 28, `AutoEqImportTest` 19) driven through the same lambdas
+  `MainActivity` wires, so what an import *does* is pinned. What it *sounds like*
+  is not: no emulator or device exists here, so "import a profile and hear the
+  correction" — including the system file picker's own gesture and reading a real
+  `ParametricEQ.txt` from storage — remains a device check. It is a real gap and
+  is reported as one rather than inferred from the tests.

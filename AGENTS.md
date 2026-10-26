@@ -77,12 +77,12 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` — the JVM
-   unit tests (273 tests across 35 classes: the platform expansion, the Shizuku IPC
+   unit tests (311 tests across 36 classes: the platform expansion, the Shizuku IPC
    work, the Home/layout contracts, the responsive decisions and scroll-ownership
-   rule, the AutoEQ profile import, the twelve-theme catalogue, the splash, the
-   Audio Center grouping/rendering contract, the Audio control-parameter
-   validation and the Liquid Glass token contracts), the
-   debug APK, and lint — all built from the mounted source. All 273 tests pass with
+   rule, the AutoEQ profile parsing *and* import flow, the twelve-theme catalogue,
+   the splash, the Audio Center grouping/rendering contract, the Audio
+   control-parameter validation and the Liquid Glass token contracts), the
+   debug APK, and lint — all built from the mounted source. All 311 tests pass with
    0 skipped.
    **`:app:lintDebug` is part of the pipeline on purpose.** It used to fail with 6
    errors and was therefore left out (the capture path's two `MissingPermission`
@@ -232,7 +232,11 @@ Rules:
 
 - **The shell owns vertical scrolling.** `mainContent` in `MainActivity` is one
   `Column(Modifier.verticalScroll(...))` and its `ScrollState` is keyed on
-  `(category, tool)` so every destination opens at the top. A tool body must
+  `SonicCoreNavState.scrollKey` — the frame's category + tool — so every
+  destination opens at the top. That key lives in the navigation model rather
+  than in an expression only the compiler reads, and `ScrollOwnershipTest` pins
+  it: three distinct destinations have three distinct keys, one destination
+  reached twice keeps the same key, and no two tools share one. A tool body must
   **never** add its own `verticalScroll`: an outer vertical scroll hands its
   child an infinite maximum height, and Compose rejects a scrollable measured
   with one (`checkScrollableContainerConstraints`). Eight bodies did exactly
@@ -323,16 +327,24 @@ Rules:
   were read from the GitHub REST API on 2026-10-25, so re-verify them (and re-run
   `tools/license_check.py`) before repeating a licence claim.
 - **The one real repository integration is AutoEQ's profile *format*, not its
-  data.** `engine/AutoEqProfile.kt` (pure Kotlin, `AutoEqProfileTest`) parses a
-  pasted AutoEQ `ParametricEQ.txt` / `GraphicEQ.txt`, evaluates it at the same 31
-  band centres the engine's curve uses, and `MainActivity.importAutoEqProfile`
-  stores the result with the existing `saveCustomPreset` and applies the profile's
-  `Preamp:` line through the existing native preamp parameter — no second
-  equalizer and no band applied twice. It is an approximation at SonicCore's band
-  centres and says so in the import status line; no AutoEQ data, curve or source
-  is bundled (see `docs/repository-integration.md` §1.1). Do not "improve" it by
-  bundling a measured-profile database: that would redistribute upstream data
-  whose own licence is not AutoEq's MIT.
+  data.** Two pure-Kotlin files, both with JVM tests: `engine/AutoEqProfile.kt`
+  parses a pasted or picked AutoEQ `ParametricEQ.txt` / `GraphicEQ.txt` and
+  evaluates it at the same 31 band centres the engine's curve uses, and
+  `engine/AutoEqImport.kt` decides what an import does with the result.
+  `AutoEqImport.review` is deliberately side-effect free — it returns either a
+  refusal carrying its reason or a `Plan` the Audio → Presets screen shows — and
+  `AutoEqImport.apply` is the only mutating step, wired in `MainActivity` to the
+  existing `saveCustomPreset` and to `applyAudioControl(...)` for the preamp, so
+  the profile's `Preamp:` line is written **once** through the native preamp
+  parameter and no band is applied twice. Import is two steps on purpose (review →
+  "Save profile" or "Apply now"), which is what makes cancellation and every
+  refusal leave the active sound untouched. It is an approximation at SonicCore's
+  band centres and says so in the import status line; no AutoEQ data, curve or
+  source is bundled (see `docs/repository-integration.md` §1.1). Do not "improve"
+  it by bundling a measured-profile database: that would redistribute upstream
+  data whose own licence is not AutoEq's MIT. A clamp the import performs must
+  always be reported (`Plan.notes`), never silent — `AutoEqImportTest` fails if
+  that stops being true.
 - `gradle.properties` carries the original author's
   `android.cmake.path = /opt/soniccore-tools/cmake-3.22.6`. That directory does
   not exist here — and it does not need to: `android.cmake.path` is not an AGP

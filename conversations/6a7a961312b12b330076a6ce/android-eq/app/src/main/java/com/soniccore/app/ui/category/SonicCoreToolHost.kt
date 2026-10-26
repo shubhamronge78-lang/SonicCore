@@ -2,6 +2,7 @@ package com.soniccore.app.ui.category
 
 import com.soniccore.app.NeonTheme
 import com.soniccore.app.dsp.AudioControlState
+import com.soniccore.app.engine.AutoEqImport
 import com.soniccore.app.ui.home.HomeAudioSummary
 import com.soniccore.app.ui.navigation.SonicCoreDestination
 
@@ -24,11 +25,18 @@ data class SonicCoreToolHost(
     val presetsExportJson: () -> String,
     val onImportPresets: (String) -> Int,
     /**
-     * AutoEQ import: (profile name, AutoEQ text) to the sentence the screen shows.
-     * The host parses the profile, stores it as a custom preset on the engine's own
-     * curve and applies its preamp through the native preamp parameter.
+     * AutoEQ import, step 1 — (profile name, AutoEQ text) to what the profile
+     * contains. Pure: it parses and reports, and changes nothing, so cancelling
+     * the review cannot disturb the active sound.
      */
-    val onImportAutoEqProfile: (String, String) -> String,
+    val onReviewAutoEqProfile: (String, String) -> AutoEqImport.Review,
+    /**
+     * AutoEQ import, step 2 — the deliberate step. Stores the reviewed profile as
+     * a custom preset on the engine's own curve and, when `applyNow` is true, makes
+     * it the active curve and writes its preamp once through the native preamp
+     * parameter. Returns the sentence the screen shows.
+     */
+    val onApplyAutoEqProfile: (AutoEqImport.Review, Boolean) -> String,
     val onApplyPreset: (String) -> Boolean,
     val onSaveCustomPreset: (String) -> Unit,
     val onDeleteCustomPreset: (String) -> Unit,
