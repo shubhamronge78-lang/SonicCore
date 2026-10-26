@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 29+ only: enforceNavigationBarContrast is a 29 API, and it is the
+         item that stops the platform painting its own scrim behind the gesture
+         bar on top of the app's backdrop. windowLightNavigationBar (API 27) is
+         repeated here on purpose: for API 29+ this file is the best match, so
+         its bag has to be complete. See values/styles.xml. -->
+    <style name="Theme.NeonEQ" parent="Theme.NeonEQ.Base">
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+</resources>

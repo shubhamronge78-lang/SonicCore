@@ -8,16 +8,31 @@
       first frame is dark rather than white.
 
       windowDrawsSystemBarBackgrounds is what makes those transparent colours
-      honoured at all; enforceNavigationBarContrast="false" stops the platform
-      painting its own scrim behind the gesture bar on top of the backdrop.
+      honoured at all.
+
+      Everything that every supported API level may carry lives here, in
+      `Theme.NeonEQ.Base`. The theme itself is then defined per API level,
+      because two of the items added by the edge-to-edge pass are gated:
+      `android:windowLightNavigationBar` needs API 27 and
+      `android:enforceNavigationBarContrast` needs API 29, while minSdk is 26.
+      Putting them in an unqualified `values/` file fails `:app:lintDebug` with
+      [NewApi], which is why the qualified files exist:
+
+        values/styles.xml      API 26+  what every level supports
+        values-v27/styles.xml  API 27+  + windowLightNavigationBar
+        values-v29/styles.xml  API 29+  + enforceNavigationBarContrast
+
+      A style bag in a qualified folder is its own definition, so each one names
+      Theme.NeonEQ.Base as its parent instead of relying on merging — that way a
+      level can never end up with a theme that lost its other items.
     -->
-    <style name="Theme.NeonEQ" parent="Theme.Material3.Dark.NoActionBar">
+    <style name="Theme.NeonEQ.Base" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowBackground">#050508</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
+
+    <style name="Theme.NeonEQ" parent="Theme.NeonEQ.Base" />
 </resources>

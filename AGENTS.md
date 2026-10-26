@@ -67,6 +67,13 @@ route (own screen) or a destination.
 is bind-mounted at `/src`, never baked into an image) and serves the results on
 host port 3000, because that is the only port the preview can show.
 
+The sandbox does **not** run the copy in this repository: the platform runs the
+**environment-owned** copy at `$BASE44_CONFIG_ROOT/docker-compose.base44.yml`
+(with that environment's own `Dockerfile`, status page and `SETUP.md`). The two
+are meant to be the same setup and must be kept in step — a check added to one and
+not the other is a check the preview does not run, which is exactly how the
+edge-to-edge lint regression below got in.
+
 Everything lives in **one long-running service, `app`**:
 
 0. `python3 -m http.server` on port 80 starts **first**, serving `./build-output`
@@ -84,14 +91,17 @@ Everything lives in **one long-running service, `app`**:
    integrated loudness, an fs/4 sine's true peak, every refused input). A change
    to the measurement fails here instead of reaching a report.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` — the JVM
-   unit tests (341 tests across 38 classes: the platform expansion, the Shizuku IPC
+   unit tests (374 tests across 40 classes: the platform expansion, the Shizuku IPC
    work, the Home/layout contracts, the responsive decisions and scroll-ownership
-   rule, the AutoEQ profile parsing *and* import flow (including the preamp-write
-   rollback and the built-in name collision) and the offline loudness
-   measurement's own decisions, the twelve-theme catalogue,
-   the splash, the Audio Center grouping/rendering contract, the Audio
-   control-parameter validation and the Liquid Glass token contracts), the
-   debug APK, and lint — all built from the mounted source. All 341 tests pass with
+   rule, the DSP chain model (`DspChainTest` — the eight stages, the limiter-last
+   rule, refused moves) with its saved-chain store (`DspChainPresetsTest`, which
+   also pins `DspTelemetryText`'s "measured or declined" wording), the Audio
+   control-parameter validation and clamping, the AutoEQ profile parsing *and*
+   import flow (including the preamp-write rollback and the built-in name
+   collision) and the offline loudness measurement's own decisions, the
+   twelve-theme catalogue, the splash, the Audio Center grouping/rendering
+   contract and the Liquid Glass token contracts), the
+   debug APK, and lint — all built from the mounted source. All 374 tests pass with
    0 skipped.
    **`:app:lintDebug` is part of the pipeline on purpose.** It used to fail with 6
    errors and was therefore left out (the capture path's two `MissingPermission`
@@ -101,6 +111,19 @@ Everything lives in **one long-running service, `app`**:
    documented `@SuppressLint("RestrictedApi")` helper per Shizuku call — so lint
    passes and stays in the command: dropping it again would let the same failure
    return unnoticed.
+   **It did return once, which is why the pipeline that actually runs here now
+   includes lint.** The edge-to-edge pass added `android:windowLightNavigationBar`
+   (API 27) and `android:enforceNavigationBarContrast` (API 29) to an unqualified
+   `values/styles.xml`, so `:app:lintDebug` failed again with 2 `[NewApi]` errors
+   against minSdk 26 — and nothing noticed, because the environment-owned compose
+   file that the sandbox actually runs invoked only `testDebugUnitTest` and
+   `assembleDebug`. Both attributes now live in `values-v27/styles.xml` and
+   `values-v29/styles.xml` over a shared `Theme.NeonEQ.Base`. Current result:
+   `0 errors, 67 warnings`.
+   **Whatever pipeline runs this project must therefore invoke `:app:lintDebug`
+   and the loudness harness** — including the environment-owned compose file the
+   sandbox actually runs. Until it does, run both by hand from the container as
+   shown above; a gate that only exists in this document is not a gate.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -204,13 +227,23 @@ Rules the rebuild established, and the tests that hold them:
   theme change painted the previous palette. `SonicCoreTheme` applies it inside
   `remember(palette)` before `content()` composes — switching themes needs no
   restart. Do not move it back into a `SideEffect`.
-- **`GlassScaffold` owns the insets.** Status bar and keyboard padding are
-  applied once for the whole app; a screen that adds its own will double-pad.
-  Note the app is **not** edge-to-edge — `Theme.NeonEQ` sets an explicit
-  `android:statusBarColor` and nothing calls `setDecorFitsSystemWindows(false)`
-  or `enableEdgeToEdge()`, so the decor already insets the content and these
-  padding modifiers most likely resolve to zero. They are there so that going
-  edge-to-edge (forced at `targetSdk` 35) does not become a per-screen job.
+- **`GlassScaffold` owns the insets, and the app now *is* edge-to-edge.**
+  `MainActivity.onCreate` calls `enableEdgeToEdge()` before `setContent`, and
+  `Theme.NeonEQ` (`res/values/styles.xml`) draws **transparent** status and
+  navigation bars with `windowDrawsSystemBarBackgrounds=true` and
+  `enforceNavigationBarContrast=false`, so the glass backdrop runs under both
+  bars and under a display cutout instead of stopping at a black band no theme
+  could match. `GlassScaffold` then applies
+  `statusBarsPadding() + displayCutoutPadding() + imePadding()` **once** for the
+  whole app — the cutout inset is the part the old code lacked (in landscape a
+  cutout sits on a *side*). `GlassNavigation` keeps its own
+  `navigationBarsPadding()` because the dock is the component that sits against
+  that edge, so the scaffold deliberately does **not** add it too. The activity
+  keeps `android:windowSoftInputMode="adjustResize"`, which is what feeds
+  `imePadding()` a real keyboard inset. `GlassBottomSheet` is the only other
+  inset call site, and it is legitimate: it renders in its own `Dialog` window,
+  outside the scaffold. A *screen* that adds its own system-bar padding will
+  double-pad — that is RD-15 in `docs/responsive-audit.md`.
 - **All twelve themes share the spec's ink.** `Themes.dark()` sets
   `#F3F7FF` / `#9EACC2` for every dark theme and `Themes.OBSIDIAN` ("classic")
   is the specification's palette verbatim (`#080D18` / `#0D1422` / `#121C2C` /
@@ -274,6 +307,117 @@ Rules:
 - Tests: `ResponsiveLayoutTest` (classes, caps, gutters, two-pane boundary,
   grid columns), `HomeResponsiveLayoutTest`, and
   `RepositoryInventoryTest` for the Repository Manager's sort orders.
+
+## The Audio Console, the eight DSP stages and the chain editor
+
+`ui/audio/AudioConsoleScreen.kt` is the Audio tool `audio.console` (first entry in
+the Sound Controls group). It is one continuous surface: the chain editor, then
+one inline card per effect — preamp, shelves, graphic EQ, parametric EQ, stereo,
+compressor, limiter — each with its own enable/bypass toggle, its controls, and an
+`OUTPUT` block immediately underneath. Two rules hold there and are the reason the
+file exists in this shape:
+
+- **A toggle is the real control.** A card's switch moves either the native
+  chain's own stage enable (`NeonDsp.setStageEnabled` — the same flag the chain
+  editor shows) or the parameter switch the engine already has (`compOn`,
+  `limiterOn`). Nothing flips a boolean only the UI sees.
+- **Output is measured or it is declined.** `DspTelemetry` carries the bridge's
+  own counters (processed frames, compressor/limiter gain reduction, output peak,
+  clip state); `DspTelemetryText` decides whether a card shows that measurement
+  or one of "waiting for audio" / "not measurable: <reason>". Those are pure text
+  decisions, pinned by `DspChainPresetsTest`, so a card cannot draw a number it
+  does not have. The counters belong to the **capture** path that runs the native
+  chain — on the in-app player path (SonicCore's own software chain) gain
+  reduction is genuinely not measurable and the cards say exactly that instead of
+  borrowing the other path's numbers.
+
+### The eight stages, and which of them are optional
+
+`dsp/DspChain.kt` (`ChainStage`) is the single declaration of what the engine
+processes, using the ids `neondsp.cpp` uses:
+
+| id | stage | bypassable |
+| --- | --- | --- |
+| 0 | Preamp | yes |
+| 1 | Parametric EQ — 8 peaking slots | yes |
+| 2 | Graphic EQ — 10 / 15 / 31 bands | yes |
+| 3 | Bass & Treble — one low, one high shelf | yes |
+| 4 | Stereo — width, balance, swap, mono | yes |
+| 5 | Convolver | yes, but **no IR can be loaded in this build**, so it passes audio through unchanged and its row says so |
+| 6 | Compressor | yes |
+| 7 | Limiter | **no — pinned last** |
+
+Anything else is not a stage and the console renders **no control** for it: the
+"Not available on this path" section names IR convolution, reverb/virtualizer,
+haptic bass and system-wide processing with their reasons, because a toggle that
+changed nothing would be worse than saying so.
+
+### The order is real, and invalid orders are refused before they reach audio
+
+- `neondsp.cpp` walks `stageOrder[8]`, not a hard-coded sequence. `stageOrder[]`
+  and `stageOn[]` travel in the same seqlock-published snapshot as every other
+  parameter and are committed at a **block boundary** by `applyPendingParams()`,
+  so the audio thread never observes a half-written chain and a reorder or a
+  bypass always lands between blocks.
+- `DspChainRules.isValidOrder` requires a full permutation of the eight ids with
+  the limiter last; `DspChainRules.move` refuses a move that would break that
+  **before** anything is applied and returns the sentence the screen shows. A
+  refused move leaves the chain exactly as it was — there is no partial apply.
+- `NeonDsp.setStageOrder` re-validates at the audio boundary and returns `false`
+  **without touching the committed order** for anything that is not a
+  permutation, so the UI is not the last line of defence. `DspChain.of` applies
+  the same rule to *stored* ids, falling back to the engine's default order
+  rather than forwarding a damaged chain.
+- `tools/dspharness/harness.cpp` section **[18]** measures all of it: a +20 dB
+  signal is held at the −1 dBFS ceiling with the limiter last and reaches 32 767
+  with the limiter first; a bypassed preamp passes at unity while keeping its
+  +20 dB setting; a refused non-permutation leaves the committed chain untouched;
+  the mandatory stage stays enabled. A reorder is therefore never a label only a
+  UI believes.
+
+### The limiter is mandatory in the chain editor — and the one caveat
+
+`ChainStage.LIMITER` has `bypassable = false`: its row renders no toggle (it reads
+"Always last — output ceiling"), it cannot be dragged or moved past the end, and
+no stored chain can place a stage after it, which is what makes "nothing runs
+after the output ceiling" true. The honest caveat is that the engine's **own**
+limiter enable (`limiterOn`, persisted in `DspParams`) is a separate, older
+parameter surfaced on the console's Limiter card and in Settings, and *that* can
+switch the stage off. The chain editor cannot disable the limiter; the app can,
+through that control. Either way the native output clamp and the NaN/Inf guard
+bound whatever leaves the chain.
+
+### Saved chains: what is stored, and the persistence limitations
+
+`dsp/DspChainPresets.kt` stores a chain as one short line per preset
+(`order=…;off=…`) in the app's own `dsp_chain_presets` preferences. The
+limitations are deliberate and worth knowing before changing anything:
+
+- **Order and bypass flags only.** An effect's *parameters* (preamp gain, shelf
+  gains, thresholds, band values) are not part of a chain preset; they live in
+  the persisted `DspParams` JSON. `MainActivity.applyDspChain` reloads the
+  persisted parameters and re-applies them unchanged, so loading a chain reorders
+  and re-enables stages without moving a single value.
+- **Maximum eight presets**, and a ninth save drops the oldest. A save under an
+  existing name replaces it in place.
+- **A chain preset cannot corrupt another store.** Custom profiles and AutoEQ
+  imports go through `Presets` / `saveCustomPreset`, a different store, so a
+  chain save can never overwrite them.
+- **Stored data is untrusted.** Names are sanitised and capped
+  (`DspChainPresets.sanitizeName`), and a damaged stored line decodes to `null`
+  rather than to a chain the engine must not run (`DspChainPresetsTest`).
+
+### The one known discrepancy in the shelf curve
+
+The shelf response drawn on Bass & Treble and in the console is a **modelled
+rendering aid**, derived from the two gains the DSP was given, and the screens say
+so. Its corner constants — `LOW_SHELF_HZ` / `HIGH_SHELF_HZ` = 200 Hz / 4000 Hz in
+`dsp/AudioControlState.kt` — do **not** match the frequencies the native shelves
+are actually built at (100 Hz and 8000 Hz in `neondsp.cpp`), so the corners the UI
+states are wrong by an octave each. The one-pole shape the curve uses cannot
+represent the engine's RBJ shelf at 8 kHz without changing the curve *and* the
+thresholds `AudioControlStateTest` pins, so it is recorded here rather than
+silently re-tuned — fix both together if you touch it.
 
 ## Non-obvious quirks worth knowing
 

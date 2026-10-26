@@ -21,18 +21,19 @@ which `SonicCoreNavigationTest` asserts.
 | Destination | Group | Status | Notes | Device-verified |
 | --- | --- | --- | --- | --- |
 | Audio Dashboard | Overview | Implemented | Live engine state, measured meters, spectrum, counters, output route | No |
+| Audio Console | Sound Controls | Implemented | One surface for every effect the engine really has: the eight-stage signal chain with real reordering and per-stage bypass, then an inline card per effect (preamp, shelves, graphic/parametric EQ, stereo, compressor, limiter) with its own toggle and an output block that holds a measurement from the native bridge or says which of "waiting for audio" / "not measurable" applies. Effects this build does not offer are listed with their reason and have **no control** | No |
 | Equalizer | Sound Controls | Implemented | Graphic + parametric EQ, preamp, A/B, undo/redo, per-band controls | No |
 | Bass & Treble | Sound Controls | Implemented | Independent low/high shelf gains with the modelled shelf response curve | No |
 | Stereo & Spatial | Sound Controls | Implemented | Width, balance, channel swap and mono downmix — the four native `setStereo` parameters | No |
-| Dynamics | Sound Controls | Implemented | Noise gate and limiter controls on the existing native chain | No |
-| DSP Studio | DSP Processing | Implemented | Native stage list, per-stage bypass, parameters, limiter/compressor telemetry | No |
+| Dynamics | Sound Controls | Implemented | The platform `NoiseSuppressor` on the capture session (a capture-session control, **not** a native chain stage), the native limiter's threshold, and the anti-clip state. Compressor parameters stay in DSP Studio | No |
+| DSP Studio | DSP Processing | Implemented | The native stage list with its parameters and the limiter/compressor telemetry. Per-stage bypass here and in the Audio Console's chain editor move the same engine flag (`stageOn[]`) | No |
 | Player | Playback & Capture | Implemented | Built-in player through SonicCore's own software processing path | No |
 | Audio Capture | Playback & Capture | Bounded | Playback capture needs a user-approved `MediaProjection` token; the source app must permit capture. Protected/opted-out audio is not available | No |
 | Audio Sessions | Playback & Capture | Implemented | Session records, comparison of factual aggregates, export through `FileProvider` | No |
 | Output & Devices | Devices & Routing | Implemented | Routes Android publishes to this app with their own capabilities; routing is never forced | No |
 | Signal Path | Devices & Routing | Implemented | Measured capture-to-output stages; reports "no frames" rather than a guess | No |
 | Audio Presets | Presets & Diagnostics | Implemented | Built-in and custom profiles, save, apply, delete, import/export bundles, and AutoEQ `ParametricEQ`/`GraphicEQ` profile import: paste the text or open the `.txt` file, review the parsed filters/points, the preamp and the band curve, then deliberately save it or apply it (31-band approximation, preamp written once to the native preamp parameter, malformed and unsupported profiles refused with their reason) | No |
-| Audio Diagnostics | Presets & Diagnostics | Implemented | Session counters, platform compatibility probes, the project's own audio self-test, log and redacted report export | No |
+| Audio Diagnostics | Presets & Diagnostics | Implemented | Session counters, platform compatibility probes, the project's own audio self-test, log and redacted report export, and the **offline loudness measurement**: pick a 16-bit PCM WAV and read integrated LUFS, loudness range and true peak (EBU R 128 / ITU-R BS.1770-4 over the vendored libebur128). Offline analysis only — it is a separate `libloudness.so` that nothing in the playback or capture path loads — and silence or a span shorter than one 400 ms gating block is reported as **not measurable** rather than as a number | No |
 
 Every Audio screen is a pure consumer of `SonicCoreToolHost`: it reads an
 `AudioControlState` snapshot and hands a new one back. The host validates it
@@ -41,9 +42,20 @@ audio thread), merges it over the persisted `DspParams` so one screen can never
 clear another's parameters, and applies it through the same `DspParams.applyTo`
 path the DSP rack uses.
 
-Native DSP (`app/src/main/cpp/neondsp.cpp`) is unchanged by the platform work and
-is covered by the host harness (`HARNESS PASS`), which compiles the production
-DSP under ASan+UBSan.
+The native DSP (`app/src/main/cpp/neondsp.cpp`) is covered by **two** host
+harnesses that compile the production code under ASan+UBSan, both run from the
+app container:
+
+- the **DSP harness** (`HARNESS PASS (0 failures)`), which also measures that a
+  reorder really changes the processed audio, that a refused non-permutation
+  leaves the committed chain untouched, and that a bypassed stage passes at unity
+  while keeping its parameters (section [18]);
+- the **offline loudness harness** (`LOUDNESS HARNESS PASS (0 failures)`) over
+  the vendored libebur128.
+
+Neither substitutes for a device run: there is no emulator and no physical device
+in this environment, so every `Device-verified` column below reads **No**, and
+"No" means *unverified on hardware*, not "known broken".
 
 ## Category 2 — Device Center
 
@@ -104,8 +116,9 @@ never shown as a working toggle.
 | --- | --- | --- |
 | Navigation | Implemented | Six categories on Home and in the bottom dock (which never lists an internal tool); a category opens a hub listing its tools, so the scrolling 16-chip dock is gone and every destination is reachable |
 | Splash | Implemented | Animated first-frame overlay; skipped when system animations are off |
-| Tests | Implemented | 232 JVM tests across 31 classes, 0 failures, 0 skipped (`:app:testDebugUnitTest`), including `RepositoryInventoryTest`'s licence-compliance contract over the repository inventory |
-| Native DSP regression | Implemented | ASan+UBSan host harness over the production DSP |
-| Lint | Known findings | `:app:lintDebug` reports 6 errors + 68 warnings, none of them in a file this work touches — listed in `PLATFORM_EXPANSION_STATUS.md`. Lint is not part of CI |
-| Licence audit | Implemented | `tools/license_check.py` + `docs/repository-integration.md`; the audited upstream inventory is `docs/repository-inventory.md` |
-| Documentation links | Implemented | `tools/check_docs_links.py` |
+| Tests | Implemented | **374 JVM tests across 40 classes, 0 failures, 0 errors, 0 skipped** (`:app:testDebugUnitTest`, from a clean build) — the platform expansion, the DSP chain model and its saved chains, the AutoEQ parser *and* import flow, the offline loudness decisions, the responsive/scroll-ownership contracts and `RepositoryInventoryTest`'s licence-compliance contract. Automated coverage only: nothing in this table has been run on a device |
+| Native DSP regression | Implemented | ASan+UBSan host harness over the production DSP — `HARNESS PASS (0 failures)`, including section [18]'s measurement that a reorder really changes the processed audio. Automated, not device-verified |
+| Offline loudness regression | Implemented | ASan+UBSan host harness over the vendored libebur128 and the module's JNI facade — `LOUDNESS HARNESS PASS (0 failures)`. Automated, not device-verified |
+| Lint | Implemented | `:app:lintDebug` passes: **0 errors, 67 warnings**. The warnings are pre-existing and none is in a file this work changed (dependency version bumps, `InlinedApi` permission constants, `BatteryLife` on the battery-optimisation shortcut, hardcoded `/data/` in a diagnostic readout). Lint is part of the sandbox pipeline, so a new error fails the build |
+| Licence audit | Implemented | `tools/license_check.py` — `PASS: no copyleft licence on any resolved configuration`; `docs/repository-integration.md`; the audited upstream inventory is `docs/repository-inventory.md` |
+| Documentation links | Implemented | `tools/check_docs_links.py` — `PASS: every relative link resolves in 14 file(s)` |
