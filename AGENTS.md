@@ -76,16 +76,22 @@ Everything lives in **one long-running service, `app`**:
 1. Native DSP host self-test — compiles the **real** production DSP
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
-2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (259 tests across 33 classes: the platform expansion, the Shizuku IPC work, the
-   Home/layout contracts, the twelve-theme catalogue, the splash, the Audio Center
-   grouping/rendering contract, the Audio control-parameter validation and the
-   Liquid Glass token contracts) plus the
-   debug APK, built from the mounted source. All 241 pass with 0 skipped.
-   `:app:lintDebug` is **not** run here: it reports 6 pre-existing errors (the
-   capture path, `SettingsToolScreens`' API-28 signing-info read, and the two
-   Shizuku restricted-API calls), none of them in a file this work touches, so
-   adding it to the pipeline would make a green build impossible.
+2. `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` — the JVM
+   unit tests (273 tests across 35 classes: the platform expansion, the Shizuku IPC
+   work, the Home/layout contracts, the responsive decisions and scroll-ownership
+   rule, the AutoEQ profile import, the twelve-theme catalogue, the splash, the
+   Audio Center grouping/rendering contract, the Audio control-parameter
+   validation and the Liquid Glass token contracts), the
+   debug APK, and lint — all built from the mounted source. All 273 tests pass with
+   0 skipped.
+   **`:app:lintDebug` is part of the pipeline on purpose.** It used to fail with 6
+   errors and was therefore left out (the capture path's two `MissingPermission`
+   calls, `SettingsToolScreens`' API-28 signing-info read, and the two Shizuku
+   `RestrictedApi` calls). Those are now fixed in source — permission checks with
+   the app's own error codes, a version-guarded signing read, and one narrow,
+   documented `@SuppressLint("RestrictedApi")` helper per Shizuku call — so lint
+   passes and stays in the command: dropping it again would let the same failure
+   return unnoticed.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -231,6 +237,16 @@ Rules:
   child an infinite maximum height, and Compose rejects a scrollable measured
   with one (`checkScrollableContainerConstraints`). Eight bodies did exactly
   that (RD-01) — that is why they no longer scroll themselves.
+- **One scroll owner, and exactly one exception, declared in the navigation
+  model.** A screen whose body *is* a lazy list cannot live inside that
+  container at all, so `SonicCoreTool.scrollOwner` defaults to
+  `ScrollOwner.SHELL` and only `custom.repositories` declares
+  `ScrollOwner.SCREEN`. `SonicCoreNavState.screenOwnsScroll` carries that to the
+  shell, which applies `verticalScroll` **only** when the frame does not own its
+  own and otherwise hands the screen the remaining height (bounded, so the
+  `LazyColumn` in `RepositoryManagerScreen` measures legally). Adding a second
+  screen-owned scroll means declaring it on its tool — and
+  `ScrollOwnershipTest` fails until that is deliberate.
 - **Never compare a breakpoint at a call site.** Use
   `ResponsiveBreakpoints` / `ResponsiveMetrics` (`twoPane`, `contentMaxWidth`,
   `screenPadding`, `sectionGap`, `categoryColumns`, `columnsFor`).
@@ -306,6 +322,17 @@ Rules:
   requires. `docs/repository-inventory.md` mirrors the data — upstream facts there
   were read from the GitHub REST API on 2026-10-25, so re-verify them (and re-run
   `tools/license_check.py`) before repeating a licence claim.
+- **The one real repository integration is AutoEQ's profile *format*, not its
+  data.** `engine/AutoEqProfile.kt` (pure Kotlin, `AutoEqProfileTest`) parses a
+  pasted AutoEQ `ParametricEQ.txt` / `GraphicEQ.txt`, evaluates it at the same 31
+  band centres the engine's curve uses, and `MainActivity.importAutoEqProfile`
+  stores the result with the existing `saveCustomPreset` and applies the profile's
+  `Preamp:` line through the existing native preamp parameter — no second
+  equalizer and no band applied twice. It is an approximation at SonicCore's band
+  centres and says so in the import status line; no AutoEQ data, curve or source
+  is bundled (see `docs/repository-integration.md` §1.1). Do not "improve" it by
+  bundling a measured-profile database: that would redistribute upstream data
+  whose own licence is not AutoEq's MIT.
 - `gradle.properties` carries the original author's
   `android.cmake.path = /opt/soniccore-tools/cmake-3.22.6`. That directory does
   not exist here — and it does not need to: `android.cmake.path` is not an AGP

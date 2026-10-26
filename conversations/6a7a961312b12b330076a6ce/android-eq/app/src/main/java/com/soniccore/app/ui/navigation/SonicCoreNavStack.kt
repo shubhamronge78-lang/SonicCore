@@ -24,6 +24,15 @@ data class SonicCoreNavState(val tokens: List<String> = listOf(SonicCoreRoutes.H
 
     val tool: SonicCoreTool? get() = SonicCoreRoutes.toolOf(current)
 
+    /**
+     * Who scrolls the frame on top: the screen's own declaration, or the shell.
+     * Home and the category hubs always use the shell's container.
+     */
+    val scrollOwner: ScrollOwner get() = tool?.scrollOwner ?: ScrollOwner.SHELL
+
+    /** True when the screen on top renders its own lazy list and needs a bounded height. */
+    val screenOwnsScroll: Boolean get() = scrollOwner == ScrollOwner.SCREEN
+
     /** True on the Home screen — the floor of the stack. */
     val isHome: Boolean get() = current == SonicCoreRoutes.HOME
 

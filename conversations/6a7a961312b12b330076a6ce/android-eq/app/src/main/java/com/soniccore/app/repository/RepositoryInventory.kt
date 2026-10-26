@@ -192,10 +192,10 @@ object RepositoryInventory {
         RepositoryEntry(
             "jaakkopasanen/AutoEq", "AutoEq", gh("jaakkopasanen/AutoEq"),
             InventoryCategory.AUDIO, "MIT", LicenseCompatibility.PERMISSIVE,
-            IntegrationStatus.READY_TO_INTEGRATE, PrivilegeRequirement.NONE,
-            Maintenance.ACTIVE, "2026-10-20", 16377, Coverage.NONE,
+            IntegrationStatus.INTEGRATED, PrivilegeRequirement.NONE,
+            Maintenance.ACTIVE, "2026-10-20", 16377, Coverage.ADOPTED,
             "Headphone measurement database plus target curves, used to derive correction filters.",
-            "Licence-compatible and scheduled for a later batch: the generated filters are ordinary parametric bands that the existing EQ already applies, so no engine change is needed."
+            "Its ParametricEQ and GraphicEQ profile formats are read by engine/AutoEqProfile.kt: a pasted profile becomes a custom preset on the engine's own 31-slot curve, and its preamp line is applied to the native preamp parameter — the paths presets and the preamp control already use. Formats only, so no AutoEQ measurement data or source is redistributed; the curve is an approximation evaluated at SonicCore's band centres. Covered by AutoEqProfileTest (10 tests)."
         ),
         RepositoryEntry(
             "xiph/speexdsp", "SpeexDSP", gh("xiph/speexdsp"),

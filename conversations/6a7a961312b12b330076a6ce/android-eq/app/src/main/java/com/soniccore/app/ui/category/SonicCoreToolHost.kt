@@ -23,6 +23,12 @@ data class SonicCoreToolHost(
     val customPresetNames: List<String>,
     val presetsExportJson: () -> String,
     val onImportPresets: (String) -> Int,
+    /**
+     * AutoEQ import: (profile name, AutoEQ text) to the sentence the screen shows.
+     * The host parses the profile, stores it as a custom preset on the engine's own
+     * curve and applies its preamp through the native preamp parameter.
+     */
+    val onImportAutoEqProfile: (String, String) -> String,
     val onApplyPreset: (String) -> Boolean,
     val onSaveCustomPreset: (String) -> Unit,
     val onDeleteCustomPreset: (String) -> Unit,

@@ -13,10 +13,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -111,9 +115,18 @@ fun RepositoryManagerScreen(modifier: Modifier = Modifier) {
     )
     val counts = RepositoryInventory.countByStatus().toMap()
 
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // A lazy list, not a `forEach` inside the shell's scroll: this screen is the
+    // one destination that declares `ScrollOwner.SCREEN`, so the list below is
+    // the single scroll owner here and the shell hands it the remaining height.
+    // That is what keeps the catalogue scalable instead of rendering every card.
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = GlassSpacing.screenVertical)
+    ) {
 
         // ── Inventory summary ───────────────────────────────────────────────
+        item {
         LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
             PlatformSectionLabel("Open-source repository inventory")
             Spacer(Modifier.height(6.dp))
@@ -170,14 +183,18 @@ fun RepositoryManagerScreen(modifier: Modifier = Modifier) {
                 }
             }
         }
+        }
 
+        item {
         CapabilityLegend(
             SonicCoreCapability.AVAILABLE,
             "Searchable catalogue with category filters, licence verdicts, privilege requirements and source links. " +
                 "Nothing is marked Integrated until its code is in this repository and the tests cover it."
         )
+        }
 
         // ── Search and filters ──────────────────────────────────────────────
+        item {
         LiquidGlassSurface(
             modifier = Modifier.fillMaxWidth(),
             depth = LiquidGlassDepth.Inset
@@ -274,8 +291,10 @@ fun RepositoryManagerScreen(modifier: Modifier = Modifier) {
                 color = SonicCoreColors.SecondaryText
             )
         }
+        }
 
         // ── Status legend (collapsed: the cards already carry the label) ────
+        item {
         LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), depth = LiquidGlassDepth.Inset) {
             Row(
                 modifier = Modifier
@@ -324,8 +343,10 @@ fun RepositoryManagerScreen(modifier: Modifier = Modifier) {
                 }
             }
         }
+        }
 
         // ── The catalogue ───────────────────────────────────────────────────
+        item {
         if (visible.isEmpty()) {
             LiquidGlassSurface(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -353,7 +374,9 @@ fun RepositoryManagerScreen(modifier: Modifier = Modifier) {
                 )
             }
         }
-        visible.forEach { entry ->
+        }
+
+        items(visible) { entry ->
             RepositoryCard(entry = entry, onOpenSource = { openOnGitHub(context, entry.url) })
         }
     }

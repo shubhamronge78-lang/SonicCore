@@ -22,6 +22,7 @@ audit: **PASS**, 109 artifacts on `debugRuntimeClasspath` (shipped) and 112 on
 | [`RikkaApps/Shizuku-API`](https://github.com/RikkaApps/Shizuku-API) — `dev.rikka.shizuku:api` / `:provider` 13.1.5 | **MIT** (repo `LICENSE`; the Maven POM published by Rikka also declares `MIT License`) | Official client for the *optional* elevated bridge: the binder hand-off provider declared in the manifest, install/running/authorized state, `Shizuku.requestPermission`, and the read-only diagnostics call. Compatible with MIT: attribution only, no source copying. |
 | [`RikkaApps/Shizuku`](https://github.com/RikkaApps/Shizuku) (the manager app) | **Apache-2.0** | **Not bundled.** The user installs the manager themselves; it never enters this repository or the APK, so its licence does not propagate here. |
 | AndroidX / Jetpack Compose — `core-ktx` 1.12.0, `appcompat` 1.6.1, `compose-bom` 2024.02.00, `material` 1.11.0, `activity-compose` 1.8.2, `lifecycle-runtime-ktx` 2.7.0 | **Apache-2.0** | UI, lifecycle and platform-compat foundation. |
+| [`jaakkopasanen/AutoEq`](https://github.com/jaakkopasanen/AutoEq) | **MIT** (repository `LICENSE`) | **Its profile *file formats* only** — see section 1.1. `engine/AutoEqProfile.kt` reads a pasted `ParametricEQ.txt` / `GraphicEQ.txt`, evaluates the filters at SonicCore's 31 band centres and hands the result to the existing equalizer as a custom preset, with the profile's `Preamp:` line applied to the native preamp parameter. No AutoEQ source, measurement data or target curve is copied, vendored or redistributed, so nothing of AutoEQ ships inside the APK. |
 | `junit:junit` 4.13.2 | **EPL-1.0** | JVM unit tests only (`testImplementation`): never packaged into the APK. |
 | `org.json:json` 20240303 | **Public Domain** (as declared in the published POM) | Test-scope implementation of `org.json` so JSON contracts can be tested on the JVM; the shipped app uses Android's platform JSON. |
 | `com.google.guava:listenablefuture` 1.0, `org.hamcrest:hamcrest-core` 1.3 | **Apache-2.0** and **BSD-3-Clause**; the published POMs of these two carry **no licence metadata**, which is why `tools/license_check.py` prints `unknown` for them. The licences above come from their Maven Central / upstream project metadata. | Pulled in transitively (AndroidX `concurrent-futures`, JUnit). Both permissive; no action needed. |
@@ -29,6 +30,20 @@ audit: **PASS**, 109 artifacts on `debugRuntimeClasspath` (shipped) and 112 on
 `app/src/main` contains only originally written Kotlin and the project's own
 C++ (`app/src/main/cpp/neondsp.cpp`). There is no vendored or copied source
 directory tree anywhere in the project.
+
+### 1.1 AutoEQ profile import — the one integration built in this batch
+
+Implemented end-to-end, and its boundary is stated in the app itself:
+
+| | |
+| --- | --- |
+| **Reads** | The two text formats AutoEQ publishes for a model: `ParametricEQ.txt` (`Preamp:` plus `Filter n: ON <PK/LSC/HSC> Fc .. Hz Gain .. dB Q ..`) and `GraphicEQ.txt` (one `GraphicEQ:` line of `frequency gain;` points). Disabled (`OFF`) slots are skipped, low/high-pass filter types are **refused** rather than silently mangled, the paste is size-limited, and a name is required because AutoEQ's text carries none. |
+| **Writes** | A **custom preset** on the engine's existing 31-slot curve (`engine.saveCustomPreset`, the same model `Presets.CustomPreset` uses) and the profile's preamp through the app's existing native preamp parameter (`DspParams.preamp`). Both are paths the app already used; no second equalizer exists and no band is applied twice. |
+| **Where it applies** | Wherever the engine already processes — SonicCore's own player, captured playback and any supported system route. It is not an effect outside the app. |
+| **Not taken** | No AutoEQ source code, measurement database, target curve, compensation value or generated profile file is copied or bundled. Only the documented file format is parsed, which is what keeps an MIT data repository's *data* out of this repository. |
+| **Approximation, stated** | A parametric profile is evaluated as a sum of bell/transition curves in log-frequency (a peaking filter returns to zero on both sides, a shelf holds its gain on its own side), a graphic profile is interpolated in log-frequency, and both are clamped to ±15 dB before they are stored. The result is an approximation at SonicCore's band centres, not AutoEQ's own biquad response — the import status line says so, and so does this file. |
+| **Coverage** | `engine/AutoEqProfileTest` — 10 JVM tests: both formats, the OFF slot, the unsupported filter type, the oversize paste, the name sanitiser, the interpolation, the ±15 dB clamp and the preamp clamp. |
+| **Removal / replacement** | Delete `AutoEqProfile.kt`, the `onImportAutoEqProfile` host callback and the dialog action in `ui/audio/AudioToolScreens.kt`; nothing else references it. Replacing it with a real `AutoEq`-generated filter import changes nothing else, because the output is an ordinary preset. |
 
 ## 2. Audited, deliberately not integrated
 
@@ -89,7 +104,7 @@ projects contributed any code, table, preset, impulse response or resource.
 
 ### 4.2 Licence-compatible and queued
 
-`jaakkopasanen/AutoEq` (MIT), `xiph/speexdsp` (BSD-3-Clause), `jiixyj/libebur128`
+`xiph/speexdsp` (BSD-3-Clause), `jiixyj/libebur128`
 (MIT), `google/oboe` (Apache-2.0), `androidx/media` (Apache-2.0),
 `chrisbanes/haze` (Apache-2.0), `material-foundation/material-color-utilities`
 (Apache-2.0), `google/material-design-icons` (Apache-2.0),

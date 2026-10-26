@@ -74,7 +74,11 @@ services:
 
         # 2. Build the app from source: JVM unit tests, then the debug APK.
         chmod +x gradlew
-        ./gradlew :app:testDebugUnitTest :app:assembleDebug \
+        #    `:app:lintDebug` is in this list deliberately: it used to fail the build
+        #    with 6 errors, which is why it had been left out. Those errors are fixed
+        #    in source now, so lint is a real gate here and the failure cannot return
+        #    without failing the pipeline again.
+        ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug \
           --no-daemon --console=plain > /out/build.log 2>&1
         cp app/build/outputs/apk/debug/app-debug.apk /out/NeonEQ-debug.apk
         cp -r app/build/reports/tests/testDebugUnitTest /out/tests

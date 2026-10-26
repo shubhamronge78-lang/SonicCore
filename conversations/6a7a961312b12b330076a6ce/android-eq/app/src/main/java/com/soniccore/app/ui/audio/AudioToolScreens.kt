@@ -61,6 +61,8 @@ fun AudioPresetsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
     var saveName by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
+    // AutoEQ's own files carry no model name, so the import takes one.
+    var importName by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     var exportText by remember { mutableStateOf<String?>(null) }
 
@@ -212,21 +214,48 @@ fun AudioPresetsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
         AlertDialog(
             onDismissRequest = { showImport = false },
             containerColor = SonicCoreColors.Surface,
-            title = { Text("Import profile bundle", color = SonicCoreColors.PrimaryText) },
+            title = { Text("Import profile", color = SonicCoreColors.PrimaryText) },
             text = {
+                Text(
+                    "Paste a SonicCore exported bundle (JSON), or the text of an AutoEQ ParametricEQ / GraphicEQ profile.",
+                    color = SonicCoreColors.SecondaryText,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
                 OutlinedTextField(
                     value = importText,
                     onValueChange = { importText = it },
-                    label = { Text("Paste exported JSON") },
+                    label = { Text("Paste JSON or AutoEQ profile") },
                     modifier = Modifier.fillMaxWidth().height(140.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = importName,
+                    onValueChange = { importName = it },
+                    singleLine = true,
+                    label = { Text("Name (AutoEQ import)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "An AutoEQ curve is stored as a custom profile and applied by the existing equalizer; its preamp is applied to the native preamp parameter.",
+                    color = SonicCoreColors.SecondaryText,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 6.dp)
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    val count = runCatching { host.onImportPresets(importText.trim()) }.getOrDefault(0)
-                    status = if (count > 0) "Imported $count profile(s)." else "Nothing could be imported from that text."
-                    showImport = false
-                }) { Text("Import") }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = {
+                        status = runCatching { host.onImportAutoEqProfile(importName, importText) }
+                            .getOrDefault("The AutoEQ profile could not be imported.")
+                        showImport = false
+                    }) { Text("Import AutoEQ") }
+                    TextButton(onClick = {
+                        val count = runCatching { host.onImportPresets(importText.trim()) }.getOrDefault(0)
+                        status = if (count > 0) "Imported $count profile(s)." else "Nothing could be imported from that text."
+                        showImport = false
+                    }) { Text("Import bundle") }
+                }
             },
             dismissButton = { TextButton(onClick = { showImport = false }) { Text("Cancel") } }
         )

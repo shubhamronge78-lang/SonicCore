@@ -42,6 +42,7 @@ link check. Nothing in this document claims a visual check that did not happen.
 | RD-11 | Low | Filter chips were ≈28 dp tall | `padding(vertical = 6.dp)` and no minimum size | 36 dp minimum with centred content. **Still below the 48 dp guideline** — see section 7 |
 | RD-12 | Medium | The two-pane breakpoint existed three times: `screenWidthDp >= 840` in the Audio hub, `maxWidth >= 840.dp` in the Home dashboard, and no shared definition anywhere | Each screen compared its own literal | `ResponsiveBreakpoints.TWO_PANE_MIN_WIDTH_DP`; the Audio hub reads `LocalResponsiveMetrics.current.twoPane` and `homeUsesTwoColumns` delegates to the same constant |
 | RD-13 | Medium | The glass-intensity slider was pinned to 30–32 dp, defeating the shared slider's own 48 dp touch target | `Modifier.height(30.dp)` passes *fixed* constraints, so `GlassSlider`'s `defaultMinSize(minHeight = touchTarget)` had no effect | The fixed heights are gone; both call sites get the full touch target |
+| RD-14 | Medium | Repository Manager built its whole catalogue with `forEach` inside the app-wide scroll, so every card of a large inventory was composed at once and the screen could not be made lazy | A lazy list cannot be measured inside a `verticalScroll` parent, and the shell owned the only scroll — scalability had been traded away to keep the shell scrolling | `ScrollOwner` (`SHELL` / `SCREEN`) on `SonicCoreTool`, surfaced as `SonicCoreNavState.screenOwnsScroll`: the shell applies `verticalScroll` **only** when the frame does not own its own, and hands a screen-owned frame the remaining height. `custom.repositories` declares `SCREEN`; its catalogue is a `LazyColumn` |
 
 ## 4. What changed, and why it is a shared change
 
@@ -52,7 +53,8 @@ link check. Nothing in this document claims a visual check that did not happen.
 | `MainActivity.kt` | The shell: one scroll container, per-destination scroll state, responsive gutter and content cap |
 | `ui/home/SonicCoreHomeScreen.kt` | Category grid columns follow the window; the user preference still wins |
 | `ui/category/CategoryHubs.kt` | Device and Privacy tile grids; Audio hub reads the shared two-pane decision; glass slider keeps its touch target |
-| `ui/customization/RepositoryManagerScreen.kt` | Adaptive summary grid, sort control, collapsed legend, actionable empty state, taller filter chips |
+| `ui/customization/RepositoryManagerScreen.kt` | Adaptive summary grid, sort control, collapsed legend, actionable empty state, taller filter chips, and a lazy catalogue (RD-14) |
+| `ui/navigation/SonicCoreNavigation.kt`, `SonicCoreNavStack.kt` | `ScrollOwner` on the tool model and `screenOwnsScroll` on the navigation frame — the per-destination scroll-ownership rule, pinned by `ScrollOwnershipTest` |
 | `repository/RepositoryInventory.kt` | `RepositorySort` and the pure `orderedBy` (data module, no Android imports) |
 | Eight tool bodies | Root `verticalScroll` removed (RD-01): Device Diagnostics, Capabilities, Device Tools, App Manager, Shizuku Center, Customization Center, Settings hub, Permissions & Privacy |
 
@@ -93,10 +95,10 @@ Run from the container built from this source
 
 | Check | Command | Result |
 | --- | --- | --- |
-| JVM unit tests | `./gradlew :app:testDebugUnitTest` | **259 tests, 33 classes, 0 failures, 0 skipped** — 18 more than before this pass (`ResponsiveLayoutTest` 14, four `RepositoryInventory` ordering tests) |
+| JVM unit tests | `./gradlew :app:testDebugUnitTest` | **273 tests, 35 classes, 0 failures, 0 skipped** — 14 more than before this pass (`AutoEqProfileTest` 10, `ScrollOwnershipTest` 4) |
 | Native DSP harness | part of the container entrypoint (ASan + UBSan over the real `neondsp.cpp`) | `HARNESS PASS (0 failures)` |
 | Debug build | `./gradlew :app:assembleDebug` | `BUILD SUCCESSFUL`, `app-debug.apk` produced |
-| Lint | `./gradlew :app:lintDebug` | **6 errors, all pre-existing** and unrelated to this work: two `MissingPermission` in the capture path, two `NewApi` (API 28 `SigningInfo`) in `SettingsToolScreens`, two `RestrictedApi` (`Shizuku.getServerPatchVersion`). No new error or warning in a file this pass touched |
+| Lint | `./gradlew :app:lintDebug` | **PASS** (`BUILD SUCCESSFUL`). The six errors that used to fail this task are fixed in source rather than suppressed wholesale: the two `MissingPermission` calls in the capture path now check the permission (and report the app's own error code), the API-28 signing read is version-guarded with the pre-28 accessor below it, and the two `RestrictedApi` `Shizuku.getServerPatchVersion` calls are narrowed to one guarded helper each with the reason stated. `lintDebug` is part of the container pipeline now, so this failure cannot come back unnoticed |
 | Licence audit | `python3 tools/license_check.py` | `PASS: no copyleft licence on any resolved configuration` |
 | Documentation links | `python3 tools/check_docs_links.py` | PASS |
 
@@ -110,6 +112,15 @@ The tests added by this pass:
 - `repository/RepositoryInventoryTest` — ordering by name, the compliance order
   of `STATUS`, category grouping, and that no ordering drops or duplicates an
   entry.
+- `ui/navigation/ScrollOwnershipTest` — the scroll-ownership rule (RD-14): only
+  the Repository Manager may claim `ScrollOwner.SCREEN`, Home and every category
+  hub stay on the shell's scroll, every other tool frame is measured by the
+  shell, and the tool that claims its own scroll is still routed to its own
+  screen and not to a full-screen destination.
+- `engine/AutoEqProfileTest` — the AutoEQ integration added in the same batch:
+  both profile formats, the OFF-slot and unsupported-filter refusals, the
+  oversize guard, the name sanitiser, and the mapping onto SonicCore's 31-band
+  curve including the clamp.
 
 ## 7. Not verified, and what still needs a device
 
@@ -135,8 +146,16 @@ The tests added by this pass:
 - **RD-11 remains open by choice**: the filter chips are 36 dp, not 48 dp. Going
   to 48 dp would make a horizontally scrolling chip row dominate the card, so
   the trade-off is recorded rather than silently made.
-- The Repository Manager still renders its catalogue with `forEach` inside the
-  app-wide scroll rather than in a lazy list. A lazy list cannot live inside a
-  `verticalScroll` parent; doing it properly means giving that screen the scroll
-  ownership back and making the shell's scroll structural per screen — a larger
-  change than this pass, and the honest remaining item.
+- **RD-14 is closed in code, not on a device.** The Repository Manager is a
+  `LazyColumn` and the shell hands it the remaining height instead of a scroll
+  container of its own. `ScrollOwnershipTest` pins that it is the *only*
+  destination allowed to claim its own scroll — but that the list scrolls under a
+  finger, that the filter card stays reachable and that nothing measures
+  unboundedly on a real screen is a device check, because a Compose measurement
+  contract is reasoned about here, never observed. This is the item that most
+  deserves the first emulator run.
+- **The AutoEQ import added in this batch is a code-level integration too.** Its
+  parser and band mapping are covered by 10 JVM tests, but "paste a profile and
+  hear the correction" needs a device: the import writes a custom preset and the
+  preamp through the existing engine paths, and no emulator exists here to listen
+  to the result.

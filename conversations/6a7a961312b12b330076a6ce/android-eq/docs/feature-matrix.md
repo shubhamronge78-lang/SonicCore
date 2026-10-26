@@ -31,7 +31,7 @@ which `SonicCoreNavigationTest` asserts.
 | Audio Sessions | Playback & Capture | Implemented | Session records, comparison of factual aggregates, export through `FileProvider` | No |
 | Output & Devices | Devices & Routing | Implemented | Routes Android publishes to this app with their own capabilities; routing is never forced | No |
 | Signal Path | Devices & Routing | Implemented | Measured capture-to-output stages; reports "no frames" rather than a guess | No |
-| Audio Presets | Presets & Diagnostics | Implemented | Built-in and custom profiles, save, apply, delete, import/export bundles | No |
+| Audio Presets | Presets & Diagnostics | Implemented | Built-in and custom profiles, save, apply, delete, import/export bundles, and AutoEQ `ParametricEQ`/`GraphicEQ` profile import (31-band approximation, preamp applied to the native preamp parameter) | No |
 | Audio Diagnostics | Presets & Diagnostics | Implemented | Session counters, platform compatibility probes, the project's own audio self-test, log and redacted report export | No |
 
 Every Audio screen is a pure consumer of `SonicCoreToolHost`: it reads an

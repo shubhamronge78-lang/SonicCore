@@ -1,5 +1,6 @@
 package com.soniccore.app.shizuku
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -150,6 +151,21 @@ object ShizukuBridge {
         return if (hasPermission()) ShizukuState.CONNECTED else ShizukuState.PERMISSION_REQUIRED
     }
 
+    /**
+     * The server's patch level.
+     *
+     * `Shizuku.getServerPatchVersion()` carries `@RestrictTo(LIBRARY_GROUP_PREFIX)`
+     * in the official client, which lint reports as `RestrictedApi`. It is the only
+     * source of this value and Shizuku's own documentation uses it from client
+     * apps, so the restriction is acknowledged here — narrowly, on one guarded
+     * call — rather than dropping a diagnostic row. An older server throws or
+     * reports a negative value; both become [ShizukuEnvironment.UNKNOWN_VALUE].
+     */
+    @SuppressLint("RestrictedApi")
+    private fun serverPatchVersion(): Int =
+        runCatching { Shizuku.getServerPatchVersion() }
+            .getOrDefault(ShizukuEnvironment.UNKNOWN_VALUE)
+
     /** Live snapshot for the eligibility engine. Only reads cached server facts. */
     fun environment(context: Context): ShizukuEnvironment {
         val state = checkState(context)
@@ -158,8 +174,7 @@ object ShizukuBridge {
             ShizukuState.CONNECTED -> base.copy(
                 serverVersion = runCatching { Shizuku.getVersion() }
                     .getOrDefault(ShizukuEnvironment.UNKNOWN_VALUE),
-                serverPatchVersion = runCatching { Shizuku.getServerPatchVersion() }
-                    .getOrDefault(ShizukuEnvironment.UNKNOWN_VALUE),
+                serverPatchVersion = serverPatchVersion(),
                 serverUid = runCatching { Shizuku.getUid() }
                     .getOrDefault(ShizukuEnvironment.UNKNOWN_VALUE),
                 selinuxContext = runCatching { Shizuku.getSELinuxContext() }.getOrNull(),

@@ -87,9 +87,12 @@ would need.
 Licence-compatible, verified, and waiting for an implementation batch. Nothing in
 this table is implemented today.
 
+(`jaakkopasanen/AutoEq` has left this table: its profile formats are now read by
+`engine/AutoEqProfile.kt`. See the Integrated section above and
+[repository-integration.md](repository-integration.md) §1.1.)
+
 | Project | Licence | Latest release | What it would add |
 | --- | --- | --- | --- |
-| `jaakkopasanen/AutoEq` | MIT | data repository (no tagged release) | Headphone measurement database and target curves; the derived filters are ordinary parametric bands, so no engine change is needed. |
 | `xiph/speexdsp` | BSD-3-Clause | SpeexDSP-1.2.1 (2022-06-17) | Resampling, echo cancellation and preprocessor DSP. |
 | `jiixyj/libebur128` | MIT | v1.2.6 (2021-02-14) | EBU R128 / BS.1770 loudness measurement — the basis of a loudness-matching feature. |
 | `google/oboe` | Apache-2.0 | 1.11.0 (2026-09-15) | AAudio/OpenSL ES wrapper for a lower-latency output path (AAudio needs API 26+). |

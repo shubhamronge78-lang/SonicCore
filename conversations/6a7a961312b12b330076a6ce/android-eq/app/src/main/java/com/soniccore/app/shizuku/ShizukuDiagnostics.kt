@@ -1,5 +1,6 @@
 package com.soniccore.app.shizuku
 
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
 
@@ -57,6 +58,16 @@ object ShizukuDiagnostics {
      * gone so the invoker maps it to BINDER_DISCONNECTED instead of returning
      * half-filled data that looks trustworthy.
      */
+    /**
+     * `Shizuku.getServerPatchVersion()` is annotated `@RestrictTo` in the official
+     * client, which lint reports as `RestrictedApi`. It is the only source of the
+     * server's patch level, so the restriction is acknowledged on this one call
+     * rather than the diagnostic row being removed. [ShizukuBridge] reads the same
+     * value for the environment snapshot.
+     */
+    @SuppressLint("RestrictedApi")
+    private fun serverPatchVersion(): Int = Shizuku.getServerPatchVersion()
+
     private fun probe(): List<ShizukuDetail> {
         val details = mutableListOf<ShizukuDetail>()
 
@@ -81,7 +92,7 @@ object ShizukuDiagnostics {
 
         val version = Shizuku.getVersion()
         details += ShizukuDetail("Server API version", version.toString())
-        val patch = Shizuku.getServerPatchVersion()
+        val patch = serverPatchVersion()
         if (patch >= 0) {
             details += ShizukuDetail("Server patch", patch.toString())
         }
