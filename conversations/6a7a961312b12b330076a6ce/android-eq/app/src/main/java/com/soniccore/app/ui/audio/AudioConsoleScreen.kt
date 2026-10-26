@@ -123,6 +123,7 @@ fun AudioConsoleScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
 
         SignalChainEditor(
             chain = chain,
+            limiterOn = controls.limiterOn,
             onChainChange = { next -> host.onDspChainChange(next) },
             onStatus = { status = it }
         )
@@ -176,6 +177,7 @@ private const val TELEMETRY_INTERVAL_MS = 700L
 @Composable
 private fun SignalChainEditor(
     chain: DspChain,
+    limiterOn: Boolean,
     onChainChange: (DspChain) -> Boolean,
     onStatus: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -222,6 +224,17 @@ private fun SignalChainEditor(
         modifier = modifier,
         description = "The order the engine really processes: ${chain.orderText}"
     ) {
+        // The name comes before the actions that use it: the field used to sit
+        // below SAVE CHAIN, so "save" was offered over a name the user had not
+        // been asked for yet.
+        OutlinedTextField(
+            value = presetName,
+            onValueChange = { presetName = it },
+            singleLine = true,
+            label = { Text("Chain name", color = SonicCoreColors.SecondaryText) },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(GlassSpacing.gapSmall)
@@ -301,21 +314,17 @@ private fun SignalChainEditor(
             }
         }
 
-        OutlinedTextField(
-            value = presetName,
-            onValueChange = { presetName = it },
-            singleLine = true,
-            label = { Text("Chain name", color = SonicCoreColors.SecondaryText) },
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-        )
-
         Spacer(Modifier.height(6.dp))
         chain.order.forEachIndexed { index, stage ->
             ChainStageRow(
                 stage = stage,
                 position = index,
                 total = chain.order.size,
-                bypassed = chain.isBypassed(stage),
+                // One source of truth per stage: the bypass set for the optional
+                // stages, and the app-level limiter switch for the limiter — the
+                // same answer the engine is given, so the row cannot claim the
+                // limiter is on while the Limiter card switched it off.
+                bypassed = !chain.enableOf(stage, limiterOn),
                 dragging = dragStageId == stage.id,
                 onToggle = { bypass -> toggleStage(stage, bypass) },
                 onMove = { target -> commitMove(index, target) },
@@ -401,7 +410,11 @@ private fun ChainStageRow(
                 )
                 Text(
                     when {
-                        !stage.bypassable -> "Always last — output ceiling"
+                        !stage.bypassable -> if (bypassed) {
+                            "Last in the chain · switched off by the Limiter card"
+                        } else {
+                            "Always last — output ceiling"
+                        }
                         bypassed -> "Bypassed · ${stage.summary}"
                         dragging -> "Moving…"
                         else -> stage.summary
@@ -744,11 +757,12 @@ private fun LimiterEffectCard(
     AudioEffectCard(
         title = "Limiter",
         status = if (controls.limiterOn) {
-            "Ceiling ${formatDb(controls.limThresh)} · always last in the chain"
+            "Ceiling ${formatDb(controls.limThresh)} · enabled"
         } else {
-            "Switched off"
+            "Switched off · the chain still keeps the stage last"
         },
-        description = "The final safety stage. The chain keeps it last: nothing runs after the output ceiling.",
+        description = "The final safety stage. This switch is the limiter's own enable — the same value the " +
+            "chain editor shows. The chain itself only fixes its place: always last, nothing runs after the output ceiling.",
         toggle = AudioEffectToggle(
             checked = controls.limiterOn,
             onCheckedChange = { on -> onControls(controls.copy(limiterOn = on)) },

@@ -120,10 +120,14 @@ Everything lives in **one long-running service, `app`**:
    `assembleDebug`. Both attributes now live in `values-v27/styles.xml` and
    `values-v29/styles.xml` over a shared `Theme.NeonEQ.Base`. Current result:
    `0 errors, 67 warnings`.
-   **Whatever pipeline runs this project must therefore invoke `:app:lintDebug`
-   and the loudness harness** — including the environment-owned compose file the
-   sandbox actually runs. Until it does, run both by hand from the container as
-   shown above; a gate that only exists in this document is not a gate.
+   **`docker-compose.base44.yml` itself now runs all four gates**: the native DSP
+   harness (step 1), the offline loudness harness (step 1b), and
+   `./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` (step 2).
+   The loudness harness was the gate that lived only in this document — the
+   compose command compiled `harness.cpp` and then went straight to Gradle, so
+   `build-output/loudness-test.log` never appeared and a change to the measurement
+   reached a report unchallenged. It is now step 1b (same ASan/UBSan flags, same
+   `LOUDNESS HARNESS PASS` line) and the served status page links its log.
 3. The APK and the test report are copied into `./build-output`, so the page
    switches to "APK ready to install".
 
@@ -375,17 +379,35 @@ changed nothing would be worse than saying so.
   the mandatory stage stays enabled. A reorder is therefore never a label only a
   UI believes.
 
-### The limiter is mandatory in the chain editor — and the one caveat
+### The limiter: mandatory *place*, one *enable* (the old conflict is resolved)
 
-`ChainStage.LIMITER` has `bypassable = false`: its row renders no toggle (it reads
-"Always last — output ceiling"), it cannot be dragged or moved past the end, and
-no stored chain can place a stage after it, which is what makes "nothing runs
-after the output ceiling" true. The honest caveat is that the engine's **own**
-limiter enable (`limiterOn`, persisted in `DspParams`) is a separate, older
-parameter surfaced on the console's Limiter card and in Settings, and *that* can
-switch the stage off. The chain editor cannot disable the limiter; the app can,
-through that control. Either way the native output clamp and the NaN/Inf guard
-bound whatever leaves the chain.
+`ChainStage.LIMITER` has `bypassable = false`: its row renders no toggle, it cannot
+be dragged or moved past the end, and no stored chain can place a stage after it,
+which is what makes "nothing runs after the output ceiling" true.
+
+Its **place** was never the problem; its **enable** was. The engine has two ways to
+switch the limiter off — the chain's own stage enable (`stageOn[7]`, skippable in
+`processFrame`) and the older `limOn` parameter behind `setLimiter` — and the app
+used to write them from two different places: `DspParams.applyTo` forced
+`stageOn[7] = true` while `limiterOn` went to `limOn`. The chain editor therefore
+showed the limiter as permanently on while the Limiter card and Settings could
+switch the same stage off, and `NeonDsp.stageEnabled(7)` answered something the
+console did not show.
+
+The policy is now one value, routed through one function:
+
+- `DspChain.enableOf(stage, limiterOn)` is the single answer to "is this stage
+  running?". Order and the optional stages' bypass set stay the chain's;
+  **the limiter's enable is the app-level `limiterOn`** (persisted in `DspParams`,
+  surfaced on the console's Limiter card and in Settings).
+- `DspParams.applyTo` derives every `setStageEnabled` from it, and so does the
+  chain editor's row, so the model, the UI, the native stage enable and the
+  diagnostics cannot disagree.
+- `DspChainTest.theLimitersPlaceIsMandatoryAndItsEnableIsTheOneAppParameter` pins
+  both halves: the chain can never bypass or move the limiter, and its enable is
+  exactly `limiterOn` in both directions.
+- Either way, the native output clamp and the NaN/Inf guard bound whatever leaves
+  the chain, and the chain's `stageBypassed` set can never contain the limiter.
 
 ### Saved chains: what is stored, and the persistence limitations
 
@@ -407,17 +429,32 @@ limitations are deliberate and worth knowing before changing anything:
   (`DspChainPresets.sanitizeName`), and a damaged stored line decodes to `null`
   rather than to a chain the engine must not run (`DspChainPresetsTest`).
 
-### The one known discrepancy in the shelf curve
+### The shelf curve and its corners: one source of truth (the old mismatch is fixed)
 
 The shelf response drawn on Bass & Treble and in the console is a **modelled
 rendering aid**, derived from the two gains the DSP was given, and the screens say
-so. Its corner constants — `LOW_SHELF_HZ` / `HIGH_SHELF_HZ` = 200 Hz / 4000 Hz in
-`dsp/AudioControlState.kt` — do **not** match the frequencies the native shelves
-are actually built at (100 Hz and 8000 Hz in `neondsp.cpp`), so the corners the UI
-states are wrong by an octave each. The one-pole shape the curve uses cannot
-represent the engine's RBJ shelf at 8 kHz without changing the curve *and* the
-thresholds `AudioControlStateTest` pins, so it is recorded here rather than
-silently re-tuned — fix both together if you touch it.
+so. It used to be a one-pole sketch with corner constants (`LOW_SHELF_HZ` /
+`HIGH_SHELF_HZ` = 200 Hz / 4000 Hz) that disagreed with the frequencies the native
+shelves are actually built at — 100 Hz and 8000 Hz in `neondsp.cpp` — so every
+corner the UI stated was wrong by an octave and the curve was a lookalike rather
+than the engine's response.
+
+It is now the engine's own response, from one documented set of constants:
+
+- `LOW_SHELF_HZ` = 100 Hz and `HIGH_SHELF_HZ` = 8000 Hz in
+  `dsp/AudioControlState.kt` are the UI's copy of `neondsp.cpp`'s `setShelf(…,
+  100.0, …)` / `setShelf(…, 8000.0, …)`, and `AudioControlStateTest`
+  (`theShelfCornersMatchTheNativeEngine`) pins them. Change the engine's corners
+  and that test fails until the label moves with it.
+- `shelfResponseDb` evaluates the **real RBJ shelf** the engine builds, using the
+  same coefficients and the same `alpha = sin(w0) / 1.4` slope, at
+  `SHELF_MODEL_SAMPLE_RATE` (48 kHz, the engine's default — the UI cannot read the
+  capture rate). Half gain at the corner, full gain in band, unity out of band and
+  an exact mirror for a cut are asserted in `theModelledCurveMatchesTheEnginesRbjShape`
+  and `aCutIsTheExactMirrorOfTheSameBoost`, matching what
+  `tools/dspharness/harness.cpp` section [14] measures on the native side.
+- The screens still say "modelled": it is a rendering aid derived from the two
+  gains, never a measurement of processed audio.
 
 ## Non-obvious quirks worth knowing
 

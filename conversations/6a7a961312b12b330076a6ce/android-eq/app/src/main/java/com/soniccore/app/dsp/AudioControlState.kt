@@ -1,5 +1,12 @@
 package com.soniccore.app.dsp
 
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.log10
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
+
 /**
  * Immutable snapshot of the audio parameters the Audio Center screens edit.
  *
@@ -111,11 +118,31 @@ object AudioControlRanges {
     }
 }
 
-/** Fixed corner of the native low shelf. */
-const val LOW_SHELF_HZ = 200f
+/**
+ * Reference sample rate the modelled curve is evaluated at.
+ *
+ * The native engine runs at the capture rate and defaults to 48 kHz
+ * (`neondsp.cpp`: `sr = 48000.0` until `init` sees another rate), so the UI
+ * states 48 kHz rather than inventing a device-specific number it cannot read.
+ */
+const val SHELF_MODEL_SAMPLE_RATE = 48000f
 
-/** Fixed corner of the native high shelf. */
-const val HIGH_SHELF_HZ = 4000f
+/* ── The one source of truth for the shelf corners ───────────────────────────
+ *
+ * `neondsp.cpp` builds the low shelf at 100 Hz (`setShelf(&bassSh[..], 100.0, …)`
+ * and `setShelfT(&bassSh[..], 100.0, …)`) and the high shelf at 8000 Hz, and
+ * `tools/dspharness/harness.cpp` section [14] measures exactly those corners
+ * (±20 dB shelf -> ±10 dB at the corner). [LOW_SHELF_HZ] / [HIGH_SHELF_HZ] are
+ * the UI's copy of that fact and must stay equal to the native constants; the
+ * regression test `AudioControlStateTest.theShelfCornersMatchTheNativeEngine`
+ * pins them, and the modelled curve below is built from the *same* RBJ formulas
+ * so the label, the curve and the DSP are three views of one value. */
+
+/** Fixed corner of the native low shelf — 100 Hz in `neondsp.cpp`. */
+const val LOW_SHELF_HZ = 100f
+
+/** Fixed corner of the native high shelf — 8000 Hz in `neondsp.cpp`. */
+const val HIGH_SHELF_HZ = 8000f
 
 /**
  * Modelled shelf response in dB at [freqHz] for the current bass/treble gains.
@@ -125,14 +152,66 @@ const val HIGH_SHELF_HZ = 4000f
  * the response curve on the Bass & Treble screen: it is derived from the
  * parameters the DSP was actually given, and is a rendering aid — never a
  * measurement of processed audio.
+ *
+ * Unlike the one-pole sketch this replaced, it evaluates the **real** RBJ shelf
+ * the engine builds — the same coefficients, the same `alpha = sin(w0) / 1.4`
+ * slope — as a magnitude response, so the curve no longer disagrees with the DSP
+ * it describes (the corners used to be stated an octave away from 100 Hz/8 kHz).
  */
 fun shelfResponseDb(state: AudioControlState, freqHz: Float): Float {
     if (!freqHz.isFinite() || freqHz <= 0f) return 0f
     val v = state.validated()
-    val f = freqHz
-    val low = f / LOW_SHELF_HZ
-    val high = f / HIGH_SHELF_HZ
-    val lowShare = 1f / (1f + low * low)
-    val highShare = (high * high) / (1f + high * high)
-    return v.bass * lowShare + v.treble * highShare
+    return rbjShelfDb(freqHz, LOW_SHELF_HZ, v.bass, high = false) +
+        rbjShelfDb(freqHz, HIGH_SHELF_HZ, v.treble, high = true)
+}
+
+/**
+ * |H(e^jω)| in dB of one RBJ shelf at [SHELF_MODEL_SAMPLE_RATE].
+ *
+ * The coefficients mirror `neondsp.cpp`'s `setShelf` / `setShelfT` exactly,
+ * including the `sin(w0) / 1.4` slope, so the modelled curve is the engine's own
+ * response rather than a lookalike. A zero gain is unity by construction and
+ * short-circuits to 0 dB.
+ */
+private fun rbjShelfDb(freqHz: Float, cornerHz: Float, gainDb: Float, high: Boolean): Float {
+    if (gainDb == 0f) return 0f
+    val fs = SHELF_MODEL_SAMPLE_RATE
+    val a = 10.0.pow(gainDb / 40.0)
+    val w0 = 2.0 * PI * cornerHz / fs
+    val cw = cos(w0)
+    val sw = sin(w0)
+    val alpha = sw / 1.4
+    val sqA = sqrt(a)
+
+    val b0: Double
+    val b1: Double
+    val b2: Double
+    val a0: Double
+    val a1: Double
+    val a2: Double
+    if (!high) {
+        b0 = a * ((a + 1) - (a - 1) * cw + 2 * sqA * alpha)
+        b1 = 2 * a * ((a - 1) - (a + 1) * cw)
+        b2 = a * ((a + 1) - (a - 1) * cw - 2 * sqA * alpha)
+        a0 = (a + 1) + (a - 1) * cw + 2 * sqA * alpha
+        a1 = -2 * ((a - 1) + (a + 1) * cw)
+        a2 = (a + 1) + (a - 1) * cw - 2 * sqA * alpha
+    } else {
+        b0 = a * ((a + 1) + (a - 1) * cw + 2 * sqA * alpha)
+        b1 = -2 * a * ((a - 1) + (a + 1) * cw)
+        b2 = a * ((a + 1) + (a - 1) * cw - 2 * sqA * alpha)
+        a0 = (a + 1) - (a - 1) * cw + 2 * sqA * alpha
+        a1 = 2 * ((a - 1) - (a + 1) * cw)
+        a2 = (a + 1) - (a - 1) * cw - 2 * sqA * alpha
+    }
+
+    val w = 2.0 * PI * freqHz / fs
+    val nRe = b0 + b1 * cos(w) + b2 * cos(2.0 * w)
+    val nIm = -(b1 * sin(w) + b2 * sin(2.0 * w))
+    val dRe = a0 + a1 * cos(w) + a2 * cos(2.0 * w)
+    val dIm = -(a1 * sin(w) + a2 * sin(2.0 * w))
+    val num = nRe * nRe + nIm * nIm
+    val den = dRe * dRe + dIm * dIm
+    if (den <= 0.0 || num <= 0.0) return 0f
+    return (10.0 * log10(num / den)).toFloat()
 }

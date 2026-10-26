@@ -67,7 +67,8 @@ fun rememberLiveAudioSummary(
                 clipCount = 0L,
                 cpuPercent = null,
                 latencyMs = null,
-                captureRunning = false
+                captureRunning = false,
+                bypassActive = CaptureEqService.bypass
             )
         )
     }
@@ -154,7 +155,10 @@ fun rememberLiveAudioSummary(
             cpuPercent = if (running && recentCaptureData && CaptureEqService.dspLoadPct.isFinite())
                 CaptureEqService.dspLoadPct else null,
             latencyMs = CaptureEqService.totalLatencyMs.takeIf { running && it > 0.0 && it.isFinite() },
-            captureRunning = running
+            captureRunning = running,
+            // Read directly from the service flag the bypass switch itself
+            // writes — never inferred from "a session is running".
+            bypassActive = CaptureEqService.bypass
         )
     }
 

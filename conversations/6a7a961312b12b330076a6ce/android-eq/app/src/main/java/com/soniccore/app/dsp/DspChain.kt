@@ -69,6 +69,30 @@ data class DspChain(
     fun isBypassed(stage: ChainStage): Boolean = stage.bypassable && stage in bypassed
 
     /**
+     * The enable the engine is given for [stage] — the chain's answer to
+     * "is this stage running?".
+     *
+     * A stage's *place* and its *enable* are two different decisions, and the
+     * chain only owns one of them. The chain owns the order — the limiter is
+     * always last and cannot be dragged or bypassed out of it — and the bypass
+     * set for the optional stages. The **limiter's enable is the app-level
+     * `limiterOn` parameter**, the one switch the Audio Console's Limiter card
+     * and Settings share.
+     *
+     * Routing both the engine writes ([DspParams.applyTo]) and the chain
+     * editor's display through this one function is what removes the old
+     * conflict, where the editor showed the limiter as permanently on while the
+     * older parameter could switch the same native stage off: there is now a
+     * single source of truth, so the model, the UI, the native `stageEnabled`
+     * readback and the diagnostics cannot report two different answers.
+     */
+    fun enableOf(stage: ChainStage, limiterOn: Boolean): Boolean = when {
+        stage == ChainStage.LIMITER -> limiterOn
+        stage.bypassable -> !isBypassed(stage)
+        else -> true
+    }
+
+    /**
      * Switches [stage] on or off. Parameters are untouched either way — bypass
      * is the engine's own stage enable, not a reset of what the stage holds.
      */

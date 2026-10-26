@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,9 +38,11 @@ import androidx.compose.ui.unit.sp
 import com.soniccore.app.dsp.MeterLevels
 import com.soniccore.app.ui.category.CapabilityBadge
 import com.soniccore.app.ui.category.SonicCoreCapability
+import com.soniccore.app.ui.design.AdaptiveGrid
 import com.soniccore.app.ui.design.AppearanceState
 import com.soniccore.app.ui.design.GlassCard
 import com.soniccore.app.ui.design.GlassIconButton
+import com.soniccore.app.ui.design.GlassSpacing
 import com.soniccore.app.ui.design.HomeColumnChoice
 import com.soniccore.app.ui.design.LiquidGlassSurface
 import com.soniccore.app.ui.design.LocalMotionScale
@@ -64,7 +68,16 @@ data class HomeAudioSummary(
     val clipCount: Long,
     val cpuPercent: Double?,
     val latencyMs: Double?,
-    val captureRunning: Boolean
+    val captureRunning: Boolean,
+    /**
+     * Whether the capture chain is in bypass *right now*.
+     *
+     * The Home card used to colour its BYPASS button from `captureRunning`, so
+     * it read "on" whenever a session was running even though the DSP was
+     * bypassed — a state the user cannot get anywhere else on this screen.
+     * It is its own field so the button can never borrow another flag.
+     */
+    val bypassActive: Boolean = false
 )
 
 /**
@@ -141,6 +154,7 @@ fun SonicCoreHomeScreen(
         )
 
         HomeQuickActionsRow(
+            summary = summary,
             onToggleBypass = onToggleBypass,
             onCategoryClick = onCategoryClick
         )
@@ -268,12 +282,16 @@ private fun HomeAudioStatusCard(
             HomeMiniButton(
                 label = if (summary.engineEnabled) "ENGINE ON" else "ENGINE OFF",
                 active = summary.engineEnabled,
+                stateLabel = if (summary.engineEnabled) "On" else "Off",
                 onClick = onToggleEngine,
                 modifier = Modifier.weight(1f)
             )
             HomeMiniButton(
-                label = "DSP BYPASS",
-                active = summary.captureRunning,
+                // The label states what the DSP is doing, not what the capture
+                // service is doing: "BYPASS ON" only when it really is bypassed.
+                label = if (summary.bypassActive) "BYPASS ON" else "BYPASS OFF",
+                active = summary.bypassActive,
+                stateLabel = if (summary.bypassActive) "On" else "Off",
                 onClick = onToggleBypass,
                 modifier = Modifier.weight(1f)
             )
@@ -387,10 +405,13 @@ private fun HomeMiniButton(
     label: String,
     active: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Spoken on/off state. Null for a navigation shortcut, which has no state. */
+    stateLabel: String? = null
 ) {
     Box(
         modifier = modifier
+            .defaultMinSize(minHeight = GlassSpacing.touchTarget)
             .clip(RoundedCornerShape(GlassRadius.tile))
             .background(
                 if (active) SonicCoreColors.Cyan.copy(alpha = 0.14f)
@@ -403,8 +424,11 @@ private fun HomeMiniButton(
                 RoundedCornerShape(GlassRadius.tile)
             )
             .clickable(onClick = onClick)
-            .padding(vertical = 9.dp)
-            .semantics { contentDescription = label },
+            .padding(vertical = 9.dp, horizontal = 6.dp)
+            .semantics {
+                contentDescription = label
+                if (stateLabel != null) stateDescription = stateLabel
+            },
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -412,7 +436,10 @@ private fun HomeMiniButton(
             color = if (active) SonicCoreColors.Cyan else SonicCoreColors.SecondaryText,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 0.7.sp
+            letterSpacing = 0.7.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
     }
 }
@@ -459,6 +486,7 @@ private fun HomeSearchResultRow(tool: SonicCoreTool, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = GlassSpacing.touchTarget)
             .clip(RoundedCornerShape(11.dp))
             .clickable(onClick = onClick)
             .semantics { contentDescription = "${tool.title} in ${tool.category.title}" }
@@ -627,9 +655,20 @@ private fun categoryCapability(category: SonicCoreCategory): SonicCoreCapability
 
 @Composable
 private fun HomeQuickActionsRow(
+    summary: HomeAudioSummary,
     onToggleBypass: () -> Unit,
     onCategoryClick: (SonicCoreCategory) -> Unit
 ) {
+    // These four used to be one Row of weight(1f) cells. On a 320 dp window with
+    // the system font scaled up each cell fell to about 60 dp, so "DEVICE" and
+    // "BYPASS" were cut mid-word. AdaptiveGrid drops a column instead of
+    // squeezing the label, and every cell keeps the 48 dp touch target.
+    val actions: List<Pair<String, () -> Unit>> = listOf(
+        "EQ" to { onCategoryClick(SonicCoreCategory.AUDIO) },
+        "BYPASS" to onToggleBypass,
+        "DEVICE" to { onCategoryClick(SonicCoreCategory.DEVICE) },
+        "THEME" to { onCategoryClick(SonicCoreCategory.CUSTOMIZE) }
+    )
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Text(
             "QUICK ACTIONS",
@@ -638,35 +677,21 @@ private fun HomeQuickActionsRow(
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.2.sp
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        AdaptiveGrid(
+            itemCount = actions.size,
+            modifier = Modifier.padding(top = 10.dp),
+            minItemWidth = GlassSpacing.minTileWidthNumeric
+        ) { index, cell ->
+            val (label, action) = actions[index]
+            val isBypass = index == 1
             HomeMiniButton(
-                label = "EQ",
-                active = false,
-                onClick = { onCategoryClick(SonicCoreCategory.AUDIO) },
-                modifier = Modifier.weight(1f)
-            )
-            HomeMiniButton(
-                label = "BYPASS",
-                active = false,
-                onClick = onToggleBypass,
-                modifier = Modifier.weight(1f)
-            )
-            HomeMiniButton(
-                label = "DEVICE",
-                active = false,
-                onClick = { onCategoryClick(SonicCoreCategory.DEVICE) },
-                modifier = Modifier.weight(1f)
-            )
-            HomeMiniButton(
-                label = "THEME",
-                active = false,
-                onClick = { onCategoryClick(SonicCoreCategory.CUSTOMIZE) },
-                modifier = Modifier.weight(1f)
+                // The bypass shortcut reads the same real flag as the status
+                // card above it, so the two can never disagree.
+                label = if (isBypass && summary.bypassActive) "BYPASS ON" else label,
+                active = isBypass && summary.bypassActive,
+                stateLabel = if (isBypass) (if (summary.bypassActive) "On" else "Off") else null,
+                onClick = action,
+                modifier = cell
             )
         }
     }

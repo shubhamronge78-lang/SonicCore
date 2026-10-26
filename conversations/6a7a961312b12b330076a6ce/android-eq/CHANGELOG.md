@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased — DSP truth, the limiter policy, and the missing pipeline gate (`soniccore-ui-redesign`)
+
+Two long-standing mismatches between what the UI states and what the DSP does are
+resolved, and the pipeline now runs every gate it claims to. The native chain,
+the DSP parameters, the presets and the capture path are untouched; this is a
+model/UI/pipeline change plus tests.
+
+### The shelf corners are now one source of truth (was: wrong by an octave each)
+
+- `LOW_SHELF_HZ` / `HIGH_SHELF_HZ` were 200 Hz / 4000 Hz while `neondsp.cpp`
+  builds the shelves at **100 Hz and 8000 Hz**, so every corner label and the
+  drawn curve disagreed with the engine. Both constants now match the native
+  build and `AudioControlStateTest.theShelfCornersMatchTheNativeEngine` pins them.
+- `shelfResponseDb` no longer draws a one-pole sketch: it evaluates the **real
+  RBJ shelf** the engine builds (same coefficients, same `alpha = sin(w0) / 1.4`
+  slope) as a magnitude response at the engine's default 48 kHz. Half gain at the
+  corner, full gain in band, unity out of band and an exact mirror for a cut are
+  asserted (`theModelledCurveMatchesTheEnginesRbjShape`,
+  `aCutIsTheExactMirrorOfTheSameBoost`), matching what the native harness
+  measures in section [14]. It remains a modelled rendering aid, and the screens
+  still say so.
+
+### The limiter: mandatory place, one enable (was: two conflicting switches)
+
+- The engine could switch the limiter off two ways — the chain's `stageOn[7]` and
+  the older `limOn` behind `setLimiter` — and `DspParams.applyTo` forced
+  `stageOn[7] = true` while `limiterOn` went to `limOn`, so the chain editor
+  showed the limiter as permanently on while the Limiter card could switch the
+  same stage off.
+- `DspChain.enableOf(stage, limiterOn)` is now the single answer: the chain owns
+  the order and the optional stages' bypass set, and the limiter's enable is the
+  app-level `limiterOn`. `DspParams.applyTo` and the chain editor's row both go
+  through it, so the model, the UI, the native `stageEnabled` readback and the
+  diagnostics agree. `DspChainTest.theLimitersPlaceIsMandatoryAndItsEnableIsTheOneAppParameter`
+  pins both halves.
+
+### The offline loudness harness is in the pipeline it belongs to
+
+- `docker-compose.base44.yml` compiled the DSP harness and then went straight to
+  Gradle, so `LOUDNESS HARNESS PASS` never ran as a gate even though the
+  documentation treated it as one. It is now step 1b (same ASan/UBSan flags, its
+  log served at `build-output/loudness-test.log` and linked from the status page).
+
 ## Unreleased — production hardening (`harden-autoeq`)
 
 The AutoEQ import is hardened, and one new, deliberately small native module is
