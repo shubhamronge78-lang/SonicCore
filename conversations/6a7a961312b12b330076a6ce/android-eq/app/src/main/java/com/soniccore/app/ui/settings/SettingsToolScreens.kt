@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.settings
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -66,12 +67,12 @@ private fun ToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(if (checked) SonicCoreColors.Cyan.copy(alpha = 0.08f) else SonicCoreColors.Background.copy(alpha = 0.35f))
             .border(
                 0.8.dp,
                 if (checked) SonicCoreColors.Cyan.copy(alpha = 0.30f) else SonicCoreColors.Border.copy(alpha = 0.12f),
-                RoundedCornerShape(12.dp)
+                RoundedCornerShape(GlassRadius.tile)
             )
             .clickable { onToggle(!checked) }
             .semantics {
@@ -374,7 +375,7 @@ fun SettingsBehaviorScreen(context: Context, modifier: Modifier = Modifier) {
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(GlassRadius.tile))
                 .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
                 .clickable(enabled = !ignoringBattery) {
                     runCatching {
@@ -417,7 +418,7 @@ fun SettingsStorageScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(GlassRadius.tile))
                 .background(SonicCoreColors.Error.copy(alpha = 0.10f))
                 .clickable { host.onClearSessionHistory() }
                 .padding(vertical = 11.dp)
@@ -449,7 +450,7 @@ fun SettingsDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modi
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(GlassRadius.tile))
                     .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
                     .clickable {
                         val text = runCatching {
@@ -467,7 +468,7 @@ fun SettingsDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modi
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(GlassRadius.tile))
                     .background(SonicCoreColors.Error.copy(alpha = 0.10f))
                     .clickable { host.onClearOperationLog() }
                     .padding(vertical = 11.dp)
@@ -508,7 +509,9 @@ fun SettingsAboutScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) 
             SonicCoreDataRow("Jetpack Compose", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
             SonicCoreDataRow("AndroidX", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
             SonicCoreDataRow("Kotlin", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
-            SonicCoreDataRow("Shizuku client (dev.rikka.shizuku)", "Apache License 2.0", SonicCoreCapability.AVAILABLE)
+            // Shizuku-API is MIT (its repository LICENSE and the published Maven POM
+            // both say so), not Apache-2.0 — see docs/repository-integration.md.
+            SonicCoreDataRow("Shizuku client (dev.rikka.shizuku)", "MIT License", SonicCoreCapability.AVAILABLE)
             SonicCoreDataRow("SonicCore DSP", "Part of this repository", SonicCoreCapability.AVAILABLE)
             LimitNote(
                 "Full license texts ship with their respective projects; SonicCore itself is distributed under the licence in the repository.",

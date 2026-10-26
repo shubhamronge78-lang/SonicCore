@@ -1,5 +1,6 @@
 package com.soniccore.app.tools
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -126,7 +127,7 @@ fun DeviceToolsScreen(
                         containerColor = SonicCoreColors.Cyan.copy(alpha = 0.20f),
                         contentColor = SonicCoreColors.Cyan
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(GlassRadius.chip)
                 ) {
                     Text("Open Shizuku Manager", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
@@ -162,7 +163,7 @@ fun DeviceToolsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(GlassRadius.tile))
                     .background(SonicCoreColors.ElevatedSurface)
                     .padding(10.dp)
             ) {
@@ -182,7 +183,7 @@ fun DeviceToolsScreen(
                                 containerColor = SonicCoreColors.Violet.copy(alpha = 0.30f),
                                 contentColor = SonicCoreColors.Violet
                             ),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(GlassRadius.chip)
                         ) {
                             Text("PROBE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
@@ -239,9 +240,9 @@ private fun ShortcutItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.ElevatedSurface.copy(alpha = 0.7f))
-            .border(1.dp, SonicCoreColors.Border, RoundedCornerShape(12.dp))
+            .border(1.dp, SonicCoreColors.Border, RoundedCornerShape(GlassRadius.tile))
             .clickable(onClick = onClick)
             .semantics { contentDescription = "Launch ${shortcut.title}" }
             .padding(12.dp),

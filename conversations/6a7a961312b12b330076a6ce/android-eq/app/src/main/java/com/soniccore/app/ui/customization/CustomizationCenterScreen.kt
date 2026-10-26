@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.customization
 
+import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -178,12 +179,12 @@ fun CustomizationCenterScreen(
                     Column(
                         modifier = Modifier
                             .width(116.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(GlassRadius.control))
                             .background(theme.darkSurfaces.card)
                             .border(
                                 1.dp,
                                 if (selected) theme.primary else theme.darkSurfaces.borderDim,
-                                RoundedCornerShape(14.dp)
+                                RoundedCornerShape(GlassRadius.control)
                             )
                             .clickable { onThemeSelect(theme) }
                             .semantics { contentDescription = "Theme ${theme.label}" }
@@ -222,7 +223,7 @@ fun CustomizationCenterScreen(
                     .fillMaxWidth()
                     .semantics { contentDescription = "Apply selected theme" },
                 colors = ButtonDefaults.buttonColors(containerColor = SonicCoreColors.Cyan),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             ) {
                 Text(
                     "APPLY ${active?.label?.uppercase() ?: "THEME"}",
@@ -338,7 +339,7 @@ fun CustomizationCenterScreen(
                     val selected = glassLevel == level
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(GlassRadius.tile))
                             .background(
                                 if (selected) SonicCoreColors.Violet.copy(alpha = 0.18f)
                                 else SonicCoreColors.ElevatedSurface
@@ -346,7 +347,7 @@ fun CustomizationCenterScreen(
                             .border(
                                 1.dp,
                                 if (selected) SonicCoreColors.Violet else SonicCoreColors.Border.copy(alpha = 0.3f),
-                                RoundedCornerShape(10.dp)
+                                RoundedCornerShape(GlassRadius.tile)
                             )
                             .clickable { onGlassLevelChange(level) }
                             .semantics { contentDescription = "Glass intensity $label" }
@@ -419,7 +420,7 @@ fun CustomizationCenterScreen(
                     containerColor = SonicCoreColors.Cyan.copy(alpha = 0.20f),
                     contentColor = SonicCoreColors.Cyan
                 ),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             ) {
                 Text("OPEN FULL SETTINGS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }

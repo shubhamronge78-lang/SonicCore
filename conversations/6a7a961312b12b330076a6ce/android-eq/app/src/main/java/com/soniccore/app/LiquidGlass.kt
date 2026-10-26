@@ -18,10 +18,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,6 +50,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soniccore.app.ui.design.GlassOpacity
+import com.soniccore.app.ui.design.GlassRadius
 import kotlinx.coroutines.delay
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -69,14 +69,24 @@ import kotlinx.coroutines.delay
 // audio buffers, latency or sample rate.
 // ════════════════════════════════════════════════════════════════════════════
 
-val GLASS_RADIUS = 22.dp
-val GLASS_SHEET_RADIUS = 26.dp
+// Radii come from the shared tokens so a glass panel cannot invent its own
+// corner any more (defect GL-04: eight different radii for the same surface).
+val GLASS_RADIUS: Dp get() = GlassRadius.surface
+val GLASS_SHEET_RADIUS: Dp get() = GlassRadius.sheet
 
 private val light: Boolean get() = appModeState.value == SurfaceModes.LIGHT
 
 // Backing tint under every glass panel — this is what the "GLASS EFFECT"
 // setting (LOW/MEDIUM/HIGH) still controls: higher glass = more see-through.
-fun glassBackingAlpha(): Float = when (appGlassState.value) { 0 -> 0.55f; 2 -> 0.12f; else -> 0.32f }
+//
+// GL-02: it used to reach 0.12 at the HIGH setting, which left body text on the
+// bare backdrop. The scale is now floored by GlassOpacity.MIN_BACKING, so the
+// setting changes how crisp the glass looks, never how readable the text is.
+fun glassBackingAlpha(): Float = when (appGlassState.value) {
+    0 -> 0.62f
+    2 -> GlassOpacity.MIN_BACKING
+    else -> 0.44f
+}
 
 // Hairline edges — brighter at the top, darker in light mode.
 fun glassEdgeTop(): Color =
@@ -133,80 +143,6 @@ private fun chipFg(kind: GlassChipKind): Color = when (kind) {
     GlassChipKind.Muted -> S.textSoft.copy(alpha = 0.62f)
     GlassChipKind.Selected -> Color.White
     GlassChipKind.Neutral -> chipInk()
-}
-
-// ── .g  glass surface ──────────────────────────────────────────────────────
-// background: linear-gradient(160deg, rgba(255,255,255,.2), rgba(255,255,255,.05))
-// border: 1px solid rgba(255,255,255,.22); border-top-color: rgba(255,255,255,.55)
-// box-shadow: 0 10px 30px rgba(2,6,24,.45),
-//             inset 0 1px 0 rgba(255,255,255,.5),
-//             inset 0 -12px 24px rgba(120,200,255,.06)
-@Composable
-fun GlassSurface(
-    modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(GLASS_RADIUS),
-    sheen: Boolean = true,
-    content: @Composable BoxScope.() -> Unit
-) {
-    Box(
-        modifier = modifier
-            .shadow(
-                18.dp, shape, clip = false,
-                ambientColor = Color(0xFF020618), spotColor = Color(0xFF020618)
-            )
-            .clip(shape)
-            .drawWithCache {
-                // 160deg — down and slightly right in CSS angle space.
-                val veil = Brush.linearGradient(
-                    0f to Color.White.copy(alpha = if (light) 0.55f else 0.20f),
-                    1f to Color.White.copy(alpha = if (light) 0.25f else 0.05f),
-                    start = Offset.Zero,
-                    end = Offset(size.width * 0.364f, size.height)
-                )
-                // inset 0 -12px 24px rgba(120,200,255,.06) — cyan inner glow
-                val innerGlow = Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    1f to T.accent.copy(alpha = if (light) 0.04f else 0.06f),
-                    startY = size.height * 0.55f,
-                    endY = size.height
-                )
-                val backing = S.card.copy(alpha = glassBackingAlpha())
-                onDrawBehind {
-                    drawRect(backing)
-                    drawRect(veil)
-                    drawRect(innerGlow)
-                }
-            }
-            .border(
-                1.dp,
-                Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
-                shape
-            )
-    ) {
-        if (sheen) {
-            // .g::before — specular top sheen, left/right 8%, height 38%,
-            // bottom radius 50% (a downward arc).
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth(0.84f)
-                    .fillMaxHeight(0.38f)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.White.copy(alpha = if (light) 0.5f else 0.28f),
-                                Color.Transparent
-                            )
-                        ),
-                        RoundedCornerShape(
-                            topStartPercent = 0, topEndPercent = 0,
-                            bottomEndPercent = 50, bottomStartPercent = 50
-                        )
-                    )
-            )
-        }
-        content()
-    }
 }
 
 @Composable
@@ -279,7 +215,7 @@ fun LiquidButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(GlassRadius.control)
 
     val topAlpha = if (pressed) 0.20f else 0.30f
     val bottomAlpha = if (pressed) 0.40f else 0.25f

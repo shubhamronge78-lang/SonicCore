@@ -26,12 +26,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.soniccore.app.ui.design.GlassIconButton
-import com.soniccore.app.ui.design.LiquidGlassSurface
-import com.soniccore.app.ui.design.LocalGlassIntensity
+import com.soniccore.app.ui.design.GlassNavItem
+import com.soniccore.app.ui.design.GlassNavigation
+import com.soniccore.app.ui.design.GlassTopBar
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.design.SonicCoreTone
 import com.soniccore.app.ui.design.color
-import com.soniccore.app.ui.design.liquidGlassMaterialSpec
 
 /**
  * SonicCore navigation model.
@@ -134,9 +134,65 @@ enum class SonicCoreCategory(
 fun SonicCoreCategory.color(): Color = tone.color()
 
 /**
+ * The Audio Center's own sub-navigation.
+ *
+ * Audio is the largest workspace in SonicCore, so its thirteen destinations are
+ * grouped into six sections that the Audio Center shows as tabs on a phone and
+ * as a grouped list on a tablet. The groups are the app's own vocabulary: every
+ * Audio tool belongs to exactly one of them, which `SonicCoreNavigationTest`
+ * asserts.
+ */
+enum class SonicCoreAudioGroup(
+    val title: String,
+    val label: String,
+    val summary: String,
+    val icon: String
+) {
+    OVERVIEW(
+        "Overview",
+        "OVERVIEW",
+        "Status, active processing, output device and quick controls",
+        "◉"
+    ),
+    SOUND_CONTROLS(
+        "Sound Controls",
+        "SOUND",
+        "Equalizer, tone shaping, stereo placement and dynamics",
+        "∿"
+    ),
+    DSP_PROCESSING(
+        "DSP Processing",
+        "DSP",
+        "Processing stages, parameters, bypass and signal flow",
+        "⌘"
+    ),
+    PLAYBACK_CAPTURE(
+        "Playback & Capture",
+        "PLAYBACK",
+        "Player transport, capture consent and session history",
+        "▶"
+    ),
+    DEVICES_ROUTING(
+        "Devices & Routing",
+        "DEVICES",
+        "Output routes, device capabilities, latency and signal path",
+        "↗"
+    ),
+    PRESETS_DIAGNOSTICS(
+        "Presets & Diagnostics",
+        "PRESETS",
+        "Profiles, counters, compatibility probes and report export",
+        "☆"
+    )
+}
+
+/**
  * One tool inside a category. [destination] non-null reuses an existing
  * full-screen implementation; null means the tool has its own screen rendered
  * by the category tool router.
+ *
+ * [audioGroup] is set for Audio tools only — it is what places the tool in the
+ * Audio Center's sub-navigation.
  */
 data class SonicCoreTool(
     val id: String,
@@ -145,7 +201,8 @@ data class SonicCoreTool(
     val icon: String,
     val category: SonicCoreCategory,
     val destination: SonicCoreDestination? = null,
-    val keywords: String = ""
+    val keywords: String = "",
+    val audioGroup: SonicCoreAudioGroup? = null
 ) {
     /** Text used by Home search — title, summary and the tool's category. */
     val searchText: String get() = "$title $summary $keywords ${category.title}"
@@ -160,42 +217,75 @@ object SonicCoreToolRegistry {
         summary: String,
         icon: String,
         destination: SonicCoreDestination? = null,
-        keywords: String = ""
-    ) = SonicCoreTool(id, title, summary, icon, category, destination, keywords)
+        keywords: String = "",
+        audioGroup: SonicCoreAudioGroup? = null
+    ) = SonicCoreTool(id, title, summary, icon, category, destination, keywords, audioGroup)
 
     /** Every internal tool, in the order it appears in its category. */
     val all: List<SonicCoreTool> = listOf(
-        // ── AUDIO ──
-        tool("audio.overview", SonicCoreCategory.AUDIO, "Live Overview",
-            "Real-time meters, spectrum, engine health and performance counters",
-            "◉", SonicCoreDestination.AUDIO_OVERVIEW, "meter peak spectrum engine"),
+        // ── AUDIO · OVERVIEW ──
+        tool("audio.dashboard", SonicCoreCategory.AUDIO, "Audio Dashboard",
+            "Current audio status, active processing, output device and quick controls",
+            "◉", SonicCoreDestination.AUDIO_OVERVIEW, "meter peak spectrum engine status",
+            SonicCoreAudioGroup.OVERVIEW),
+
+        // ── AUDIO · SOUND CONTROLS ──
         tool("audio.equalizer", SonicCoreCategory.AUDIO, "Equalizer",
-            "Graphic EQ, parametric bands, frequency, gain, Q, preamp, bass and treble",
-            "∿", SonicCoreDestination.EQUALIZER, "parametric q factor bands preamp"),
+            "Graphic EQ, parametric bands, presets, preamp and per-band controls",
+            "∿", SonicCoreDestination.EQUALIZER, "parametric q factor bands preamp graphic",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+        tool("audio.bass_treble", SonicCoreCategory.AUDIO, "Bass & Treble",
+            "Independent low and high shelf gains with a frequency-response view",
+            "⌁", null, "shelf low high tone bass treble response",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+        tool("audio.spatial", SonicCoreCategory.AUDIO, "Stereo & Spatial",
+            "Stereo width, balance, channel swap and mono downmix",
+            "⇄", null, "width balance swap mono channel stereo",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+        tool("audio.dynamics", SonicCoreCategory.AUDIO, "Dynamics",
+            "Noise gate, limiter strength and anti-clip state; compressor parameters stay in DSP Studio",
+            "✦", SonicCoreDestination.PRO_FX, "gate limiter dynamics threshold compressor anti clip",
+            SonicCoreAudioGroup.SOUND_CONTROLS),
+
+        // ── AUDIO · DSP PROCESSING ──
         tool("audio.dsp", SonicCoreCategory.AUDIO, "DSP Studio",
-            "Processing stages, stage bypass, parameters and clipping metrics",
-            "⌘", SonicCoreDestination.DSP_FX, "stage bypass clipping chain compressor"),
-        tool("audio.player", SonicCoreCategory.AUDIO, "Audio Player",
-            "Supported local playback, transport controls, queue and test signals",
-            "▶", SonicCoreDestination.PLAYER, "play pause queue tone sine"),
-        tool("audio.presets", SonicCoreCategory.AUDIO, "Presets",
-            "Built-in profiles, custom profiles, save, import and export",
-            "☆", null, "profile save import export preset library"),
-        tool("audio.capture", SonicCoreCategory.AUDIO, "System Capture",
-            "Capture eligibility, user consent, capture status and source restrictions",
-            "◎", SonicCoreDestination.SYSTEM_CAPTURE, "media projection consent eligibility"),
-        tool("audio.output", SonicCoreCategory.AUDIO, "Output & Signal Path",
-            "Detected output route, pipeline stages and measured processing status",
-            "↗", SonicCoreDestination.SIGNAL_PATH, "route latency stage pipeline"),
+            "Processing stages, parameters, per-stage bypass and signal flow",
+            "⌘", SonicCoreDestination.DSP_FX, "stage bypass clipping chain signal flow",
+            SonicCoreAudioGroup.DSP_PROCESSING),
+
+        // ── AUDIO · PLAYBACK & CAPTURE ──
+        tool("audio.player", SonicCoreCategory.AUDIO, "Player",
+            "Playback controls, track information and audio-session status",
+            "▶", SonicCoreDestination.PLAYER, "play pause queue tone sine track",
+            SonicCoreAudioGroup.PLAYBACK_CAPTURE),
+        tool("audio.capture", SonicCoreCategory.AUDIO, "Audio Capture",
+            "MediaProjection consent, capture status, source restrictions and recovery",
+            "◎", SonicCoreDestination.SYSTEM_CAPTURE, "media projection consent eligibility recovery",
+            SonicCoreAudioGroup.PLAYBACK_CAPTURE),
+        tool("audio.sessions", SonicCoreCategory.AUDIO, "Audio Sessions",
+            "Session history, session diagnostics and export",
+            "▤", SonicCoreDestination.SESSIONS, "session history compare export verdict",
+            SonicCoreAudioGroup.PLAYBACK_CAPTURE),
+
+        // ── AUDIO · DEVICES & ROUTING ──
+        tool("audio.devices", SonicCoreCategory.AUDIO, "Output & Devices",
+            "Available output routes, Bluetooth, wired audio and device capabilities",
+            "⇲", null, "output route bluetooth wired usb device capability",
+            SonicCoreAudioGroup.DEVICES_ROUTING),
+        tool("audio.signal_path", SonicCoreCategory.AUDIO, "Signal Path",
+            "Source-to-output pipeline, frame counters, latency and diagnostics",
+            "↗", SonicCoreDestination.SIGNAL_PATH, "route latency stage pipeline frames",
+            SonicCoreAudioGroup.DEVICES_ROUTING),
+
+        // ── AUDIO · PRESETS & DIAGNOSTICS ──
+        tool("audio.presets", SonicCoreCategory.AUDIO, "Audio Presets",
+            "Save, load, rename, duplicate, import and export profiles",
+            "☆", null, "profile save load rename duplicate import export preset library",
+            SonicCoreAudioGroup.PRESETS_DIAGNOSTICS),
         tool("audio.diagnostics", SonicCoreCategory.AUDIO, "Audio Diagnostics",
-            "Audio session state, available counters, errors and report export",
-            "⚑", null, "session counters underrun clip export report"),
-        tool("audio.sessions", SonicCoreCategory.AUDIO, "Capture Sessions",
-            "Recorded session records, their verdicts, comparison and per-app profiles",
-            "▤", SonicCoreDestination.SESSIONS, "session history compare app profile verdict"),
-        tool("audio.profx", SonicCoreCategory.AUDIO, "Pro FX",
-            "Noise gate and limiter controls on the capture pipeline",
-            "✦", SonicCoreDestination.PRO_FX, "gate limiter dynamics threshold"),
+            "Compatibility probes, processing status, errors and test results",
+            "⚑", null, "session counters underrun clip export report probe test",
+            SonicCoreAudioGroup.PRESETS_DIAGNOSTICS),
 
         // ── DEVICE CENTER ──
         tool("device.overview", SonicCoreCategory.DEVICE, "Device Overview",
@@ -283,6 +373,9 @@ object SonicCoreToolRegistry {
         tool("custom.preview", SonicCoreCategory.CUSTOMIZE, "Preview & Reset",
             "Live preview of the current appearance, with a full reset",
             "◉", null, "preview reset restore default"),
+        tool("custom.repositories", SonicCoreCategory.CUSTOMIZE, "Repository Manager",
+            "Every audited open-source project with its licence, privilege and integration status",
+            "⧉", null, "repository catalog inventory licence fork upstream attribution open source"),
 
         // ── PERMISSIONS & PRIVACY ──
         tool("privacy.runtime", SonicCoreCategory.PRIVACY, "Runtime Permissions",
@@ -358,6 +451,23 @@ object SonicCoreToolRegistry {
     }
 
     fun countFor(category: SonicCoreCategory): Int = forCategory(category).size
+
+    /** The Audio tools of one Audio Center group, in registry order. */
+    fun forAudioGroup(group: SonicCoreAudioGroup): List<SonicCoreTool> =
+        all.filter { it.audioGroup == group }
+
+    /**
+     * Every Audio tool grouped in the Audio Center's own order — the shape the
+     * hub and the phone/tablet layouts both render from.
+     */
+    fun audioToolsByGroup(): List<Pair<SonicCoreAudioGroup, List<SonicCoreTool>>> =
+        SonicCoreAudioGroup.entries.map { it to forAudioGroup(it) }
+
+    /** Group of an Audio tool — null for every other category. */
+    fun groupOf(tool: SonicCoreTool): SonicCoreAudioGroup? = tool.audioGroup
+
+    /** All Audio tools, in the order their groups are listed. */
+    fun audioTools(): List<SonicCoreTool> = audioToolsByGroup().flatMap { it.second }
 }
 
 @Composable
@@ -367,40 +477,17 @@ fun SonicCoreScreenHeader(
     onBackClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                destination.title.uppercase(),
-                color = SonicCoreColors.PrimaryText,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.1.sp
-            )
-            Text(
-                destination.subtitle,
-                color = SonicCoreColors.SecondaryText,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        if (onBackClick != null) {
-            GlassIconButton(
-                contentDescription = "Back to previous screen",
-                onClick = onBackClick
-            ) {
-                Text("‹", color = SonicCoreColors.Cyan, fontSize = 28.sp)
-            }
-        } else {
-            GlassIconButton(
-                contentDescription = "Open settings",
-                onClick = onSettingsClick
-            ) {
-                Text("⚙", color = SonicCoreColors.Cyan, fontSize = 20.sp)
-            }
-        }
-    }
+    // Delegates to the shared top bar so every screen's header — back control,
+    // title scale, action button — is the same component (defect GL-04/GL-06).
+    GlassTopBar(
+        title = destination.title,
+        subtitle = destination.subtitle,
+        modifier = modifier,
+        onBack = onBackClick,
+        actionIcon = if (onBackClick == null) "\u2699" else null,
+        actionDescription = "Open settings",
+        onAction = if (onBackClick == null) onSettingsClick else null
+    )
 }
 
 /**
@@ -466,67 +553,22 @@ fun SonicCoreBottomNavigation(
     landscape: Boolean,
     modifier: Modifier = Modifier
 ) {
-    LiquidGlassSurface(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = if (landscape) 18.dp else 10.dp, vertical = 8.dp),
-        contentPadding = 7.dp,
-        shape = RoundedCornerShape(30.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            SonicCoreCategory.entries.forEach { category ->
-                val active = selected == category
-                val material = liquidGlassMaterialSpec(LocalGlassIntensity.current)
-                val tone = category.color()
-                val activeSurface by animateColorAsState(
-                    targetValue = if (active) tone.copy(alpha = material.tintAlpha + 0.10f)
-                    else Color.Transparent,
-                    label = "dockSelection"
-                )
-                Surface(
-                    onClick = { onSelect(category) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp)
-                        .semantics {
-                            contentDescription = category.title
-                            stateDescription = if (active) "Selected" else "Not selected"
-                        },
-                    shape = RoundedCornerShape(22.dp),
-                    color = activeSurface,
-                    contentColor = if (active) tone else SonicCoreColors.SecondaryText,
-                    border = BorderStroke(
-                        0.8.dp,
-                        (if (active) tone else SonicCoreColors.Border)
-                            .copy(alpha = if (active) material.edgeAlpha else 0f)
-                    ),
-                    shadowElevation = if (active) 4.dp else 0.dp
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            category.icon,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            color = if (active) tone else SonicCoreColors.SecondaryText
-                        )
-                        Text(
-                            category.label,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                            maxLines = 1,
-                            color = if (active) SonicCoreColors.PrimaryText else SonicCoreColors.SecondaryText
-                        )
-                    }
-                }
-            }
-        }
+    // One shared dock component (GlassNavigation) rather than a bespoke pill
+    // per surface: it carries the glass tokens, the minimum touch target, the
+    // navigation-bar inset and a real disabled state.
+    val items = SonicCoreCategory.entries.map { category ->
+        GlassNavItem(
+            label = category.label,
+            icon = category.icon,
+            selected = selected == category,
+            onClick = { onSelect(category) }
+        )
     }
+    val toneByIndex = SonicCoreCategory.entries.map { it.color() }
+    GlassNavigation(
+        items = items,
+        modifier = modifier,
+        landscape = landscape,
+        accentOf = { item -> toneByIndex.getOrElse(items.indexOf(item)) { SonicCoreColors.Cyan } }
+    )
 }

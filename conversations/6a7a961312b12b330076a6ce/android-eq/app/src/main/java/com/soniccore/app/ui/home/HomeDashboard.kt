@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.home
 
+import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -160,7 +161,7 @@ fun HomeTopBar(
                 .fillMaxWidth()
                 .clickable(onClick = onRouteClick),
             contentPadding = 13.dp,
-            shape = RoundedCornerShape(17.dp)
+            shape = RoundedCornerShape(GlassRadius.card)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -296,7 +297,7 @@ internal fun HomeEngineCard(
 private fun CompactMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.Background.copy(alpha = 0.50f))
             .padding(horizontal = 11.dp, vertical = 8.dp)
     ) {

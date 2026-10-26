@@ -63,6 +63,110 @@ class SonicCoreNavigationTest {
         assertEquals(ids.size, ids.toSet().size)
     }
 
+    // ── Audio Center: six groups, thirteen reachable screens ──
+
+    @Test
+    fun theAudioCenterShowsExactlyTheSixRequestedGroupsInOrder() {
+        assertEquals(
+            listOf("Overview", "Sound Controls", "DSP Processing",
+                "Playback & Capture", "Devices & Routing", "Presets & Diagnostics"),
+            SonicCoreAudioGroup.entries.map { it.title }
+        )
+        SonicCoreAudioGroup.entries.forEach { group ->
+            assertTrue(group.summary.isNotBlank())
+            assertTrue(group.icon.isNotBlank())
+            // The chip row is narrow: a long label would be clipped.
+            assertTrue(
+                "${group.label} is too long for the Audio Center chip",
+                group.label.length <= 8
+            )
+        }
+    }
+
+    @Test
+    fun everyAudioToolBelongsToExactlyOneAudioGroup() {
+        val audioTools = SonicCoreToolRegistry.forCategory(SonicCoreCategory.AUDIO)
+        audioTools.forEach { tool ->
+            assertNotNull("${tool.id} has no Audio Center group", tool.audioGroup)
+            assertEquals(tool.audioGroup, SonicCoreToolRegistry.groupOf(tool))
+        }
+        SonicCoreToolRegistry.all
+            .filter { it.category != SonicCoreCategory.AUDIO }
+            .forEach { assertNull("${it.id} is not an Audio tool but carries a group", it.audioGroup) }
+        assertEquals(
+            audioTools.size,
+            SonicCoreAudioGroup.entries.sumOf { SonicCoreToolRegistry.forAudioGroup(it).size }
+        )
+        assertEquals(audioTools.size, SonicCoreToolRegistry.audioTools().size)
+    }
+
+    @Test
+    fun noAudioGroupIsEmptyAndEveryScreenIsListedInItsGroup() {
+        SonicCoreAudioGroup.entries.forEach { group ->
+            val tools = SonicCoreToolRegistry.forAudioGroup(group)
+            assertTrue("${group.title} lists no Audio screens", tools.isNotEmpty())
+            tools.forEach { assertEquals(group, it.audioGroup) }
+        }
+        assertEquals(
+            SonicCoreAudioGroup.entries.flatMap { SonicCoreToolRegistry.forAudioGroup(it).map { tool -> tool.id } },
+            SonicCoreToolRegistry.audioTools().map { it.id }
+        )
+    }
+
+    @Test
+    fun theAudioCenterExposesTheRequestedDestinations() {
+        assertEquals(
+            listOf(
+                "Audio Dashboard",
+                "Equalizer", "Bass & Treble", "Stereo & Spatial", "Dynamics",
+                "DSP Studio",
+                "Player", "Audio Capture", "Audio Sessions",
+                "Output & Devices", "Signal Path",
+                "Audio Presets", "Audio Diagnostics"
+            ),
+            SonicCoreToolRegistry.audioTools().map { it.title }
+        )
+    }
+
+    @Test
+    fun noAudioFeatureLostItsScreenInTheRestructure() {
+        // Every destination the previous Audio list reached must still be reached
+        // by exactly one Audio screen, and every new screen must have its own.
+        listOf(
+            SonicCoreDestination.AUDIO_OVERVIEW,
+            SonicCoreDestination.EQUALIZER,
+            SonicCoreDestination.DSP_FX,
+            SonicCoreDestination.PLAYER,
+            SonicCoreDestination.SYSTEM_CAPTURE,
+            SonicCoreDestination.SIGNAL_PATH,
+            SonicCoreDestination.SESSIONS,
+            SonicCoreDestination.PRO_FX
+        ).forEach { destination ->
+            val tool = SonicCoreToolRegistry.firstFor(destination)
+            assertNotNull("$destination is no longer reachable", tool)
+            assertEquals(SonicCoreCategory.AUDIO, tool!!.category)
+        }
+        listOf("audio.presets", "audio.diagnostics", "audio.bass_treble", "audio.spatial", "audio.devices")
+            .forEach { id ->
+                val tool = SonicCoreToolRegistry.find(id)
+                assertNotNull("$id disappeared from the Audio Center", tool)
+                assertNull("$id must not claim a full-screen body", tool!!.destination)
+                assertTrue("$id has no screen to render", SonicCoreToolRoutes.ids.contains(id))
+            }
+    }
+
+    @Test
+    fun openingAnAudioToolFromTheAudioCenterKeepsTheHubBetweenThem() {
+        SonicCoreToolRegistry.audioTools().forEach { tool ->
+            val open = SonicCoreNavState()
+                .selectCategory(SonicCoreCategory.AUDIO)
+                .openTool(tool)
+            assertEquals(tool, open.tool)
+            assertEquals(SonicCoreCategory.AUDIO, open.category)
+            assertEquals("HUB AUDIO", screenOf(open.pop()))
+        }
+    }
+
     @Test
     fun everyToolHasExactlyOneRenderingPath() {
         SonicCoreToolRegistry.all.forEach { tool ->

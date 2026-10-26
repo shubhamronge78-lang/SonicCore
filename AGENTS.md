@@ -47,6 +47,20 @@ neither. `SonicCoreNavigationTest` asserts all of that (six categories in order,
 one rendering path per tool, no two tools claiming a destination) — adding a
 category or a tool requires updating that test.
 
+Audio is the one category with a second level of its own: its thirteen tools each
+carry a `SonicCoreAudioGroup` (Overview, Sound Controls, DSP Processing, Playback
+& Capture, Devices & Routing, Presets & Diagnostics), which the **Audio Center**
+hub renders as a chip row on phones and as a grouped list on tablets. The
+screens that live in `ui/audio/` share one settings vocabulary
+(`AudioSettingsComponents.kt`) and never touch the engine: they read an
+`AudioControlState` snapshot from `SonicCoreToolHost` and hand a validated one
+back, which `MainActivity` merges over the persisted `DspParams` (parametric
+slots left alone) and applies through the same `DspParams.applyTo` path the DSP
+rack uses. `AudioControlRanges.clampTo` is where NaN and infinity stop.
+`SonicCoreNavigationTest` asserts the grouping and `AudioControlStateTest` the
+clamping/merge contract, so a new Audio tool needs a group in the registry and a
+route (own screen) or a destination.
+
 ## How the app is run / verified here
 
 `docker-compose.base44.yml` builds the app **from the cloned source** (the source
@@ -63,9 +77,11 @@ Everything lives in **one long-running service, `app`**:
    (`tools/dspharness/harness.cpp` `#include`s `neondsp.cpp`) with ASan+UBSan and
    runs its assertions. Takes seconds and needs no Android SDK.
 2. `./gradlew :app:testDebugUnitTest :app:assembleDebug` — the JVM unit tests
-   (200 tests across 29 classes: the platform expansion, the Shizuku IPC work, the
-   Home/layout contracts, the twelve-theme catalogue and the splash) plus the
-   debug APK, built from the mounted source. All 200 pass with 0 skipped.
+   (241 tests across 32 classes: the platform expansion, the Shizuku IPC work, the
+   Home/layout contracts, the twelve-theme catalogue, the splash, the Audio Center
+   grouping/rendering contract, the Audio control-parameter validation and the
+   Liquid Glass token contracts) plus the
+   debug APK, built from the mounted source. All 241 pass with 0 skipped.
    `:app:lintDebug` is **not** run here: it reports 6 pre-existing errors (the
    capture path, `SettingsToolScreens`' API-28 signing-info read, and the two
    Shizuku restricted-API calls), none of them in a file this work touches, so
@@ -140,6 +156,57 @@ own and behave identically outside the sandbox. Specifically:
   `docker-compose.base44.yml`, `.base44/android/Dockerfile`,
   `.base44/preview/index.html`, `.base44/environment.json` and this file.
 
+## The Liquid Glass design system
+
+`docs/liquid-glass-defects.md` is the audit: every visual defect found, its root
+cause and its fix. The code is three files plus the legacy chrome:
+
+- `ui/design/GlassTokens.kt` — palette, radii, spacing, elevation, opacity and
+  the blur policy. **This is the only place appearance constants may live.**
+- `ui/design/GlassComponents.kt` — `GlassScaffold`, `GlassTopBar`,
+  `GlassSurface`, `GlassCard`, `GlassInset`, `GlassNavigation`, `GlassSwitch`,
+  `GlassTextField`, `GlassDialog`, plus the shared button/icon-button/slider
+  vocabulary in `ui/design/SonicCoreComponents.kt`.
+- `LiquidGlass.kt` (package `com.soniccore.app`) — the older chrome helpers
+  (`LiquidChip`, `LiquidButton`, `LiquidOrb`). They read the same tokens, so
+  they no longer look foreign, but new code should use the `ui/design` set.
+
+Rules the rebuild established, and the tests that hold them:
+
+- **The legibility floor is absolute.** `GlassOpacity.MIN_BACKING` (0.72) caps
+  every surface alpha — glass panels, the legacy `glassBackingAlpha()`, and
+  every `AlertDialog` container. The glass level changes how crisp the glass
+  looks (edge, highlight, shadow), never how readable its text is. Raising the
+  level must never lower a surface below the floor: `GlassTokensTest`.
+- **One blur pass, on the backdrop photograph only.** `GlassBlur.radiusDp`
+  returns 0 unless the device is Android 12+ *and* glass is above Subtle, and
+  the only call site is the static backdrop in `GlassBackground`, so the result
+  is cached by the renderer. Never blur a card — it would blur its own content,
+  and stacking blur layers is the thing this policy exists to prevent.
+- **The palette is applied during composition, not in a `SideEffect`.** A
+  `SideEffect` runs after composition and layout, so the first frame after a
+  theme change painted the previous palette. `SonicCoreTheme` applies it inside
+  `remember(palette)` before `content()` composes — switching themes needs no
+  restart. Do not move it back into a `SideEffect`.
+- **`GlassScaffold` owns the insets.** Status bar and keyboard padding are
+  applied once for the whole app; a screen that adds its own will double-pad.
+  Note the app is **not** edge-to-edge — `Theme.NeonEQ` sets an explicit
+  `android:statusBarColor` and nothing calls `setDecorFitsSystemWindows(false)`
+  or `enableEdgeToEdge()`, so the decor already insets the content and these
+  padding modifiers most likely resolve to zero. They are there so that going
+  edge-to-edge (forced at `targetSdk` 35) does not become a per-screen job.
+- **All twelve themes share the spec's ink.** `Themes.dark()` sets
+  `#F3F7FF` / `#9EACC2` for every dark theme and `Themes.OBSIDIAN` ("classic")
+  is the specification's palette verbatim (`#080D18` / `#0D1422` / `#121C2C` /
+  `#182438`, accents `#48DDF5` / `#A78BFA`). `GlassTokensTest` asserts both.
+- **Radii and spacing come from `GlassRadius` / `GlassSpacing`.** All 30 literal
+  corner radii across 21 files were normalised to a token; a new literal is how
+  the eight-radius drift started.
+- **The native blob is the only thing that can render this app.** There is no
+  web surface, so no UI change here can be verified in the browser preview —
+  only the tests, the harness, `assembleDebug` and `lintDebug`. Say so in the
+  report rather than claiming a visual check.
+
 ## Non-obvious quirks worth knowing
 
 - **Shizuku uses the official client, but only for read-only work.**
@@ -189,6 +256,18 @@ own and behave identically outside the sandbox. Specifically:
 - `ACCESS_NETWORK_STATE` was added for the device dashboard's network card. It
   is a normal permission (granted at install), so it never shows a runtime
   prompt.
+- **The repository inventory is data, and a test guards its compliance rule.**
+  `repository/RepositoryInventory.kt` holds every audited third-party project
+  (licence, privileges, maintenance, coverage) with no Android imports, and
+  `RepositoryInventoryTest` asserts that nothing copyleft, proprietary or
+  unverified is ever reported as `Integrated` or queued as `Ready to Integrate`.
+  The in-app **Customization → Repository Manager** screen renders that same list
+  and is wired like any other Customization tool: a `custom.repositories` entry in
+  `SonicCoreToolRegistry` plus a route in `SonicCoreToolRoutes.ids` and the router
+  `when`, which is what `SonicCoreNavigationTest.everyToolHasExactlyOneRenderingPath`
+  requires. `docs/repository-inventory.md` mirrors the data — upstream facts there
+  were read from the GitHub REST API on 2026-10-25, so re-verify them (and re-run
+  `tools/license_check.py`) before repeating a licence claim.
 - `gradle.properties` carries the original author's
   `android.cmake.path = /opt/soniccore-tools/cmake-3.22.6`. That directory does
   not exist here — and it does not need to: `android.cmake.path` is not an AGP

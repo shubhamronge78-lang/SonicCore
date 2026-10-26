@@ -1,6 +1,7 @@
 package com.soniccore.app.ui.category
 
 import com.soniccore.app.NeonTheme
+import com.soniccore.app.dsp.AudioControlState
 import com.soniccore.app.ui.home.HomeAudioSummary
 import com.soniccore.app.ui.navigation.SonicCoreDestination
 
@@ -32,6 +33,13 @@ data class SonicCoreToolHost(
     val themes: List<NeonTheme>,
     val currentThemeId: String,
     val onThemeApply: (String) -> Unit,
+
+    // Audio controls — the DSP parameters the Audio Center screens edit. A
+    // screen reads [audioControl] and hands a new snapshot back; the host
+    // validates it, merges it into the persisted parameter set and applies it
+    // through the existing native path. No screen writes DSP state directly.
+    val audioControl: AudioControlState,
+    val onAudioControlChange: (AudioControlState) -> Unit,
 
     // Data / navigation
     val operationLogSize: () -> Int,

@@ -1,5 +1,6 @@
 package com.soniccore.app.apps
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -129,7 +130,7 @@ fun AppManagerScreen(
                     focusedTextColor = SonicCoreColors.PrimaryText,
                     unfocusedTextColor = SonicCoreColors.PrimaryText
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             )
         }
 
@@ -257,7 +258,7 @@ private fun AppCard(
                             containerColor = Color(0xFFFF5252).copy(alpha = 0.15f),
                             contentColor = Color(0xFFFF5252)
                         ),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(GlassRadius.chip)
                     ) {
                         Text("Clear", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
@@ -269,7 +270,7 @@ private fun AppCard(
                         containerColor = SonicCoreColors.Cyan.copy(alpha = 0.20f),
                         contentColor = SonicCoreColors.Cyan
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(GlassRadius.chip)
                 ) {
                     Text(if (showPresetSelector) "Close" else "Assign", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
@@ -288,9 +289,9 @@ private fun AppCard(
                 Presets.BUILTIN_QUICK.forEach { (presetName, _) ->
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(GlassRadius.chip))
                             .background(if (app.assignedPreset == presetName) SonicCoreColors.Cyan.copy(alpha = 0.30f) else SonicCoreColors.ElevatedSurface)
-                            .border(1.dp, if (app.assignedPreset == presetName) SonicCoreColors.Cyan else SonicCoreColors.Border, RoundedCornerShape(8.dp))
+                            .border(1.dp, if (app.assignedPreset == presetName) SonicCoreColors.Cyan else SonicCoreColors.Border, RoundedCornerShape(GlassRadius.chip))
                             .clickable {
                                 onAssignPreset(presetName)
                                 showPresetSelector = false
@@ -324,7 +325,7 @@ private fun AppCard(
                     containerColor = SonicCoreColors.ElevatedSurface,
                     contentColor = SonicCoreColors.PrimaryText
                 ),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(GlassRadius.chip)
             ) {
                 Text("Launch", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
@@ -338,7 +339,7 @@ private fun AppCard(
                     containerColor = SonicCoreColors.ElevatedSurface,
                     contentColor = SonicCoreColors.SecondaryText
                 ),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(GlassRadius.chip)
             ) {
                 Text("Settings", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }

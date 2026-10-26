@@ -54,7 +54,56 @@ from any third-party repository, so no licence question arises:
 - Device probes (`Build`, `ActivityManager`, `StatFs`, `BatteryManager`,
   `PowerManager`, `Display`, `ConnectivityManager`, `SensorManager`).
 
-## 4. Re-audit procedure
+## 4. Full inventory and the in-app Repository Manager
+
+This file records **what was taken and why not**; the complete audit — 51
+projects with their verified licence, last push date, stars, maintenance state,
+latest release, privilege requirement, fork relationships and measured feature
+coverage — lives in [repository-inventory.md](repository-inventory.md) and in
+`app/src/main/java/com/soniccore/app/repository/RepositoryInventory.kt`.
+
+The same data is surfaced in the app itself: **Customization → Repository
+Manager** is a searchable catalogue with category and status filters, licence
+verdicts, privilege requirements, source links and the status vocabulary
+`Integrated`, `Ready to Integrate`, `Reference Only`, `Requires Shizuku`,
+`Requires Root`, `Incompatible`, `Unsupported`. `RepositoryInventoryTest`
+asserts the compliance rule over the whole inventory, so a new entry cannot
+quietly claim to be integrated while carrying a copyleft, proprietary or
+unverified licence.
+
+### 4.1 Audited in this pass and refused
+
+Every fact below was read from the GitHub API on 2026-10-25; none of these
+projects contributed any code, table, preset, impulse response or resource.
+
+| Project | Licence | Reason |
+| --- | --- | --- |
+| `tiann/KernelSU`, `bmax121/APatch`, `topjohnwu/Magisk`, `RikkaApps/Sui` | GPL-3.0 | Copyleft **and** root-only. No module, script or binary is executed or bundled. |
+| `MuntashirAkon/AppManager`, `zhanghai/MaterialFiles`, `VREMSoftwareDevelopment/WiFiAnalyzer`, `Exodus-Privacy/exodus-android-app` | GPL-3.0 (-or-later) | Copyleft. SonicCore's App Manager, storage and network cards are its own implementations on public APIs. |
+| `bearinmindcat/Equalizer314`, `HEnquist/camilladsp`, `breakfastquay/rubberband`, `werman/noise-suppression-for-voice` | GPL-3.0 / GPL-2.0 | Copyleft. Audited for capability comparison only. |
+| `chirlu/soxr` | LGPL-2.1-or-later | An APK cannot guarantee LGPL's relinking conditions, so it is classed as not bundleable. |
+| `superpoweredSDK/…Interactive-Audio-Platform` | proprietary | Superpowered's Master License Agreement; the repository publishes no licence file. |
+| `pittvandewitt/Wavelet`, `james34602/JamesDSPManager`, `seedvault-app/seedvault`, `google/fonts` | none detected | No licence file at the repository root (or only per-family files), so nothing may be taken until that is resolved. |
+| `topjohnwu/libsu` | Apache-2.0 | Compatible licence, but root-only: SonicCore still ships no root code path, so it is recorded as `Requires Root` rather than added. |
+| `LawnchairLauncher/lawnchair` (Apache-2.0), `NeoApplications/Neo-Launcher`, `MM2-0/Kvaesitso`, `FossifyOrg/Launcher` (GPL-3.0) | mixed | A home app cannot be embedded in another app; Android requires the user to choose one. |
+
+### 4.2 Licence-compatible and queued
+
+`jaakkopasanen/AutoEq` (MIT), `xiph/speexdsp` (BSD-3-Clause), `jiixyj/libebur128`
+(MIT), `google/oboe` (Apache-2.0), `androidx/media` (Apache-2.0),
+`chrisbanes/haze` (Apache-2.0), `material-foundation/material-color-utilities`
+(Apache-2.0), `google/material-design-icons` (Apache-2.0),
+`patrykandpatrick/vico` (Apache-2.0) and `coil-kt/coil` (Apache-2.0) are audited
+and marked `Ready to Integrate`. They are **not implemented**; the batches and
+their prerequisites are in [repository-inventory.md](repository-inventory.md).
+
+### 4.3 Correction found by this audit
+
+Settings → About & Licenses listed the Shizuku client as `Apache License 2.0`. It
+is **MIT** (the repository `LICENSE` and the published Maven POM both say so, as
+recorded in section 1). The About screen now states the correct licence.
+
+## 5. Re-audit procedure
 
 ```bash
 docker compose -f docker-compose.base44.yml exec -T app sh -c \

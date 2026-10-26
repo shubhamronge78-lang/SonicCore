@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.category
 
+import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -180,9 +181,9 @@ fun SonicCoreStatTile(
     val tint = tone.color()
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(GlassRadius.control))
             .background(SonicCoreColors.Background.copy(alpha = 0.55f))
-            .border(1.dp, tint.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
+            .border(1.dp, tint.copy(alpha = 0.22f), RoundedCornerShape(GlassRadius.control))
             .padding(horizontal = 11.dp, vertical = 10.dp)
     ) {
         Text(
@@ -218,7 +219,7 @@ fun CapabilityLegend(capability: SonicCoreCapability, extra: String? = null) {
     LiquidGlassSurface(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = 12.dp,
-        shape = RoundedCornerShape(14.dp)
+        shape = RoundedCornerShape(GlassRadius.control)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -247,7 +248,7 @@ fun SonicCoreToolRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(GlassRadius.control))
             .clickable(onClick = onClick)
             .semantics { contentDescription = "${tool.title}. ${tool.summary}" }
             .padding(vertical = 10.dp, horizontal = 4.dp),
@@ -257,9 +258,9 @@ fun SonicCoreToolRow(
         Box(
             modifier = Modifier
                 .size(38.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(GlassRadius.tile))
                 .background(tool.category.color().copy(alpha = 0.13f))
-                .border(1.dp, tool.category.color().copy(alpha = 0.28f), RoundedCornerShape(12.dp)),
+                .border(1.dp, tool.category.color().copy(alpha = 0.28f), RoundedCornerShape(GlassRadius.tile)),
             contentAlignment = Alignment.Center
         ) {
             Text(tool.icon, color = tool.category.color(), fontSize = 16.sp)
@@ -317,14 +318,14 @@ fun SonicCoreChoiceRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(
                 if (selected) SonicCoreColors.Cyan.copy(alpha = 0.09f) else Color.Transparent
             )
             .border(
                 width = if (selected) 1.dp else 0.5.dp,
                 color = if (selected) SonicCoreColors.Cyan.copy(alpha = 0.35f) else SonicCoreColors.Border.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             )
             .clickable(onClick = onClick)
             .semantics {
@@ -392,9 +393,9 @@ fun LimitNote(text: String, tone: SonicCoreTone = SonicCoreTone.SLATE) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(tint.copy(alpha = 0.08f))
-            .border(1.dp, tint.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
+            .border(1.dp, tint.copy(alpha = 0.20f), RoundedCornerShape(GlassRadius.tile))
             .padding(horizontal = 11.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)

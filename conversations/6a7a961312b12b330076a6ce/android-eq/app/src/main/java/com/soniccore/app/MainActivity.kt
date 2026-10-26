@@ -5,6 +5,8 @@ import android.media.AudioDeviceInfo
 import android.Manifest
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import android.content.pm.PackageManager
@@ -116,10 +118,19 @@ import com.soniccore.app.capture.AudioPath
 import com.soniccore.app.capture.CaptureEqService
 import com.soniccore.app.capture.CaptureFlowStatus
 import com.soniccore.app.dsp.NeonDsp
+import com.soniccore.app.dsp.AudioControlState
 import com.soniccore.app.dsp.DspParams
 import com.soniccore.app.dsp.MeterLevels
 import com.soniccore.app.dsp.PeqSlot
 import com.soniccore.app.dsp.computeMeterLevels
+import com.soniccore.app.dsp.mergeInto
+import com.soniccore.app.ui.design.AppearanceState
+import com.soniccore.app.ui.design.GlassBlur
+import com.soniccore.app.ui.design.GlassOpacity
+import com.soniccore.app.ui.design.GlassScaffold
+import com.soniccore.app.ui.design.LocalGlassNativeBlur
+import com.soniccore.app.ui.design.GlassSwitch
+import com.soniccore.app.ui.design.GlassRadius
 import com.soniccore.app.ui.design.SonicCoreTheme
 import com.soniccore.app.ui.design.SonicCorePalette
 import com.soniccore.app.ui.design.IndicatorStatus
@@ -339,10 +350,14 @@ data class NeonTheme(
 )
 
 object Themes {
+    // GL-09: the dark ink tokens are now the specification's, not per-theme
+    // white/near-white. Every dark theme therefore renders identical primary and
+    // secondary text, which is what makes the twelve themes read as one product
+    // while each keeps its own surface ramp and accent.
     private fun dark(bg: Long, surface: Long, card: Long, deep: Long, border: Long) =
         SurfacePalette(
             Color(bg), Color(surface), Color(card), Color(surface), Color(deep), Color(border),
-            Color(0xFFFFFFFF), Color(0xFFD8E0F5)
+            Color(0xFFF3F7FF), Color(0xFF9EACC2)
         )
 
     private fun light(tint: Long, border: Long) =
@@ -351,10 +366,14 @@ object Themes {
             Color(tint), Color(tint), Color(border), Color(0xFF151927), Color(0xFF41495B)
         )
 
+    // GL-09: the default theme is the specification's palette verbatim —
+    // #080D18 / #0D1422 / #121C2C / #182438, audio accent #48DDF5 and
+    // customization accent #A78BFA. The other themes keep their own ramps and
+    // accents but share every glass token and both ink colours.
     val OBSIDIAN = NeonTheme(
-        "classic", "Obsidian Glass", Color(0xFF00D9FF), Color(0xFFB8C6D8), Color(0xFF8B5CF6),
-        dark(0xFF06080D, 0xFF0C1119, 0xFF121A25, 0xFF1A2633, 0xFF33404E),
-        light(0xFFE9F1F5, 0xFFC9D6DD)
+        "classic", "Obsidian Glass", Color(0xFF48DDF5), Color(0xFFA78BFA), Color(0xFFA78BFA),
+        dark(0xFF080D18, 0xFF0D1422, 0xFF121C2C, 0xFF182438, 0xFF24314A),
+        light(0xFFF2F3F9, 0xFFC6CDDE)
     )
     val AURORA = NeonTheme(
         "aurora", "Aurora", Color(0xFF59D9FF), Color(0xFF8E7CFF), Color(0xFF4EA8FF),
@@ -513,11 +532,14 @@ object SurfaceModes {
     // AMOLED black — the reference's "professional console" feel comes from
     // depth (bg -> surface -> card -> cardAlt each a shade lighter), not
     // from pure black. Hue drifts toward blue (210°) instead of purple.
+    // GL-09: the layered navy of the specification. The console reads depth
+    // from bg -> surface -> card -> cardDeep each being one shade lighter,
+    // never from a heavy shadow.
     val DARK = SurfacePalette(
-        bg = Color(0xFF060A14), surface = Color(0xFF0A0F1D),
-        card = Color(0xFF101828), cardAlt = Color(0xFF0C1220),
-        cardDeep = Color(0xFF18213A), borderDim = Color(0xFF232E4A),
-        text = Color.White, textSoft = Color(0xFFD8E0F5)
+        bg = Color(0xFF080D18), surface = Color(0xFF0D1422),
+        card = Color(0xFF121C2C), cardAlt = Color(0xFF0D1422),
+        cardDeep = Color(0xFF182438), borderDim = Color(0xFF24314A),
+        text = Color(0xFFF3F7FF), textSoft = Color(0xFF9EACC2)
     )
     val LIGHT = SurfacePalette(
         bg = Color(0xFFF2F3F9), surface = Color(0xFFFCFDFF),
@@ -546,25 +568,44 @@ object SurfaceModes {
 @Composable
 fun GlassBackground() {
     val glow = when (appGlassState.value) { 0 -> 0.030f; 2 -> 0.085f; else -> 0.055f }
-    // Liquid glass: light fields slowly drift, simulating refracted light
-    val infinite = rememberInfiniteTransition(label = "glassBg")
-    val drift by infinite.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "glassDrift"
-    )
+    // GL-10: the drift used to run forever on every screen — three full-screen
+    // radial gradients repainted on a continuous transition. Under the motion
+    // preference (Reduced / Off) it now freezes at the same composition instead
+    // of animating, and the transition is not even created.
+    val drift = if (AppearanceState.motion.reducesMotion) {
+        0.5f
+    } else {
+        val infinite = rememberInfiniteTransition(label = "glassBg")
+        infinite.animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Reverse),
+            label = "glassDrift"
+        ).value
+    }
+    // GL-01/GL-08: the one and only blur pass in the app. It is applied to the
+    // static backdrop photograph — so the result is cached by the renderer —
+    // only when the device supports RenderEffect and glass is above Subtle.
+    // Everything else composites translucent surfaces over it.
+    val backdropBlur = GlassBlur.radiusDp(appGlassState.value, LocalGlassNativeBlur.current)
     Box(modifier = Modifier.fillMaxSize()) {
         // .bg + .scrim — full-bleed liquid-glass backdrop behind the panels,
         // so the frosted glass actually reads through to content.
         val useDarkBackdrop = appModeState.value == SurfaceModes.DARK ||
             (appModeState.value == SurfaceModes.SYSTEM && appSystemDarkState.value)
         if (useDarkBackdrop) {
-            Image(
-                painter = painterResource(R.drawable.glass_bg),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().alpha(0.85f)
-            )
+            Box(
+                modifier = Modifier.fillMaxSize().then(
+                    if (backdropBlur > 0.dp) Modifier.blur(backdropBlur, BlurredEdgeTreatment.Rectangle)
+                    else Modifier
+                )
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.glass_bg),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().alpha(0.85f)
+                )
+            }
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
@@ -610,9 +651,15 @@ val appSystemDarkState = mutableStateOf(true)
 // Build #127: glass intensity — UI rendering ONLY. Never touches DSP, capture,
 // buffers, latency or sample rate. 0 LOW · 1 MEDIUM (default) · 2 HIGH.
 val appGlassState = mutableStateOf(1)
-fun glassSurfaceAlpha(): Float = when (appGlassState.value) { 0 -> 0.94f; 2 -> 0.66f; else -> 0.78f }
-fun glassBorderAlpha(): Float = when (appGlassState.value) { 0 -> 0.10f; 2 -> 0.30f; else -> 0.20f }
-fun glassSpecularAlpha(): Float = when (appGlassState.value) { 0 -> 0.06f; 2 -> 0.18f; else -> 0.12f }
+// GL-02: these back every AlertDialog and sheet in the console. They now read
+// the same legibility floor as the shared glass surfaces, so dialogs stay
+// readable at the HIGH glass setting instead of letting the screen behind them
+// show through the text.
+fun glassSurfaceAlpha(): Float =
+    when (appGlassState.value) { 0 -> 0.96f; 2 -> 0.84f; else -> 0.90f }
+        .coerceAtLeast(GlassOpacity.MIN_BACKING)
+fun glassBorderAlpha(): Float = GlassOpacity.edge(appGlassState.value)
+fun glassSpecularAlpha(): Float = GlassOpacity.highlight(appGlassState.value)
 internal val S: SurfacePalette
     get() = when {
         appModeState.value == SurfaceModes.LIGHT -> T.lightSurfaces
@@ -1099,6 +1146,27 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         } catch (_: Throwable) { false }
     }
 
+    // ── Audio Center: the DSP parameters the Audio screens edit ──
+    // ONE snapshot, read from the persisted parameter set. A screen never writes
+    // DSP state itself — it hands a new snapshot to [applyAudioControl], which
+    // validates it, merges it over the existing parameters (so the parametric
+    // slots another screen owns are untouched), applies it through the same
+    // native path the rack uses, persists it and bumps the tick so every Audio
+    // screen re-reads the real value.
+    var audioControlTick by remember { mutableStateOf(0) }
+    val audioControl = remember(audioControlTick) {
+        try { AudioControlState.of(DspParams.load(engine)) } catch (_: Throwable) { AudioControlState() }
+    }
+    fun applyAudioControl(next: AudioControlState) {
+        try {
+            val p = DspParams.load(engine)
+            next.validated().mergeInto(p)
+            p.applyTo(NeonDsp)
+            p.save(engine)
+        } catch (_: Throwable) { }
+        audioControlTick++
+    }
+
     // The installed version string, shown by Settings and the About tool.
     val appVersion = remember {
         try {
@@ -1180,6 +1248,8 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                 engine.deleteCustomPreset(name)
                 customPresets = engine.listCustomPresets()
             },
+            audioControl = audioControl,
+            onAudioControlChange = { next -> applyAudioControl(next) },
             glassLevel = appGlassState.value,
             onGlassLevelChange = { level -> applyGlassLevel(level) },
             themes = Themes.ALL,
@@ -1252,6 +1322,8 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         engine.setEnabled(next)
                         if (context is MainActivity) context.onEnabledToggled(next)
                     },
+                    bypassActive = CaptureEqService.bypass,
+                    onToggleBypass = { CaptureEqService.bypass = !CaptureEqService.bypass },
                     onOpenFullSettings = { showSettings = true }
                 ),
                 onToolClick = { navigator.openTool(it) }
@@ -4318,10 +4390,17 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
 
     SonicCoreTheme(glassLevel = appGlassState.value) {
         Box(modifier = Modifier.fillMaxSize()) {
-            GlassBackground()
-            // The body reads the frame live from the navigator, so it renders the
-            // screen the current stack names — never the one it started on.
-            mainContent(navigation)
+            // GL-06/GL-08: one scaffold owns the decorative backdrop for the
+            // whole app and applies the status-bar and keyboard insets in a
+            // single place, so no screen has to remember to do it for itself.
+            GlassScaffold(background = { GlassBackground() }) {
+                // The body reads the frame live from the navigator, so it renders
+                // the screen the current stack names — never the one it started on.
+                mainContent(navigation)
+            }
+            // The splash and the snackbar are deliberately OUTSIDE the scaffold:
+            // they are full-bleed overlays, so insetting them would leave a strip
+            // of backdrop above the splash.
             // Animated first-frame splash, drawn over the console and removed
             // once it has played (immediately when system animations are off).
             SonicCoreSplashOverlay()
@@ -4365,7 +4444,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                             Text(
                                 (if (idxA == i) "A " else "") + (if (idxB == i) "B " else "") + t + " · " + o.optLong("dur_ms") / 1000 + "s · " + o.optLong("underruns") + " underruns",
                                 fontSize = 10.sp, color = if (idxA == i || idxB == i) T.primary else T.secondary,
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(GlassRadius.chip))
                                     .clickable { if (idxA == i) idxA = -1 else if (idxB == i) idxB = -1 else if (idxA < 0) idxA = i else if (idxB < 0 && i != idxA) idxB = i }
                                     .padding(vertical = 3.dp)
                             )
@@ -4516,7 +4595,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(GlassRadius.tile))
                         .background(if (sel) T.primary.copy(alpha = 0.08f) else Color.Transparent)
                         .clickable { showPresetPicker = false; previewPresetName = pname }
                         .padding(horizontal = 12.dp, vertical = 9.dp)
@@ -4543,8 +4622,8 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, glassEdgeTop(), RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(GlassRadius.control))
+                .border(1.dp, glassEdgeTop(), RoundedCornerShape(GlassRadius.control))
         )
         Spacer(Modifier.height(10.dp))
 
@@ -5372,7 +5451,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(GlassRadius.tile))
                                 .background(S.cardDeep)
                                 .clickable {
                                     openDestination(SonicCoreDestination.SIGNAL_PATH)
@@ -5391,7 +5470,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(GlassRadius.tile))
                                 .background(S.cardDeep)
                                 .clickable {
                                     openDestination(SonicCoreDestination.SYSTEM_CAPTURE)
@@ -5410,7 +5489,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(GlassRadius.tile))
                                 .background(S.cardDeep)
                                 .clickable {
                                     showSettings = false
@@ -5429,7 +5508,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(GlassRadius.tile))
                                 .background(S.cardDeep)
                                 .clickable {
                                     openDestination(SonicCoreDestination.DIAGNOSTICS)
@@ -5448,7 +5527,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(GlassRadius.tile))
                                 .background(S.cardDeep)
                                 .clickable {
                                     openDestination(SonicCoreDestination.CAPABILITIES)
@@ -5467,7 +5546,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(GlassRadius.tile))
                                 .background(S.cardDeep)
                                 .clickable {
                                     openDestination(SonicCoreDestination.DEVICE_TOOLS)
@@ -5486,7 +5565,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(GlassRadius.tile))
                                 .background(S.cardDeep)
                                 .clickable {
                                     openDestination(SonicCoreDestination.APP_MANAGER)
@@ -5548,12 +5627,12 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                                 Column(
                                     modifier = Modifier
                                         .width(116.dp)
-                                        .clip(RoundedCornerShape(14.dp))
+                                        .clip(RoundedCornerShape(GlassRadius.control))
                                         .background(t.darkSurfaces.card)
                                         .border(
                                             1.dp,
                                             if (selected) t.primary else t.darkSurfaces.borderDim,
-                                            RoundedCornerShape(14.dp)
+                                            RoundedCornerShape(GlassRadius.control)
                                         )
                                         .clickable { appThemeState.value = t }
                                         .padding(10.dp),
@@ -5629,7 +5708,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                             Text("Start on Boot", fontSize = 14.sp, color = S.text)
                             Text("Auto-start EQ after device reboot", fontSize = 11.sp, color = Color.Gray)
                         }
-                        LiquidToggle(
+                        GlassSwitch(
                             checked = startOnBoot,
                             onCheckedChange = {
                                 startOnBoot = it
@@ -5647,7 +5726,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                             Text("Auto-apply Preset", fontSize = 14.sp, color = S.text)
                             Text("Restore last preset on app launch", fontSize = 11.sp, color = Color.Gray)
                         }
-                        LiquidToggle(
+                        GlassSwitch(
                             checked = autoApplyPreset,
                             onCheckedChange = {
                                 autoApplyPreset = it
@@ -5665,7 +5744,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                             Text("Visualizer", fontSize = 14.sp, color = S.text)
                             Text("Show live spectrum bars", fontSize = 11.sp, color = Color.Gray)
                         }
-                        LiquidToggle(
+                        GlassSwitch(
                             checked = showVisualizer,
                             onCheckedChange = {
                                 showVisualizer = it
@@ -5707,7 +5786,7 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
                             Text("Breathing Glow", fontSize = 14.sp, color = S.text)
                             Text("Animated glow behind header", fontSize = 11.sp, color = Color.Gray)
                         }
-                        LiquidToggle(
+                        GlassSwitch(
                             checked = showGlow,
                             onCheckedChange = {
                                 showGlow = it
@@ -6071,11 +6150,15 @@ fun GlassBottomSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composab
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
     Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() }) {
         LiquidGlassSurface(
+            // GL-06: the sheet used to sit under the keyboard, so a form inside
+            // it could not be filled in. It now lifts above the IME and keeps
+            // the navigation-bar inset.
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding(),
-            shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+            shape = RoundedCornerShape(topStart = GlassRadius.sheet, topEnd = GlassRadius.sheet),
             contentPadding = 16.dp
         ) {
             Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(50))
@@ -6804,7 +6887,7 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
             }
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(GlassRadius.control))
             .background(
                 if (selected)
                     chipSelectedBrush()
@@ -6814,7 +6897,7 @@ fun PresetChip(preset: Presets.Preset, selected: Boolean, onClick: () -> Unit) {
             .border(
                 1.dp,
                 Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
-                RoundedCornerShape(16.dp)
+                RoundedCornerShape(GlassRadius.control)
             )
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
@@ -6862,7 +6945,7 @@ fun CustomPresetChip(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(GlassRadius.control))
             .background(
                 if (selected)
                     chipSelectedBrush()
@@ -6872,7 +6955,7 @@ fun CustomPresetChip(
             .border(
                 1.dp,
                 Brush.verticalGradient(listOf(glassEdgeTop(), glassEdgeBottom())),
-                RoundedCornerShape(16.dp)
+                RoundedCornerShape(GlassRadius.control)
             )
             .padding(horizontal = 4.dp)
     ) {
@@ -7076,7 +7159,7 @@ fun CrashScreen(trace: String, onDismiss: () -> Unit) {
             color = T.primary,
             modifier = Modifier
                 .background(S.surface)
-                .border(1.dp, T.accent.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                .border(1.dp, T.accent.copy(alpha = 0.25f), RoundedCornerShape(GlassRadius.tile))
                 .padding(12.dp)
         )
         Spacer(Modifier.height(16.dp))

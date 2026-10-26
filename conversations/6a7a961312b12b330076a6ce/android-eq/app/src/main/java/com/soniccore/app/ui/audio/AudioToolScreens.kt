@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.audio
 
+import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,18 +32,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soniccore.app.capture.AudioCapabilityManager
+import com.soniccore.app.capture.CapState
 import com.soniccore.app.capture.CaptureEqService
 import com.soniccore.app.diagnostics.DeviceDiagnosticsManager
 import com.soniccore.app.diagnostics.OperationLog
 import com.soniccore.app.dsp.NeonDsp
-import com.soniccore.app.ui.category.CapabilityBadge
 import com.soniccore.app.ui.category.CapabilityLegend
 import com.soniccore.app.ui.category.SonicCoreCapability
 import com.soniccore.app.ui.category.SonicCoreDataRow
 import com.soniccore.app.ui.category.SonicCoreStatTile
 import com.soniccore.app.ui.category.SonicCoreToolHost
-import com.soniccore.app.ui.design.GlassCard
-import com.soniccore.app.ui.design.LiquidGlassSurface
 import com.soniccore.app.ui.design.SonicCoreColors
 import com.soniccore.app.ui.navigation.SonicCoreCategory
 
@@ -76,14 +76,10 @@ fun AudioPresetsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
             SonicCoreCapability.AVAILABLE,
             "Presets are applied through the same validated DSP path used everywhere else in SonicCore."
         )
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "CURRENT PROFILE",
-                color = SonicCoreColors.SecondaryText,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
-            )
+        AudioSection(
+            title = "Current profile",
+            description = "The profile the engine is running right now."
+        ) {
             Text(
                 host.currentPreset,
                 color = SonicCoreColors.Cyan,
@@ -125,14 +121,10 @@ fun AudioPresetsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
             }
         }
 
-        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(18.dp)) {
-            Text(
-                "PROFILE LIBRARY",
-                color = SonicCoreColors.SecondaryText,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
-            )
+        AudioSection(
+            title = "Profile library",
+            description = "Built-in and custom profiles. Applying one goes through the same validated DSP path as everywhere else."
+        ) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -252,12 +244,12 @@ private fun PresetRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(if (active) SonicCoreColors.Cyan.copy(alpha = 0.09f) else SonicCoreColors.Background.copy(alpha = 0.35f))
             .border(
                 0.8.dp,
                 if (active) SonicCoreColors.Cyan.copy(alpha = 0.35f) else SonicCoreColors.Border.copy(alpha = 0.12f),
-                RoundedCornerShape(12.dp)
+                RoundedCornerShape(GlassRadius.tile)
             )
             .padding(horizontal = 11.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -311,9 +303,9 @@ private fun PresetAction(label: String, modifier: Modifier = Modifier, onClick: 
         letterSpacing = 0.8.sp,
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
-            .border(0.8.dp, SonicCoreColors.Cyan.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
+            .border(0.8.dp, SonicCoreColors.Cyan.copy(alpha = 0.28f), RoundedCornerShape(GlassRadius.tile))
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp)
             .semantics { contentDescription = label }
@@ -330,8 +322,20 @@ private fun PresetAction(label: String, modifier: Modifier = Modifier, onClick: 
 fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var report by remember { mutableStateOf<String?>(null) }
+    var testResult by remember { mutableStateOf<String?>(null) }
     val serviceHealth = remember { runCatching { DeviceDiagnosticsManager.getServiceHealth(context) }.getOrNull() }
     val log = remember { OperationLog.snapshot() }
+    // The probes are read once per screen visit: the DSP probe runs the native
+    // self-test, so it must never sit in a recomposition path.
+    val probes = remember(context) {
+        listOf(
+            "AudioPlaybackCapture" to runCatching { AudioCapabilityManager.playbackCapture() }.getOrDefault(CapState.UNKNOWN),
+            "MediaProjection" to runCatching { AudioCapabilityManager.mediaProjection(context) }.getOrDefault(CapState.UNKNOWN),
+            "AudioRecord" to runCatching { AudioCapabilityManager.audioRecord() }.getOrDefault(CapState.UNKNOWN),
+            "AudioTrack" to runCatching { AudioCapabilityManager.audioTrack(CaptureEqService.captureSampleRate) }.getOrDefault(CapState.UNKNOWN),
+            "Native DSP bridge" to runCatching { AudioCapabilityManager.dsp() }.getOrDefault(CapState.UNKNOWN)
+        )
+    }
 
     val sessionState = when {
         !NeonDsp.available -> "DSP UNAVAILABLE"
@@ -349,14 +353,10 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
             if (NeonDsp.available) SonicCoreCapability.AVAILABLE else SonicCoreCapability.UNSUPPORTED,
             NeonDsp.loadError ?: "Counters come from the native DSP bridge and the running capture session."
         )
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "AUDIO SESSION",
-                color = SonicCoreColors.SecondaryText,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
-            )
+        AudioSection(
+            title = "Audio session",
+            description = "Counters published by the native DSP bridge and the running capture session."
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -428,14 +428,10 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
             }
         }
 
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "RECENT OPERATIONS (${log.size})",
-                color = SonicCoreColors.SecondaryText,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
-            )
+        AudioSection(
+            title = "Recent operations (${log.size})",
+            description = "The bounded, in-process operation log."
+        ) {
             if (log.isEmpty()) {
                 Text(
                     "No operations recorded yet in this process.",
@@ -460,7 +456,7 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(GlassRadius.tile))
                     .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
                     .clickable {
                         report = runCatching { DeviceDiagnosticsManager.generateRedactedReport(context) }.getOrNull()
@@ -488,13 +484,74 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .padding(top = 6.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(GlassRadius.tile))
                         .background(SonicCoreColors.ElevatedSurface.copy(alpha = 0.8f))
                         .clickable { host.onShareText("SonicCore audio diagnostics", text) }
                         .padding(horizontal = 11.dp, vertical = 9.dp)
                 )
             }
         }
+        AudioSection(
+            title = "Compatibility probes",
+            description = "Each entry is read from the platform itself — a capability is never presented as a live result."
+        ) {
+            probes.forEach { (name, state) ->
+                SonicCoreDataRow(
+                    label = name,
+                    value = state.name.replace('_', ' '),
+                    capability = state.toAudioCapability()
+                )
+            }
+        }
+
+        AudioSection(
+            title = "Test results",
+            description = "The project's own compatibility test: platform support, current route, capture and processing state."
+        ) {
+            AudioActionRow(
+                listOf(
+                    AudioAction(
+                        label = "RUN AUDIO SELF-TEST",
+                        onClick = {
+                            testResult = runCatching { AudioCapabilityManager.runFullTest(context) }.getOrNull()
+                            OperationLog.record(
+                                category = "Audio",
+                                message = "Audio compatibility self-test run",
+                                result = if (testResult != null) com.soniccore.app.diagnostics.OperationResult.SUCCESS
+                                else com.soniccore.app.diagnostics.OperationResult.FAILED
+                            )
+                        }
+                    )
+                )
+            )
+            val result = testResult
+            if (result == null) {
+                Text(
+                    "No test run in this session yet.",
+                    color = SonicCoreColors.SecondaryText,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            } else {
+                Text(
+                    result,
+                    color = SonicCoreColors.SecondaryText,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                AudioActionRow(
+                    actions = listOf(
+                        AudioAction(
+                            label = "SHARE TEST RESULT",
+                            onClick = { host.onShareText("SonicCore audio self-test", result) }
+                        )
+                    ),
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+
         LimitNote2("SonicCore reports only counters it measures. Metrics a device does not expose stay “Not readable” rather than being estimated.")
     }
 }
@@ -502,4 +559,13 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
 @Composable
 private fun LimitNote2(text: String) {
     com.soniccore.app.ui.category.LimitNote(text, SonicCoreCategory.AUDIO.tone)
+}
+
+/** Platform capability states expressed in the one vocabulary every screen uses. */
+private fun CapState.toAudioCapability(): SonicCoreCapability = when (this) {
+    CapState.SUPPORTED -> SonicCoreCapability.AVAILABLE
+    CapState.PARTIALLY_SUPPORTED -> SonicCoreCapability.AVAILABLE
+    CapState.UNSUPPORTED -> SonicCoreCapability.UNSUPPORTED
+    CapState.BLOCKED_BY_SOURCE_APP -> SonicCoreCapability.BLOCKED
+    CapState.UNKNOWN -> SonicCoreCapability.UNKNOWN
 }

@@ -1,5 +1,6 @@
 package com.soniccore.app.diagnostics
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -332,7 +333,7 @@ fun DeviceDiagnosticsScreen(
                     containerColor = SonicCoreColors.ElevatedSurface,
                     contentColor = SonicCoreColors.SecondaryText
                 ),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             ) {
                 Text("CLEAR LOG", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
@@ -384,7 +385,7 @@ fun DeviceDiagnosticsScreen(
                     containerColor = SonicCoreColors.Cyan.copy(alpha = 0.25f),
                     contentColor = SonicCoreColors.Cyan
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             ) {
                 Text("SHARE REPORT FILE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
@@ -405,7 +406,7 @@ fun DeviceDiagnosticsScreen(
                     containerColor = SonicCoreColors.Violet.copy(alpha = 0.20f),
                     contentColor = SonicCoreColors.Violet
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(GlassRadius.tile)
             ) {
                 Text("COPY REDACTED REPORT", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }

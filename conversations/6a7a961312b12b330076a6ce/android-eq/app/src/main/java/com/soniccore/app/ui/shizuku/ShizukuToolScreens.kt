@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.shizuku
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -194,7 +195,7 @@ private fun ShizukuManagerButton(context: android.content.Context) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 10.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
             .clickable(enabled = intent != null) {
                 runCatching { context.startActivity(intent!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -249,9 +250,9 @@ fun ShizukuAuthorizationScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 10.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(GlassRadius.tile))
                     .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
-                    .border(0.8.dp, SonicCoreColors.Cyan.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
+                    .border(0.8.dp, SonicCoreColors.Cyan.copy(alpha = 0.28f), RoundedCornerShape(GlassRadius.tile))
                     .clickable(enabled = !granted && state != ShizukuState.NOT_INSTALLED) {
                         val shown = runCatching { ShizukuBridge.requestPermission() }.getOrDefault(false)
                         OperationLog.record(
@@ -299,7 +300,7 @@ fun ShizukuOperationsScreen(modifier: Modifier = Modifier) {
         ShizukuGroup.entries.forEach { group ->
             val groupStatuses = statuses.filter { it.operation.group == group }
             if (groupStatuses.isEmpty()) return@forEach
-            LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(18.dp)) {
+            LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(GlassRadius.card)) {
                 Text(
                     group.label.uppercase(),
                     color = SonicCoreColors.SecondaryText,
@@ -412,7 +413,7 @@ fun ShizukuTroubleshootingScreen(modifier: Modifier = Modifier) {
                 SonicCoreDataRow("Blocked at", it.title, SonicCoreCapability.BLOCKED, it.detail)
             }
         }
-        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(18.dp)) {
+        LiquidGlassSurface(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(GlassRadius.card)) {
             Text("FAILURE CODES", color = SonicCoreColors.SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
             ShizukuFailure.entries.forEach { failure ->
                 Row(
@@ -454,7 +455,7 @@ private fun ShizukuAction(label: String, modifier: Modifier = Modifier, onClick:
         fontWeight = FontWeight.Bold,
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(GlassRadius.tile))
             .background(SonicCoreColors.Cyan.copy(alpha = 0.10f))
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp)

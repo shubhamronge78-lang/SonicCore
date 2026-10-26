@@ -1,5 +1,6 @@
 package com.soniccore.app.ui.customization
 
+import com.soniccore.app.ui.design.GlassRadius
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,12 +73,12 @@ fun ThemeSwatchStrip(
             Column(
                 modifier = Modifier
                     .width(96.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(GlassRadius.control))
                     .background(theme.darkSurfaces.card.copy(alpha = 0.92f))
                     .border(
                         width = if (selected) 2.dp else 1.dp,
                         color = if (selected) theme.primary else SonicCoreColors.Border.copy(alpha = 0.22f),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(GlassRadius.control)
                     )
                     .clickable { onThemeApply(theme.id) }
                     .semantics {
@@ -355,7 +356,7 @@ fun CustomizationPreviewScreen(host: SonicCoreToolHost, context: Context, modifi
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(GlassRadius.tile))
                         .background(SonicCoreColors.Error.copy(alpha = 0.10f))
                         .clickable { AppearanceState.resetAppearance(context) }
                         .padding(vertical = 11.dp)
@@ -369,7 +370,7 @@ fun CustomizationPreviewScreen(host: SonicCoreToolHost, context: Context, modifi
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(GlassRadius.tile))
                         .background(SonicCoreColors.Error.copy(alpha = 0.10f))
                         .clickable { AppearanceState.resetMotion(context) }
                         .padding(vertical = 11.dp)
