@@ -5,7 +5,7 @@
 typedef int jint; typedef long long jlong; typedef short jshort;
 typedef float jfloat; typedef double jdouble; typedef unsigned char jboolean; typedef int jsize;
 typedef void* jobject; typedef void* jarray; typedef void* jshortArray;
-typedef void* jfloatArray; typedef void* jdoubleArray;
+typedef void* jfloatArray; typedef void* jdoubleArray; typedef void* jintArray;
 #define JNIEXPORT
 #define JNICALL
 #define JNI_TRUE 1
@@ -41,6 +41,11 @@ struct JNIEnv {
     void ReleasePrimitiveArrayCritical(jarray, void*, jint) { criticalReleases++; }
     jfloat* GetFloatArrayElements(jfloatArray a, jboolean*) { return (jfloat*)((HostArr*)a)->data; }
     void ReleaseFloatArrayElements(jfloatArray, jfloat*, jint) {}
+
+    /* Additive: the DSP chain-editor entry points take an int[] stage order.
+       The harness registers a real C int array the same way it does PCM. */
+    jint* GetIntArrayElements(jintArray a, jboolean*) { return (jint*)((HostArr*)a)->data; }
+    void ReleaseIntArrayElements(jintArray, jint*, jint) {}
 
     /* Result arrays: the loudness facade returns a 4-element double array, so the
        stub hands back a fixed buffer that the caller reads directly. Additive —

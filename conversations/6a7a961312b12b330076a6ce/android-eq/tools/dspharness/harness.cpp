@@ -656,6 +656,78 @@ int main() {
     CHECK(env.criticalReleases == env.criticalAcquires,
           "all successfully acquired array storage is released");
 
+    printf("[18] chain editor: stage order and per-stage enable reach the audio thread\n");
+    {
+        /* The chain editor claims a reorder changes what the DSP does, and that
+           claim is only true if the audio thread really walks the new order. So
+           this section measures it instead of trusting a flag: the limiter is
+           moved off the end, and a signal the preamp pushes far over the ceiling
+           is then NO LONGER held at that ceiling — because the preamp now runs
+           after the limiter. Same input, same parameters, different measured
+           output: that is what makes the reorder real rather than cosmetic. */
+        Java_com_soniccore_app_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+        static jshort cr[480 * 2];
+        jshortArray cbuf = (jshortArray) &g_hostArrays[hostReg(cr, 480 * 2, 0)];
+        const int LEVEL_TOL = 2;
+        auto runLevel = [&]() {                 /* steady-state output level, measured */
+            for (int b = 0; b < 40; b++) {
+                for (int i = 0; i < 480; i++) { cr[2*i] = 8000; cr[2*i+1] = 8000; }
+                Java_com_soniccore_app_dsp_NeonDsp_process(&env, thiz, cbuf, 480);
+            }
+            return (int) cr[0];
+        };
+        auto setOrder = [&](const int* ids) {
+            static jint order[STAGE_COUNT];
+            for (int i = 0; i < STAGE_COUNT; i++) order[i] = ids[i];
+            jintArray arr = (jintArray) &g_hostArrays[hostReg(order, STAGE_COUNT, 0)];
+            return Java_com_soniccore_app_dsp_NeonDsp_setStageOrder(&env, thiz, arr);
+        };
+        Java_com_soniccore_app_dsp_NeonDsp_setPreamp(&env, thiz, 20.0f);   /* +20 dB, far over the ceiling */
+        const int DEFAULT_CHAIN[STAGE_COUNT] = { STAGE_PREAMP, STAGE_PEQ, STAGE_GRAPHIC, STAGE_SHELVES,
+                                                 STAGE_STEREO, STAGE_CONVOLVER, STAGE_COMPRESSOR, STAGE_LIMITER };
+        int limiterFirst[STAGE_COUNT] = { STAGE_LIMITER, STAGE_PREAMP, STAGE_PEQ, STAGE_GRAPHIC,
+                                          STAGE_SHELVES, STAGE_STEREO, STAGE_CONVOLVER, STAGE_COMPRESSOR };
+        CHECK(setOrder(DEFAULT_CHAIN) == JNI_TRUE, "engine accepts the default chain order");
+        int limiterLastLevel = runLevel();
+        CHECK(limiterLastLevel > 28000 && limiterLastLevel < 29500,
+              "limiter last: an over-ceiling signal is held at the -1 dBFS ceiling");
+        CHECK(setOrder(limiterFirst) == JNI_TRUE, "engine accepts a reordered chain");
+        int limiterFirstLevel = runLevel();
+        CHECK(limiterFirstLevel > 32000,
+              "limiter first: the SAME signal now passes the ceiling — the order really moved");
+        int notAPermutation[STAGE_COUNT] = { STAGE_PREAMP, STAGE_PREAMP, STAGE_GRAPHIC, STAGE_SHELVES,
+                                             STAGE_STEREO, STAGE_CONVOLVER, STAGE_COMPRESSOR, STAGE_LIMITER };
+        CHECK(setOrder(notAPermutation) == JNI_FALSE, "engine refuses a non-permutation order");
+        CHECK(runLevel() == limiterFirstLevel, "a refused order leaves the committed chain untouched");
+        CHECK(setOrder(DEFAULT_CHAIN) == JNI_TRUE, "the default order can be restored");
+        CHECK(abs(runLevel() - limiterLastLevel) <= LEVEL_TOL,
+              "the restored chain measures exactly as it did before the reorder");
+        /* Per-stage enable: the preamp keeps its +20 dB and is switched off. */
+        CHECK(Java_com_soniccore_app_dsp_NeonDsp_setStageEnabled(&env, thiz, STAGE_PREAMP, JNI_FALSE) == JNI_TRUE,
+              "engine accepts a stage disable");
+        /* The enable commits at the next block boundary, like every other
+           parameter — so the read-back is taken after audio has flowed, which
+           is also what it reports: the chain the audio thread is walking. */
+        int bypassedLevel = runLevel();
+        CHECK(Java_com_soniccore_app_dsp_NeonDsp_stageEnabled(&env, thiz, STAGE_PREAMP) == JNI_FALSE,
+              "the disabled stage reads back as disabled once the block boundary passes");
+        CHECK(abs(bypassedLevel - 8000) <= 1,
+              "bypassed preamp passes the signal at unity and keeps its +20 dB setting");
+        CHECK(Java_com_soniccore_app_dsp_NeonDsp_setStageEnabled(&env, thiz, STAGE_PREAMP, JNI_TRUE) == JNI_TRUE,
+              "engine accepts the stage re-enable");
+        CHECK(abs(runLevel() - limiterLastLevel) <= LEVEL_TOL,
+              "the re-enabled stage restores the same sound (parameters were never reset)");
+        CHECK(Java_com_soniccore_app_dsp_NeonDsp_stageEnabled(&env, thiz, STAGE_PREAMP) == JNI_TRUE,
+              "the re-enabled stage reads back as enabled");
+        CHECK(Java_com_soniccore_app_dsp_NeonDsp_setStageEnabled(&env, thiz, STAGE_COUNT, JNI_TRUE) == JNI_FALSE,
+              "an out-of-range stage id is refused");
+        CHECK(Java_com_soniccore_app_dsp_NeonDsp_stageEnabled(&env, thiz, STAGE_LIMITER) == JNI_TRUE,
+              "the mandatory limiter stage stays enabled");
+        CHECK(Java_com_soniccore_app_dsp_NeonDsp_nanCount(&env, thiz) == 0, "chain tests: no NaN");
+        Java_com_soniccore_app_dsp_NeonDsp_setPreamp(&env, thiz, 0.0f);
+        Java_com_soniccore_app_dsp_NeonDsp_init(&env, thiz, SR, BANDS);
+    }
+
     printf("\n%s (%d failures)\n", fails ? "HARNESS FAIL" : "HARNESS PASS", fails);
     return fails ? 1 : 0;
 }

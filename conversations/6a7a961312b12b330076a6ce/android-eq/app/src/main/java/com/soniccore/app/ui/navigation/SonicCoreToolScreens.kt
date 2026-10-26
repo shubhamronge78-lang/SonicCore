@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.soniccore.app.ui.audio.AudioBassTrebleScreen
+import com.soniccore.app.ui.audio.AudioConsoleScreen
 import com.soniccore.app.ui.audio.AudioDevicesScreen
 import com.soniccore.app.ui.audio.AudioDiagnosticsScreen
 import com.soniccore.app.ui.audio.AudioPresetsScreen
@@ -61,6 +62,7 @@ import com.soniccore.app.ui.shizuku.ShizukuTroubleshootingScreen
  * `SonicCoreNavigationTest` asserts.
  */
 object SonicCoreToolRoutes {
+    const val AUDIO_CONSOLE = "audio.console"
     const val AUDIO_PRESETS = "audio.presets"
     const val AUDIO_DIAGNOSTICS = "audio.diagnostics"
     const val AUDIO_BASS_TREBLE = "audio.bass_treble"
@@ -108,7 +110,7 @@ object SonicCoreToolRoutes {
     const val SETTINGS_ABOUT = "settings.about"
 
     val ids: Set<String> = setOf(
-        AUDIO_PRESETS, AUDIO_DIAGNOSTICS, AUDIO_BASS_TREBLE, AUDIO_SPATIAL, AUDIO_DEVICES,
+        AUDIO_CONSOLE, AUDIO_PRESETS, AUDIO_DIAGNOSTICS, AUDIO_BASS_TREBLE, AUDIO_SPATIAL, AUDIO_DEVICES,
         DEVICE_OVERVIEW, DEVICE_CPU, DEVICE_MEMORY, DEVICE_STORAGE, DEVICE_BATTERY,
         DEVICE_DISPLAY, DEVICE_SENSORS, DEVICE_NETWORK, DEVICE_HEALTH,
         SHIZUKU_CONNECTION, SHIZUKU_SETUP, SHIZUKU_AUTHORIZATION, SHIZUKU_OPERATIONS,
@@ -141,6 +143,7 @@ fun SonicCoreToolScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         when (tool.id) {
+            SonicCoreToolRoutes.AUDIO_CONSOLE -> AudioConsoleScreen(host)
             SonicCoreToolRoutes.AUDIO_PRESETS -> AudioPresetsScreen(host)
             SonicCoreToolRoutes.AUDIO_DIAGNOSTICS -> AudioDiagnosticsScreen(host)
             SonicCoreToolRoutes.AUDIO_BASS_TREBLE -> AudioBassTrebleScreen(host)

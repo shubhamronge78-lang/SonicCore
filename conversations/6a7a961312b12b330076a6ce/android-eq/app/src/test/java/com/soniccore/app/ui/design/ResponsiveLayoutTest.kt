@@ -165,4 +165,47 @@ class ResponsiveLayoutTest {
             expanded.columnsFor(GlassSpacing.minTileWidthNumeric)
         )
     }
+
+    // ── Parameter controls side by side ──
+
+    @Test
+    fun aPhonePutsTwoControlsSideBySideAndATabletCanFitThree() {
+        // The common phone: one centred column, so two of the three available
+        // cells are wide enough for a labelled slider and the third is not.
+        val phone = ResponsiveMetrics.of(412, 915)
+        assertEquals(2, phone.controlColumns)
+
+        val tablet = ResponsiveMetrics.of(1280, 800)
+        assertEquals(ResponsiveBreakpoints.MAX_CONTROL_COLUMNS, tablet.controlColumns)
+    }
+
+    @Test
+    fun aControlRowDropsToASingleColumnBeforeItWouldSqueeze() {
+        // Exactly two 148 dp controls plus one 12 dp gap fit; one dp less does not.
+        assertEquals(2, controlColumnCount(308.dp, 148.dp, 12.dp))
+        assertEquals(1, controlColumnCount(307.dp, 148.dp, 12.dp))
+        assertEquals(1, controlColumnCount(120.dp))
+        assertEquals(1, controlColumnCount(0.dp))
+    }
+
+    @Test
+    fun theControlRowNeverExceedsItsCap() {
+        assertEquals(
+            ResponsiveBreakpoints.MAX_CONTROL_COLUMNS,
+            controlColumnCount(4000.dp, 148.dp, 12.dp)
+        )
+        // A narrow window can still be asked for two columns explicitly and gets
+        // one, rather than two clipped cells.
+        assertEquals(1, controlColumnCount(200.dp, 148.dp, 12.dp))
+    }
+
+    @Test
+    fun theControlFloorIsTheSharedToken() {
+        assertEquals(148.dp, GlassSpacing.minControlWidth)
+        assertEquals(
+            GlassSpacing.minControlWidth.value,
+            ResponsiveBreakpoints.MIN_CONTROL_WIDTH_DP,
+            0f
+        )
+    }
 }

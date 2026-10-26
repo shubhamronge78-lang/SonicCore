@@ -1,11 +1,7 @@
 package com.soniccore.app.ui.audio
 
-import android.content.Context
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import com.soniccore.app.loudness.Loudness
-import com.soniccore.app.loudness.WavPcm
 import com.soniccore.app.ui.design.GlassRadius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -495,14 +491,6 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
     val context = LocalContext.current
     var report by remember { mutableStateOf<String?>(null) }
     var testResult by remember { mutableStateOf<String?>(null) }
-    // The offline loudness report. Kept as lines so a refusal reads exactly like a
-    // measurement: both are sentences this screen shows as they are.
-    var loudnessLines by remember { mutableStateOf<List<String>?>(null) }
-    val pickWavFile = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) loudnessLines = measureWavFile(context, uri)
-    }
     val serviceHealth = remember { runCatching { DeviceDiagnosticsManager.getServiceHealth(context) }.getOrNull() }
     val log = remember { OperationLog.snapshot() }
     // The probes are read once per screen visit: the DSP probe runs the native
@@ -732,93 +720,12 @@ fun AudioDiagnosticsScreen(host: SonicCoreToolHost, modifier: Modifier = Modifie
             }
         }
 
-        AudioSection(
-            title = "Loudness (offline)",
-            description = "Integrated loudness, loudness range and true peak of one 16-bit PCM WAV file. " +
-                "Measured after the fact, in the module's own native library — never during playback."
-        ) {
-            Text(
-                Loudness.SCOPE,
-                color = SonicCoreColors.SecondaryText,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-            AudioActionRow(
-                actions = listOf(
-                    AudioAction(
-                        label = "ANALYZE A .WAV FILE",
-                        onClick = {
-                            loudnessLines = listOf(
-                                "Reading the file you pick (up to ${WavPcm.MAX_FILE_BYTES / (1024 * 1024)} MB)…"
-                            )
-                            pickWavFile.launch(arrayOf("audio/wav", "audio/x-wav", "audio/*"))
-                        }
-                    )
-                ),
-                modifier = Modifier.padding(top = 8.dp)
-            )
-            loudnessLines?.forEach { line ->
-                Text(
-                    "• $line",
-                    color = SonicCoreColors.PrimaryText,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-        }
+        // One shared implementation, also shown inline in the Audio Console —
+        // the measurement and its wording cannot drift between the two screens.
+        LoudnessAnalysisSection()
 
         LimitNote2("SonicCore reports only counters it measures. Metrics a device does not expose stay “Not readable” rather than being estimated.")
     }
-}
-
-/**
- * Reads the picked `.wav` (bounded by [WavPcm.MAX_FILE_BYTES]), measures it and
- * returns the lines to show. Every outcome — a refused format, a truncated file,
- * a module that is not on this device — is a sentence, never a missing row.
- */
-private fun measureWavFile(context: Context, uri: Uri): List<String> {
-    val bytes = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            val out = java.io.ByteArrayOutputStream()
-            val chunk = ByteArray(64 * 1024)
-            var total = 0
-            while (total < WavPcm.MAX_FILE_BYTES) {
-                val read = input.read(chunk, 0, minOf(chunk.size, WavPcm.MAX_FILE_BYTES - total))
-                if (read <= 0) break
-                out.write(chunk, 0, read)
-                total += read
-            }
-            out.toByteArray()
-        }
-    }.getOrNull() ?: return listOf("Not measured: that file could not be read.")
-
-    val capNote = if (bytes.size >= WavPcm.MAX_FILE_BYTES) {
-        listOf(
-            "Read the first ${WavPcm.MAX_FILE_BYTES / (1024 * 1024)} MB of that file — " +
-                "the picker's own limit."
-        )
-    } else {
-        emptyList()
-    }
-
-    val parsed = runCatching { WavPcm.read(bytes) }.getOrElse {
-        return listOf("Not measured: that file could not be read (${it.message ?: it.toString()}).")
-    }
-    return when (parsed) {
-        is WavPcm.Read.Refused -> listOf("Not measured: ${parsed.reason}")
-        is WavPcm.Read.Ok -> runCatching {
-            Loudness.reportLines(Loudness.analyze(parsed.pcm, WavPcm.SOURCE)) + parsed.notes + capNote
-        }.getOrElse {
-            listOf("Not measured: the measurement failed (${it.message ?: it.toString()}).")
-        }
-    }
-}
-
-@Composable
-private fun LimitNote2(text: String) {
-    com.soniccore.app.ui.category.LimitNote(text, SonicCoreCategory.AUDIO.tone)
 }
 
 /** Platform capability states expressed in the one vocabulary every screen uses. */
@@ -828,4 +735,10 @@ private fun CapState.toAudioCapability(): SonicCoreCapability = when (this) {
     CapState.UNSUPPORTED -> SonicCoreCapability.UNSUPPORTED
     CapState.BLOCKED_BY_SOURCE_APP -> SonicCoreCapability.BLOCKED
     CapState.UNKNOWN -> SonicCoreCapability.UNKNOWN
+}
+
+/** The Audio diagnostics screen's own limit strip, in the Audio tone. */
+@Composable
+private fun LimitNote2(text: String) {
+    com.soniccore.app.ui.category.LimitNote(text, SonicCoreCategory.AUDIO.tone)
 }

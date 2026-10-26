@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -120,7 +121,9 @@ import com.soniccore.app.capture.CaptureEqService
 import com.soniccore.app.capture.CaptureFlowStatus
 import com.soniccore.app.dsp.NeonDsp
 import com.soniccore.app.dsp.AudioControlState
+import com.soniccore.app.dsp.DspChain
 import com.soniccore.app.dsp.DspParams
+import com.soniccore.app.dsp.DspTelemetry
 import com.soniccore.app.dsp.MeterLevels
 import com.soniccore.app.dsp.PeqSlot
 import com.soniccore.app.dsp.computeMeterLevels
@@ -210,6 +213,17 @@ class MainActivity : ComponentActivity() {
         }
 
         super.onCreate(savedInstanceState)
+        // Edge-to-edge (spec §1): the glass backdrop runs under the status bar,
+        // the navigation bar and any display cutout, and the content is inset
+        // once inside `GlassScaffold`. Without this the window kept a black
+        // system-bar band that no theme could match, and the bottom dock could
+        // sit under the gesture bar on some devices.
+        //
+        // `enableEdgeToEdge` also sets the bar icon appearance from the system's
+        // dark/light state; `Theme.NeonEQ` keeps transparent bars so the
+        // backdrop is what shows through. It never changes what the app may do —
+        // it only decides who owns the system-bar strips.
+        enableEdgeToEdge()
         // Platform theme inputs: the saved accent swatch is restored before the
         // theme, so a persisted "Custom Accent" theme comes back with the swatch
         // the user picked instead of the default one.
@@ -1182,6 +1196,68 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
         return landed
     }
 
+    // ── Audio Console: the native chain the engine is really running ──
+    // Read from the persisted parameter set, applied through the same path the
+    // rest of the audio UI uses. The order and the bypass flags are one value, so
+    // a reorder can never be applied half-way.
+    var dspChainTick by remember { mutableStateOf(0) }
+    val dspChain = remember(dspChainTick, audioControlTick) {
+        try { DspChain.fromParams(DspParams.load(engine)) } catch (_: Throwable) { DspChain.default() }
+    }
+
+    /**
+     * Applies one whole chain.
+     *
+     * @return true only when the native engine accepted the order *and* the
+     *   parameter set was persisted. `NeonDsp.setStageOrder` refuses anything
+     *   that is not a full permutation of the eight stages and keeps the order it
+     *   had, so a refused chain is reported rather than silently ignored.
+     */
+    fun applyDspChain(next: DspChain): Boolean {
+        val landed = try {
+            val p = DspParams.load(engine)
+            p.stageOrder = next.stageOrderIds
+            p.stageBypassed = next.bypassedIds
+            val writtenNatively = p.applyTo(NeonDsp)
+            val persisted = p.save(engine)
+            writtenNatively && persisted
+        } catch (_: Throwable) { false }
+        dspChainTick++
+        return landed
+    }
+
+    /**
+     * One measured snapshot of the native pipeline.
+     *
+     * Read on demand (the console calls it on a slow tick), never in a layout
+     * path. When the bridge cannot be read at all this reports *why* instead of
+     * returning zeros that would look like a silent, working meter.
+     */
+    fun readDspTelemetry(): DspTelemetry {
+        if (!NeonDsp.available) {
+            return DspTelemetry.unavailable(NeonDsp.loadError ?: "the native DSP bridge did not load")
+        }
+        return try {
+            val peakMs = NeonDsp.outPeakMs()
+            DspTelemetry(
+                available = true,
+                unavailableReason = null,
+                processedFrames = NeonDsp.processedFrames(),
+                clipping = NeonDsp.clipCount() > 0,
+                compressorReductionDb = NeonDsp.compressorGrMs() / 10f,
+                limiterReductionDb = NeonDsp.limiterGrMs() / 10f,
+                limiterActive = NeonDsp.limiterActive(),
+                outputPeakDbfs = if (peakMs > 0) {
+                    (20.0 * Math.log10(peakMs / 1000.0)).toFloat()
+                } else {
+                    Float.NEGATIVE_INFINITY
+                }
+            )
+        } catch (t: Throwable) {
+            DspTelemetry.unavailable(t.message ?: t.toString())
+        }
+    }
+
     /**
      * AutoEQ import (repository integration, Phase 4) — review first, then apply.
      *
@@ -1333,6 +1409,10 @@ fun EqualizerScreen(engine: EqualizerEngine, navigation: SonicCoreNavigator) {
             },
             audioControl = audioControl,
             onAudioControlChange = { next -> applyAudioControl(next) },
+            dspChain = dspChain,
+            onDspChainChange = { next -> applyDspChain(next) },
+            eqBands = bandLevels.toList(),
+            measuredDsp = { readDspTelemetry() },
             glassLevel = appGlassState.value,
             onGlassLevelChange = { level -> applyGlassLevel(level) },
             themes = Themes.ALL,

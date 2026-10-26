@@ -180,3 +180,81 @@ The tests added by this pass:
   correction" — including the system file picker's own gesture and reading a real
   `ParametricEQ.txt` from storage — remains a device check. It is a real gap and
   is reported as one rather than inferred from the tests.
+
+## 8. Full-screen layout, one inline console, and a real chain editor
+
+This pass took the same shared layer further, and it is the pass that makes the
+window the only thing that decides the layout:
+
+### 8.1 The window is now edge-to-edge, with the insets owned in one place
+
+- `MainActivity.onCreate` calls `enableEdgeToEdge()` before `setContent`, and
+  `Theme.NeonEQ` sets **transparent** status and navigation bars
+  (`windowDrawsSystemBarBackgrounds`, `enforceNavigationBarContrast="false"`), so
+  the glass backdrop runs to the screen edges instead of stopping at a black
+  band no theme could match.
+- `GlassScaffold` applies `statusBarsPadding() + displayCutoutPadding() +
+  imePadding()` **once** for the whole app. The cutout inset is the part the old
+  code lacked: in landscape a cutout sits on a *side*, and a status-bar-only inset
+  put the first card under it. `GlassNavigation` keeps its own
+  `navigationBarsPadding()` because the dock is the component that sits against
+  that edge — applying it in the scaffold too would double-pad the dock, which is
+  why it is deliberately not added there.
+- The activity keeps `android:windowSoftInputMode="adjustResize"`, which is what
+  makes the `imePadding()` above receive a real keyboard inset.
+- **RD-15 (new):** no screen may add its own system-bar padding now that the
+  scaffold is edge-to-edge. A screen that does will double-pad; the rule is the
+  same shape as the existing "the shell owns the scroll" rule.
+
+### 8.2 Related controls share a row, and never below a floor
+
+`controlColumnCount` (pure, in `ResponsiveLayout.kt`) and `AdaptiveControlRow`
+put parameter controls side by side when each can keep
+`GlassSpacing.minControlWidth` (148 dp) and stack them when they cannot. Nothing
+hard-codes "two sliders": a 412 dp phone gets two columns because two cells of
+148 dp plus the gap fit its content width, and a 1280 dp tablet gets three. A
+cell narrower than the floor wraps to the next row instead of squeezing its own
+value label into the slider — which is the specific clipping this rule exists to
+prevent (`ResponsiveLayoutTest`).
+
+### 8.3 One console, every effect inline
+
+`ui/audio/AudioConsoleScreen.kt` (new Audio tool `audio.console`, first entry in
+the Sound Controls group) renders every effect as an inline card built from the
+shared vocabulary: `AudioEffectCard` gives it a title, a live status, its own
+enable/bypass toggle on the same row, its controls, and an `OUTPUT` block
+immediately underneath. The per-band faders stay on the Equalizer screen by
+design — 31 touch targets do not fit a dense console without shrinking below a
+usable size — and the console says so where it links to them.
+
+Two rules the console keeps, both testable:
+
+- **A toggle is the real control.** An effect card's switch moves either the
+  native stage enable (`NeonDsp.setStageEnabled`) or the parameter switch the
+  engine already has (`compOn`, `limiterOn`). No card flips a UI-only boolean.
+- **Output is measured or declined.** `DspTelemetryText` (unit-tested) decides
+  whether a dynamics card shows a measured reduction, "Waiting for audio", or
+  "Not measurable" plus the bridge's own reason. The offline loudness analysis is
+  a shared card (`ui/audio/LoudnessAnalysisSection.kt`, used by both the console
+  and Audio Diagnostics) and stays explicitly offline — it is analysis, not a
+  processing stage, and it is never presented as a live meter.
+
+### 8.4 The chain editor moves audio, not just pixels
+
+The reorder is real in the engine, not in the UI:
+
+- `dsp/DspChain.kt` (pure) holds the eight stages, their ids, the engine's default
+  order, and the rules — including that the limiter stays last, refused *before*
+  anything is applied, with the reason a screen shows.
+- `neondsp.cpp` **walks the committed order** instead of a hard-coded sequence:
+  `stageOrder[8]` and `stageOn[8]` live in the same seqlock-published snapshot as
+  every other parameter and commit at a block boundary, so the audio thread can
+  never observe a half-written chain. `setStageOrder` refuses anything that is not
+  a full permutation of the eight ids and keeps the order it had.
+- `tools/dspharness/harness.cpp` section **[18]** measures it: with the limiter
+  last a +20 dB signal is held at the −1 dBFS ceiling (≈29 200), and with the
+  limiter moved first the *same* signal reaches 32 767. Same input, same
+  parameters, different measured output — that is what makes the reorder honest.
+  The same section measures a bypassed preamp passing at unity while keeping its
+  +20 dB setting, a refused non-permutation leaving the committed chain untouched,
+  and the mandatory stage staying enabled.

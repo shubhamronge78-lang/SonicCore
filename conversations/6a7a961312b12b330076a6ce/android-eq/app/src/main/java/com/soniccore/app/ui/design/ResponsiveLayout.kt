@@ -60,6 +60,16 @@ object ResponsiveBreakpoints {
 
     /** Default cap on columns in an adaptive tile grid. */
     const val MAX_TILE_COLUMNS = 3
+
+    /**
+     * Narrowest a parameter control (label + value + slider) may get before a
+     * control row drops to fewer columns. Below this the value label and the
+     * slider thumb start to fight for the same pixels.
+     */
+    const val MIN_CONTROL_WIDTH_DP = 148f
+
+    /** Cap on how many parameter controls sit in one row. */
+    const val MAX_CONTROL_COLUMNS = 3
 }
 
 fun windowSizeClassOf(widthDp: Float): WindowSizeClass = when {
@@ -86,6 +96,24 @@ fun adaptiveColumnCount(
     val fit = ((availableWidth.value + spacing) / (minimum + spacing)).toInt()
     return fit.coerceIn(1, maxColumns)
 }
+
+/**
+ * How many parameter controls fit side by side in [availableWidth].
+ *
+ * Same rule as [adaptiveColumnCount] — never a hard-coded "two controls" — so a
+ * narrow phone stacks what a tablet can put in one row, and a tableted window
+ * uses its width instead of leaving half of it empty.
+ */
+fun controlColumnCount(
+    availableWidth: Dp,
+    minControlWidth: Dp = ResponsiveBreakpoints.MIN_CONTROL_WIDTH_DP.dp,
+    gap: Dp = GlassSpacing.gap
+): Int = adaptiveColumnCount(
+    availableWidth = availableWidth,
+    minCellWidth = minControlWidth,
+    gap = gap,
+    maxColumns = ResponsiveBreakpoints.MAX_CONTROL_COLUMNS
+)
 
 /** Columns for Home's category cards, before the user's own column preference. */
 fun categoryColumnCount(availableWidth: Dp): Int = when {
@@ -156,6 +184,9 @@ data class ResponsiveMetrics(
     /** Columns an adaptive grid of at least [minCellWidth] cells can use. */
     fun columnsFor(minCellWidth: Dp = GlassSpacing.minTileWidth, maxColumns: Int = ResponsiveBreakpoints.MAX_TILE_COLUMNS): Int =
         adaptiveColumnCount(contentWidth, minCellWidth, GlassSpacing.gapSmall, maxColumns)
+
+    /** How many parameter controls this window puts side by side. */
+    val controlColumns: Int get() = controlColumnCount(contentWidth)
 
     companion object {
         /** A 412 × 915 dp phone — the fallback when the window size is unknown. */
@@ -229,6 +260,57 @@ fun AdaptiveGrid(
                             item(index, Modifier.fillMaxWidth())
                         }
                     }
+                    repeat(columns - rowIndices.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Related parameter controls, side by side when they fit and stacked when they
+ * do not.
+ *
+ * The point is that neither the caller nor a device model decides: the row
+ * measures itself and asks [controlColumnCount], so a pair of sliders share one
+ * row on a phone that has the width for it, and a third control joins them on a
+ * tablet. Nothing is squeezed below [minControlWidth] — a control that cannot
+ * fit wraps to the next row instead of clipping its own value label.
+ *
+ * Wrap each control in the [Modifier] the lambda is handed; that modifier is
+ * the cell's `fillMaxWidth()`.
+ */
+@Composable
+fun AdaptiveControlRow(
+    controls: List<@Composable (Modifier) -> Unit>,
+    modifier: Modifier = Modifier,
+    minControlWidth: Dp = ResponsiveBreakpoints.MIN_CONTROL_WIDTH_DP.dp,
+    maxColumns: Int = ResponsiveBreakpoints.MAX_CONTROL_COLUMNS,
+    horizontalGap: Dp = GlassSpacing.gap,
+    verticalGap: Dp = GlassSpacing.gap
+) {
+    if (controls.isEmpty()) return
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val columns = adaptiveColumnCount(maxWidth, minControlWidth, horizontalGap, maxColumns)
+        val rows = controls.indices.chunked(columns)
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(verticalGap)
+        ) {
+            rows.forEach { rowIndices ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(horizontalGap)
+                ) {
+                    rowIndices.forEach { index ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            controls[index](Modifier.fillMaxWidth())
+                        }
+                    }
+                    // A lone control on a wide last row keeps the cell width of
+                    // the row above instead of stretching across the screen.
                     repeat(columns - rowIndices.size) {
                         Spacer(Modifier.weight(1f))
                     }

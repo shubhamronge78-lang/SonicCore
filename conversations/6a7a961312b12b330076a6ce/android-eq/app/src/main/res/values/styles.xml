@@ -1,9 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      Edge-to-edge (spec §1): the bars are transparent so the app's own glass
+      backdrop runs to the screen edges, and the content is inset once inside
+      GlassScaffold (status bar, display cutout, IME) plus GlassNavigation for
+      the bottom navigation bar. windowBackground keeps the dark base so the
+      first frame is dark rather than white.
+
+      windowDrawsSystemBarBackgrounds is what makes those transparent colours
+      honoured at all; enforceNavigationBarContrast="false" stops the platform
+      painting its own scrim behind the gesture bar on top of the backdrop.
+    -->
     <style name="Theme.NeonEQ" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:statusBarColor">#050508</item>
-        <item name="android:navigationBarColor">#050508</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowBackground">#050508</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
 </resources>

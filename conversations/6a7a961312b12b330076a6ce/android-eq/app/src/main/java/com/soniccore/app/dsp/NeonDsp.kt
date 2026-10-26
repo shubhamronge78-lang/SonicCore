@@ -7,6 +7,10 @@ package com.soniccore.app.dsp
  * bands) → bass/treble shelves → compressor → stereo width/balance/swap/mono
  * → convolver (optional small IR) → output limiter → clip counter.
  *
+ * That is the engine's *default* order. Since the chain editor shipped, the
+ * engine walks the order it was given (see [setStageOrder]) instead of a
+ * hard-coded sequence, and the set of stages is the same eight either way.
+ *
  * Used by the playback-capture pipeline; the in-app player stays on the
  * proven Kotlin chain until it migrates onto this core.
  */
@@ -33,6 +37,21 @@ object NeonDsp {
     external fun setConvolverEnabled(on: Boolean)
     external fun loadIr(left: FloatArray, right: FloatArray)
     external fun process(buffer: ShortArray, frames: Int)
+    /**
+     * The chain editor's controls, applied by the native engine itself.
+     *
+     * [setStageOrder] takes the eight stage ids in the order they should run and
+     * returns false when the array is not a full permutation — the engine keeps
+     * the order it had, so a bad chain can never reach the audio thread.
+     * [setStageEnabled] switches one stage off or on without touching its
+     * parameters; [appliedStageOrder] and [stageEnabled] read back the chain the
+     * audio thread is actually walking (a setter commits at the next block
+     * boundary, like every other parameter).
+     */
+    external fun setStageOrder(order: IntArray): Boolean
+    external fun setStageEnabled(stage: Int, on: Boolean): Boolean
+    external fun appliedStageOrder(out: IntArray)
+    external fun stageEnabled(stage: Int): Boolean
     external fun clipCount(): Long
     external fun nanCount(): Long
     // Build #119: signal-path counters + measured DSP meters (0..1000 milli-units)
