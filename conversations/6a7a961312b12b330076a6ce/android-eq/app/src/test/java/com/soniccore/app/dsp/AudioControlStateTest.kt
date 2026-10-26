@@ -168,4 +168,47 @@ class AudioControlStateTest {
         assertTrue(shelfResponseDb(cut, 1000f) <= 0f)
         assertTrue(shelfResponseDb(cut, Float.NaN).isFinite())
     }
+
+    @Test
+    fun theShelfCornersMatchTheNativeEngine() {
+        // neondsp.cpp builds the low shelf at 100 Hz and the high shelf at 8000 Hz,
+        // and tools/dspharness/harness.cpp section [14] measures exactly those
+        // corners. These constants are the UI's copy of that one fact: retuning the
+        // engine means moving the label, the curve and these assertions together.
+        assertEquals(100f, LOW_SHELF_HZ, 0.001f)
+        assertEquals(8000f, HIGH_SHELF_HZ, 0.001f)
+        assertEquals(48000f, SHELF_MODEL_SAMPLE_RATE, 0.001f)
+    }
+
+    @Test
+    fun theModelledCurveMatchesTheEnginesRbjShape() {
+        // The same textbook S=1 RBJ shape the native harness measures: half gain at
+        // the corner, near-full gain well inside the band, unity well outside it.
+        val bassOnly = AudioControlState(bass = 20f, treble = 0f)
+        assertEquals(10f, shelfResponseDb(bassOnly, LOW_SHELF_HZ), 0.05f)
+        assertTrue(shelfResponseDb(bassOnly, 30f) > 16f)
+        assertTrue(shelfResponseDb(bassOnly, 1000f) < 0.5f)
+
+        val trebleOnly = AudioControlState(bass = 0f, treble = 20f)
+        assertEquals(10f, shelfResponseDb(trebleOnly, HIGH_SHELF_HZ), 0.05f)
+        assertTrue(shelfResponseDb(trebleOnly, 16000f) > 17f)
+        assertTrue(shelfResponseDb(trebleOnly, 1000f) < 0.5f)
+    }
+
+    @Test
+    fun aCutIsTheExactMirrorOfTheSameBoost() {
+        // An RBJ shelf with the opposite gain is the reciprocal filter, so a boost
+        // and its mirror cut cancel in dB at every frequency — which is what makes
+        // the drawn curve trustworthy in both directions.
+        val boost = AudioControlState(bass = 12f, treble = -8f)
+        val cut = AudioControlState(bass = -12f, treble = 8f)
+        listOf(30f, 100f, 500f, 8000f, 16000f).forEach { frequency ->
+            assertEquals(
+                "boost and mirror cut disagree at $frequency Hz",
+                0f,
+                shelfResponseDb(boost, frequency) + shelfResponseDb(cut, frequency),
+                0.0005f
+            )
+        }
+    }
 }

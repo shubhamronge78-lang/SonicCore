@@ -51,7 +51,7 @@ services:
         #    Stale artifacts from a previous run are removed so a failed build can
         #    never be reported as a ready one.
         mkdir -p /out
-        rm -f /out/NeonEQ-debug.apk /out/dsp-test.log /out/build.log
+        rm -f /out/NeonEQ-debug.apk /out/dsp-test.log /out/loudness-test.log /out/build.log
         rm -rf /out/tests
         cp /preview/index.html /out/index.html
         # `$$` escapes Compose interpolation — without it Compose substitutes the
@@ -71,6 +71,22 @@ services:
           -I tools/dspharness -I . tools/dspharness/harness.cpp \
           -o /tmp/dsp_harness -lpthread
         /tmp/dsp_harness 2>&1 | tee /out/dsp-test.log
+
+        # 1b. Offline loudness self-test — the project's second native gate, and
+        #     the one that used to be missing from this pipeline: it compiles the
+        #     vendored libebur128 (as C) and links it with the module's JNI facade
+        #     (the harness #includes loudness_jni.cpp) under the same ASan+UBSan.
+        #     It pins the EBU R 128 numbers the app reports, so a change to the
+        #     measurement fails here instead of reaching a report.
+        gcc -std=gnu11 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+          -I app/src/main/cpp/third_party/ebur128 \
+          -c app/src/main/cpp/third_party/ebur128/ebur128.c -o /tmp/ebur128.o
+        g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
+          -I tools/dspharness -I . -I app/src/main/cpp/third_party/ebur128 \
+          -I app/src/main/cpp/loudness \
+          tools/dspharness/loudness_harness.cpp /tmp/ebur128.o \
+          -o /tmp/loudness_harness -lpthread -lm
+        /tmp/loudness_harness 2>&1 | tee /out/loudness-test.log
 
         # 2. Build the app from source: JVM unit tests, then the debug APK.
         chmod +x gradlew

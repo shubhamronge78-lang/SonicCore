@@ -61,10 +61,18 @@ class DspParams {
             // and answers whether it took it, so the outcome is part of this
             // method's own answer instead of being swallowed: a caller that must
             // not claim a write it could not make can see that it failed.
-            var chainAccepted = dsp.setStageOrder(stageOrder.toIntArray())
+            //
+            // Each stage's enable is derived by the chain model from ONE source of
+            // truth per stage (`DspChain.enableOf`): the bypass set for the optional
+            // stages, and `limiterOn` for the limiter — the same parameter
+            // `setLimiter` above already wrote. The limiter's *place* stays
+            // mandatory (it is always last); only its enable follows the app-level
+            // switch, so the stage enable the engine reports can never contradict
+            // the Limiter card that set it.
+            val chain = DspChain.fromParams(this)
+            var chainAccepted = dsp.setStageOrder(chain.stageOrderIds.toIntArray())
             ChainStage.entries.forEach { stage ->
-                val enabled = !(stage.bypassable && stageBypassed.contains(stage.id))
-                chainAccepted = dsp.setStageEnabled(stage.id, enabled) && chainAccepted
+                chainAccepted = dsp.setStageEnabled(stage.id, chain.enableOf(stage, limiterOn)) && chainAccepted
             }
             chainAccepted
         } catch (_: Throwable) { false }

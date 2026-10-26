@@ -220,4 +220,37 @@ class DspChainTest {
         assertFalse(edited.isDefault)
         assertEquals(DspChain.default(), edited.reset())
     }
+
+    /**
+     * The limiter conflict, resolved: its *place* is mandatory, its *enable* is
+     * the one app-level parameter. The chain can never move or bypass the
+     * limiter, and the enable the engine is given comes from `limiterOn` alone —
+     * so the chain editor, the Limiter card and the native stage enable agree.
+     */
+    @Test
+    fun theLimitersPlaceIsMandatoryAndItsEnableIsTheOneAppParameter() {
+        val chain = DspChain.default()
+
+        // Place: always last, and no chain request can bypass it.
+        assertEquals(ChainStage.LIMITER, chain.order.last())
+        assertTrue(chain.order.last() == DspChainRules.MANDATORY_LAST)
+        assertFalse(chain.withBypass(ChainStage.LIMITER, true).isBypassed(ChainStage.LIMITER))
+
+        // Enable: exactly the app-level parameter, both ways.
+        assertTrue(chain.enableOf(ChainStage.LIMITER, limiterOn = true))
+        assertFalse(chain.enableOf(ChainStage.LIMITER, limiterOn = false))
+
+        // Optional stages answer from the bypass set, not from the limiter switch.
+        val bypassed = chain.withBypass(ChainStage.COMPRESSOR, true)
+        assertFalse(bypassed.enableOf(ChainStage.COMPRESSOR, limiterOn = true))
+        assertTrue(chain.enableOf(ChainStage.COMPRESSOR, limiterOn = false))
+        // …and the limiter answer is independent of them.
+        assertTrue(bypassed.enableOf(ChainStage.LIMITER, limiterOn = true))
+
+        // A damaged stored bypass set still cannot switch the limiter off: the
+        // enable above is the only thing that can, and it is the app's parameter.
+        val stored = DspChain.of(chain.stageOrderIds, setOf(ChainStage.LIMITER.id))
+        assertTrue(stored.enableOf(ChainStage.LIMITER, limiterOn = true))
+        assertTrue(stored.bypassedIds.isEmpty())
+    }
 }

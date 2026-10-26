@@ -113,6 +113,7 @@
     <ul>
       <li><a href="tests/index.html">JVM unit-test report</a> — preset validation, band map and output-route contracts</li>
       <li><a href="dsp-test.log">Native DSP self-test log</a> — production engine compiled with ASan/UBSan</li>
+      <li><a href="loudness-test.log">Offline loudness self-test log</a> — vendored libebur128 compiled with ASan/UBSan</li>
       <li><a href="build.log">Full Gradle build log</a></li>
     </ul>
   </div>
@@ -131,7 +132,7 @@
     <h2>Rebuild after a code change</h2>
     <p><code>docker compose -f docker-compose.base44.yml restart app</code></p>
     <p class="muted">The source is mounted into the container, so restarting re-runs the
-       self-test, the unit tests and the APK build against your current code.
+       native self-tests, the unit tests, lint and the APK build against your current code.
        <code>up -d --build</code> is only needed after changing the compose file or
        the builder image.</p>
     <p class="muted">Source lives in <code>conversations/6a7a961312b12b330076a6ce/android-eq</code>.</p>
